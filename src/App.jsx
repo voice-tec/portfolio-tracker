@@ -31,35 +31,52 @@ function simulateHistory(base, days = 30) {
 }
 
 // ─── API ──────────────────────────────────────────────────────────────────────
+// Detect if running on Vercel (production) or Claude preview
+const IS_VERCEL = typeof window !== "undefined" && window.location.hostname.includes("vercel.app");
+const API_BASE  = IS_VERCEL ? "" : "https://portfolio-tracker-i97337xz6-voice-tecs-projects.vercel.app";
+
+// Price cache to avoid hammering the API
+const priceCache = {};
+const CACHE_TTL = 60_000; // 60 seconds
+
+async function fetchRealPrice(ticker) {
+  const key = ticker.toUpperCase();
+  const cached = priceCache[key];
+  if (cached && Date.now() - cached.ts < CACHE_TTL) return cached.price;
+  try {
+    const res = await fetch(`${API_BASE}/api/price?symbol=${encodeURIComponent(key)}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data.price) return null;
+    priceCache[key] = { price: data.price, ts: Date.now() };
+    return data.price;
+  } catch { return null; }
+}
+
+async function fetchRealHistory(ticker, days = 30) {
+  try {
+    const res = await fetch(`${API_BASE}/api/history?symbol=${encodeURIComponent(ticker.toUpperCase())}&days=${days}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.candles || null;
+  } catch { return null; }
+}
+
+async function fetchTickerSearch(q) {
+  try {
+    const res = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(q)}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.results || []).map(r => ({ ticker: r.ticker, name: r.name, exchange: r.exchange, sector: "—" }));
+  } catch { return []; }
+}
+
 async function claudeCall(system, userMsg, tools = []) {
   const body = { model: "claude-sonnet-4-20250514", max_tokens: 400, system, messages: [{ role: "user", content: userMsg }] };
   if (tools.length) body.tools = tools;
   const res = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const data = await res.json();
   return (data.content || []).map(b => b.text || "").join("").trim();
-}
-
-async function fetchRealPrice(ticker) {
-  try {
-    const text = await claudeCall(
-      "You are a stock price tool. Search the current price and reply with ONLY a single decimal number. Nothing else.",
-      `Current price of ${ticker}`,
-      [{ type: "web_search_20250305", name: "web_search" }]
-    );
-    const n = parseFloat(text.replace(/[^0-9.]/g, ""));
-    return isNaN(n) ? null : n;
-  } catch { return null; }
-}
-
-async function fetchTickerSearch(q) {
-  try {
-    const text = await claudeCall(
-      `Stock ticker database. Reply ONLY with raw JSON array, max 6 items: [{"ticker":"...","name":"...","exchange":"...","sector":"..."}]. No markdown.`,
-      q
-    );
-    const m = text.match(/\[[\s\S]*?\]/);
-    return m ? JSON.parse(m[0]) : [];
-  } catch { return []; }
 }
 
 async function fetchAIAnalysis(stock, note, sym) {
@@ -324,21 +341,18 @@ export default function App() {
     setFiredAlerts(fired);
   }, [stocks, alerts]);
 
-  // Fetch real prices on mount if Pro
+  // Fetch real prices + history on mount via Finnhub proxy
   useEffect(() => {
-    if (plan !== "pro") return;
     (async () => {
       const updated = await Promise.all(stocks.map(async s => {
-        if (s.priceReal) return s;
         const real = await fetchRealPrice(s.ticker);
-        if (!real) return s;
-        const history = simulateHistory(real);
-        history[history.length - 1].price = real;
-        return { ...s, currentPrice: real, history, priceReal: true };
+        const history = await fetchRealHistory(s.ticker) || simulateHistory(real || s.buyPrice);
+        if (real && history.length > 0) history[history.length - 1].price = real;
+        return { ...s, currentPrice: real || s.currentPrice, history, priceReal: !!real };
       }));
       setStocksRaw(updated);
     })();
-  }, [plan]);
+  }, []);
 
   async function handleAdd() {
     const t = form.ticker.trim().toUpperCase();
