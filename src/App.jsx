@@ -934,50 +934,51 @@ function WhatIfTab({ fmt, fmtPct, eurRate }) {
     if (!t || !amt || !date) return setErr("Compila tutti i campi.");
     setErr(""); setLoading(true); setResult(null);
     try {
-      // Get current price
+      // Current price
       const curRes = await fetch(`${API_BASE}/api/price?symbol=${t}`);
       const curData = await curRes.json();
       const currentPrice = curData.price;
       if (!currentPrice) { setErr("Ticker non trovato o prezzo non disponibile."); setLoading(false); return; }
 
-      // Get historical price via history endpoint
-      const today = new Date();
+      // Real historical data
       const buyDate = new Date(date);
+      const today = new Date();
       const daysDiff = Math.round((today - buyDate) / (1000 * 60 * 60 * 24));
-      const histRes = await fetch(`${API_BASE}/api/history?symbol=${t}&days=${Math.min(daysDiff + 10, 730)}`);
+      const daysToFetch = Math.min(Math.max(daysDiff + 30, 60), 730);
+
+      const histRes = await fetch(`${API_BASE}/api/history?symbol=${t}&days=${daysToFetch}`);
       const histData = await histRes.json();
+      const candles = histData.candles || [];
 
+      // Find buy price = closest candle to requested date
       let buyPrice = null;
-      if (histData.candles?.length) {
+      let buyCandle = null;
+      if (candles.length) {
         const targetTs = buyDate.getTime() / 1000;
-        const sorted = [...histData.candles].sort((a, b) => Math.abs(a.t - targetTs) - Math.abs(b.t - targetTs));
-        buyPrice = sorted[0]?.c;
+        buyCandle = candles.reduce((best, c) =>
+          Math.abs(c.t - targetTs) < Math.abs(best.t - targetTs) ? c : best
+        );
+        buyPrice = buyCandle.c;
       }
-
-      if (!buyPrice) {
-        // Fallback: simulate a reasonable historical price
-        buyPrice = currentPrice * (0.7 + Math.random() * 0.5);
-      }
+      if (!buyPrice) { setErr("Dati storici non disponibili per questa data. Prova una data più recente."); setLoading(false); return; }
 
       const shares = amt / buyPrice;
       const currentValue = shares * currentPrice;
       const pnl = currentValue - amt;
-      const pct = (currentValue - amt) / amt * 100;
+      const pct = (pnl / amt) * 100;
 
-      // Build chart: linear interpolation with noise
-      const chartDays = Math.min(daysDiff, 365);
-      const chartData = Array.from({ length: Math.min(chartDays, 60) }, (_, i) => {
-        const progress = i / Math.max(chartDays - 1, 1);
-        const interpolated = buyPrice + (currentPrice - buyPrice) * progress;
-        const noise = interpolated * (Math.random() - 0.5) * 0.04;
-        const d = new Date(buyDate);
-        d.setDate(d.getDate() + Math.floor(i * chartDays / 60));
-        return {
-          date: d.toLocaleDateString("it-IT", { day: "2-digit", month: "short" }),
-          valore: parseFloat((shares * (interpolated + noise)).toFixed(2)),
-        };
-      });
-      // Ensure last point matches current value exactly
+      // Build chart from real candles filtered after buy date
+      const buyTs = buyDate.getTime() / 1000;
+      const chartCandles = candles
+        .filter(c => c.t >= buyTs)
+        .sort((a, b) => a.t - b.t);
+
+      const chartData = chartCandles.map(c => ({
+        date: new Date(c.t * 1000).toLocaleDateString("it-IT", { day: "2-digit", month: "short" }),
+        valore: parseFloat((shares * c.c).toFixed(2)),
+      }));
+
+      // Ensure last point is current price
       if (chartData.length) chartData[chartData.length - 1].valore = parseFloat(currentValue.toFixed(2));
 
       setResult({ ticker: t, amount: amt, shares: parseFloat(shares.toFixed(4)), buyPrice, currentPrice, currentValue, pnl, pct, chartData, date });
@@ -1527,12 +1528,14 @@ export default function App() {
           {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} />}
 
           {/* Header */}
-          <div style={{ padding: "0 28px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #161820", height: 52, gap: 12 }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexShrink: 0 }}>
+          <div style={{ padding: "0 16px 0 20px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #161820", height: 52, gap: 10 }}>
+            {/* Logo */}
+            <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexShrink: 0 }}>
               <span style={{ fontFamily: "'Fraunces', serif", fontSize: 19, fontWeight: 300, color: "#F4C542" }}>Portfolio</span>
-              <span style={{ fontSize: 9, color: "#2a2d35", letterSpacing: "0.2em", textTransform: "uppercase" }}>Tracker</span>
+              <span className="hide-mobile" style={{ fontSize: 9, color: "#2a2d35", letterSpacing: "0.2em", textTransform: "uppercase" }}>Tracker</span>
               {plan === "pro" && <span style={{ fontSize: 8, background: "#F4C542", color: "#0D0F14", padding: "2px 6px", borderRadius: 2, fontWeight: 700, letterSpacing: "0.1em" }}>PRO</span>}
             </div>
+            {/* Desktop tabs */}
             <div style={{ display: "flex", alignItems: "center", gap: 0, overflowX: "auto", flex: 1, justifyContent: "center" }} className="desktop-tabs">
               {["overview","titoli","settori","watchlist","confronto","alert","simulazioni","whatif"].map(t => (
                 <button key={t} className={`tab-btn ${activeTab === t ? "active" : ""}`} onClick={() => setActiveTab(t)}>
@@ -1540,19 +1543,21 @@ export default function App() {
                 </button>
               ))}
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }} className="mobile-header-actions">
-              {plan === "free" && <button className="action-btn" onClick={() => setShowUpgrade(true)} style={{ color: "#F4C542", borderColor: "#F4C542" }}>✦ Pro</button>}
+            {/* Actions */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+              {plan === "free" && <button className="action-btn" onClick={() => setShowUpgrade(true)} style={{ color: "#F4C542", borderColor: "#F4C542", fontSize: 10, padding: "4px 8px" }}>✦ Pro</button>}
               <button className="action-btn hide-mobile" onClick={() => setShowImport(v => !v)}>↑ CSV</button>
-              <button className="add-btn" onClick={() => setShowForm(v => !v)}>{showForm ? "✕" : "+ Aggiungi"}</button>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                {plan === "pro" && (
-                  <>
-                    <button onClick={exportCSV} className="action-btn hide-mobile" style={{ fontSize: 9, padding: "4px 10px" }}>↓ CSV</button>
-                    <button onClick={exportPDF} className="action-btn hide-mobile" style={{ fontSize: 9, padding: "4px 10px" }}>↓ PDF</button>
-                  </>
-                )}
-                <button className="action-btn" onClick={() => signOut().then(() => setUser(null))} style={{ color: "#333", fontSize: 10 }}>{user.name} ↩</button>
-              </div>
+              {plan === "pro" && <>
+                <button onClick={exportCSV} className="action-btn hide-mobile" style={{ fontSize: 9, padding: "4px 10px" }}>↓ CSV</button>
+                <button onClick={exportPDF} className="action-btn hide-mobile" style={{ fontSize: 9, padding: "4px 10px" }}>↓ PDF</button>
+              </>}
+              <button className="add-btn" onClick={() => setShowForm(v => !v)} style={{ fontSize: 11, padding: "6px 12px" }}>{showForm ? "✕" : "+ Aggiungi"}</button>
+              {/* Mobile: user avatar button */}
+              <button onClick={() => signOut().then(() => setUser(null))}
+                style={{ background: "#1a1d26", border: "1px solid #2a2d35", borderRadius: "50%", width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, color: "#555", fontSize: 11, fontFamily: "inherit" }}
+                title={`${user.name} — Esci`}>
+                {user.name?.charAt(0).toUpperCase() || "U"}
+              </button>
             </div>
           </div>
 
