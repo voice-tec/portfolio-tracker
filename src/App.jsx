@@ -4,6 +4,7 @@ import { supabase, signIn, signUp, signOut, getSession, loadStocks, saveStock, d
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const SECTOR_COLORS = ["#F4C542","#E87040","#5B8DEF","#5EC98A","#BF6EEA","#F06292","#26C6DA","#FF7043"];
+const SECTORS = ["Tech","Finanza","Salute","Energia","Consumer","Industriali","Real Estate","Utility","Materiali","Telecom","Crypto","ETF","Altro"];
 const CURRENCIES = { USD: { symbol: "$", rate: 1 }, EUR: { symbol: "€", rate: 0.92 }, GBP: { symbol: "£", rate: 0.79 } };
 const PLANS = {
   free:  { name: "Free",  maxStocks: 5,        features: { realPrices: false, history: false, comparison: false, ai: false, alerts: false, export: false, benchmark: false } },
@@ -335,7 +336,7 @@ const DEFAULT_STOCKS = [
 // ─── WATCHLIST TAB ────────────────────────────────────────────────────────────
 function WatchlistTab({ eurRate, fmt, fmtPct }) {
   const [watchlist, setWatchlist] = useState(() => ls("pt_watchlist", []));
-  const [form, setForm] = useState({ ticker: "", note: "" });
+  const [form, setForm] = useState({ ticker: "", sector: "Altro", note: "" });
   const [prices, setPrices] = useState({});
   const [loading, setLoading] = useState({});
   const [err, setErr] = useState("");
@@ -358,9 +359,9 @@ function WatchlistTab({ eurRate, fmt, fmtPct }) {
     if (!t) return setErr("Inserisci un ticker.");
     if (watchlist.find(w => w.ticker === t)) return setErr("Già in watchlist.");
     setErr("");
-    const item = { ticker: t, note: form.note, addedAt: new Date().toLocaleDateString("it-IT"), id: Date.now() };
+    const item = { ticker: t, sector: form.sector, note: form.note, addedAt: new Date().toLocaleDateString("it-IT"), id: Date.now() };
     saveWatchlist([...watchlist, item]);
-    setForm({ ticker: "", note: "" });
+    setForm({ ticker: "", sector: "Altro", note: "" });
   }
 
   return (
@@ -372,12 +373,18 @@ function WatchlistTab({ eurRate, fmt, fmtPct }) {
 
       {/* Add form */}
       <div className="card" style={{ marginBottom: 20, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
-        <div style={{ flex: "0 0 120px" }}>
+        <div style={{ flex: "0 0 110px" }}>
           <div style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 5 }}>Ticker</div>
           <input value={form.ticker} onChange={e => setForm(f => ({ ...f, ticker: e.target.value.toUpperCase() }))}
             placeholder="AAPL" onKeyDown={e => e.key === "Enter" && addToWatchlist()} style={{ textTransform: "uppercase" }}/>
         </div>
-        <div style={{ flex: 1, minWidth: 160 }}>
+        <div style={{ flex: "0 0 140px" }}>
+          <div style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 5 }}>Settore</div>
+          <select value={form.sector} onChange={e => setForm(f => ({ ...f, sector: e.target.value }))}>
+            {SECTORS.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+        <div style={{ flex: 1, minWidth: 150 }}>
           <div style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 5 }}>Nota (opzionale)</div>
           <input value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="Perché mi interessa…"/>
         </div>
@@ -398,6 +405,7 @@ function WatchlistTab({ eurRate, fmt, fmtPct }) {
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
                     <span style={{ fontFamily: "'Fraunces', serif", fontSize: 18, fontWeight: 300 }}>{item.ticker}</span>
+                    {item.sector && <span style={{ fontSize: 9, background: "#1a1d26", color: "#555", padding: "2px 7px", borderRadius: 2 }}>{item.sector}</span>}
                     <span style={{ fontSize: 9, color: "#333" }}>aggiunto {item.addedAt}</span>
                   </div>
                   {item.note && <div style={{ fontSize: 11, color: "#555", marginTop: 2 }}>{item.note}</div>}
@@ -1191,6 +1199,12 @@ export default function App() {
           {showForm && (
             <div className="fade-up" style={{ padding: "14px 28px", background: "#0a0c10", borderBottom: "1px solid #1a1d26", display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
               <TickerAutocomplete value={form.ticker} onChange={v => setForm(f => ({ ...f, ticker: v }))} onSelect={t => setForm(f => ({ ...f, ticker: t.ticker, sector: t.sector || "Altro" }))} />
+              <div style={{ flex: 1, minWidth: 130 }}>
+                <div style={{ fontSize: 10, color: "#555", marginBottom: 5, letterSpacing: "0.1em", textTransform: "uppercase" }}>Settore</div>
+                <select value={form.sector} onChange={e => setForm(f => ({ ...f, sector: e.target.value }))}>
+                  {SECTORS.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
               <div style={{ flex: 1, minWidth: 90 }}>
                 <div style={{ fontSize: 10, color: "#555", marginBottom: 5, letterSpacing: "0.1em", textTransform: "uppercase" }}>Quantità</div>
                 <input type="number" placeholder="10" value={form.qty} onChange={e => setForm(f => ({ ...f, qty: e.target.value }))} />
