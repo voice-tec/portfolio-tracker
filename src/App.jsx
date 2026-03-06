@@ -666,6 +666,8 @@ export default function App() {
             </div>
           )}
 
+          <div style={{ display: "flex", height: "calc(100vh - 52px)", overflow: "hidden" }}>
+
             {/* Sidebar */}
             <div style={{ width: 258, borderRight: "1px solid #161820", flexShrink: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
               <div style={{ padding: "16px 18px 14px", borderBottom: "1px solid #161820" }}>
