@@ -1,0 +1,2111 @@
+import { useState, useEffect, useRef, useCallback, createContext, useContext } from "react";
+import { createPortal } from "react-dom";
+import { PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area, ReferenceLine, LineChart, Line, Legend } from "recharts";
+import { supabase, signIn, signUp, signOut, getSession, loadStocks, saveStock, deleteStock, loadNotes, saveNote, loadAlerts, saveAlert, deleteAlert } from "./utils/supabase";
+
+// ─── CONSTANTS ────────────────────────────────────────────────────────────────
+const SECTOR_COLORS = ["#F4C542","#E87040","#5B8DEF","#5EC98A","#BF6EEA","#F06292","#26C6DA","#FF7043"];
+const SECTORS = ["Tech","Finanza","Salute","Energia","Consumer","Industriali","Real Estate","Utility","Materiali","Telecom","Crypto","ETF","Altro"];
+const CURRENCIES = { USD: { symbol: "$", rate: 1 }, EUR: { symbol: "€", rate: 0.92 }, GBP: { symbol: "£", rate: 0.79 } };
+const PLANS = {
+  free:  { name: "Free",  maxStocks: 5,        features: { realPrices: false, history: false, comparison: false, ai: false, alerts: false, export: false, benchmark: false } },
+  pro:   { name: "Pro",   maxStocks: Infinity,  features: { realPrices: true,  history: true,  comparison: true,  ai: true,  alerts: true,  export: true,  benchmark: true  } },
+};
+
+// ─── CONTEXTS ─────────────────────────────────────────────────────────────────
+const PlanCtx = createContext(null);
+const CurrencyCtx = createContext(null);
+function usePlan() { return useContext(PlanCtx); }
+function useCurrency() { return useContext(CurrencyCtx); }
+
+// ─── UTILS ────────────────────────────────────────────────────────────────────
+function ls(key, fallback) { try { const r = localStorage.getItem(key); return r ? JSON.parse(r) : fallback; } catch { return fallback; } }
+function lsSet(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch {} }
+function fmt(n, dec = 2) { return Math.abs(Number(n)).toLocaleString("it-IT", { minimumFractionDigits: dec, maximumFractionDigits: dec }); }
+function fmtPct(n) { return `${n >= 0 ? "+" : ""}${Number(n).toFixed(2)}%`; }
+
+function simulateHistory(base, days = 30) {
+  let p = base * (0.88 + Math.random() * 0.1);
+  return Array.from({ length: days + 1 }, (_, i) => {
+    p = p * (1 + (Math.random() - 0.478) * 0.022);
+    const d = new Date(); d.setDate(d.getDate() - (days - i));
+    return { date: d.toLocaleDateString("it-IT", { day: "2-digit", month: "short" }), price: parseFloat(p.toFixed(2)) };
+  });
+}
+
+// ─── API ──────────────────────────────────────────────────────────────────────
+// Detect if running on Vercel (production) or Claude preview
+const IS_VERCEL = typeof window !== "undefined" && window.location.hostname.includes("vercel.app");
+const API_BASE  = IS_VERCEL ? "" : "https://portfolio-tracker-i97337xz6-voice-tecs-projects.vercel.app";
+
+// Price cache to avoid hammering the API
+const priceCache = {};
+const CACHE_TTL = 60_000; // 60 seconds
+
+async function fetchRealPrice(ticker) {
+  const key = ticker.toUpperCase();
+  const cached = priceCache[key];
+  if (cached && Date.now() - cached.ts < CACHE_TTL) return cached.price;
+  try {
+    const res = await fetch(`${API_BASE}/api/price?symbol=${encodeURIComponent(key)}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data.price) return null;
+    priceCache[key] = { price: data.price, ts: Date.now() };
+    return data.price;
+  } catch { return null; }
+}
+
+async function fetchRealHistory(ticker, days = 30) {
+  try {
+    const res = await fetch(`${API_BASE}/api/history?symbol=${encodeURIComponent(ticker.toUpperCase())}&days=${days}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.candles || null;
+  } catch { return null; }
+}
+
+async function fetchTickerSearch(q) {
+  try {
+    const res = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(q)}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.results || []).map(r => ({ ticker: r.ticker, name: r.name, exchange: r.exchange, sector: "—" }));
+  } catch { return []; }
+}
+
+async function claudeCall(system, userMsg, tools = []) {
+  const body = { model: "claude-sonnet-4-20250514", max_tokens: 400, system, messages: [{ role: "user", content: userMsg }] };
+  if (tools.length) body.tools = tools;
+  const res = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const data = await res.json();
+  return (data.content || []).map(b => b.text || "").join("").trim();
+}
+
+async function fetchAIAnalysis(stock, note, sym, currency) {
+  try {
+    const pnlPct = ((stock.currentPrice - stock.buyPrice) / stock.buyPrice * 100).toFixed(2);
+    const res = await fetch(`${API_BASE}/api/analyze`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ticker: stock.ticker,
+        qty: stock.qty,
+        buyPrice: (stock.buyPrice).toFixed(2),
+        currentPrice: (stock.currentPrice).toFixed(2),
+        pnlPct,
+        note: note || "",
+        currency: sym,
+      })
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    return data.analysis || "Analisi non disponibile.";
+  } catch (err) {
+    return "Errore nel recupero dell'analisi. Riprova tra qualche secondo.";
+  }
+}
+
+// ─── SCENARIOS ────────────────────────────────────────────────────────────────
+const SCENARIOS = [
+  { id: "covid",      label: "🦠 Covid Crash",        from: "2020-02-19", to: "2020-03-23",  spx: -34,  real: false, color: "#E87040", desc: "Il mercato perde il 34% in 33 giorni" },
+  { id: "postcovid",  label: "🚀 Post-Covid Rally",    from: "2020-03-23", to: "2021-12-31",  spx: +114, real: false, color: "#5EC98A", desc: "La ripresa più rapida della storia" },
+  { id: "bull2017",   label: "📈 Bull Run 2017",       from: "2017-01-01", to: "2017-12-31",  spx: +19,  real: false, color: "#5B8DEF", desc: "Un anno eccezionale per i mercati" },
+  { id: "gfc",        label: "💥 Financial Crisis",    from: "2007-10-01", to: "2009-03-09",  spx: -57,  real: false, color: "#BF6EEA", desc: "La peggior crisi dal 1929 (-57% S&P500)" },
+  { id: "dotcom",     label: "🫧 Dot-com Bubble",      from: "2000-03-10", to: "2002-10-09",  spx: -49,  real: false, color: "#F06292", desc: "Il crollo delle aziende tech (-49% S&P500)" },
+];
+
+async function fetchScenarioData(symbol, scenario) {
+  if (!scenario.real) return null; // use simulation for old scenarios
+  try {
+    const res = await fetch(`${API_BASE}/api/scenario?symbol=${encodeURIComponent(symbol)}&from=${scenario.from}&to=${scenario.to}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.candles || null;
+  } catch { return null; }
+}
+
+function simulateScenario(scenario, days) {
+  // Simulate based on S&P500 performance with some variance
+  const totalPct = scenario.spx / 100;
+  const n = days || 60;
+  let cumPct = 0;
+  return Array.from({ length: n }, (_, i) => {
+    const progress = i / n;
+    const trend = totalPct * progress;
+    const noise = (Math.random() - 0.5) * 0.04;
+    cumPct = trend + noise;
+    const d = new Date(scenario.from);
+    d.setDate(d.getDate() + Math.floor(i * (new Date(scenario.to) - new Date(scenario.from)) / 1000 / 60 / 60 / 24 / n));
+    return { date: d.toLocaleDateString("it-IT", { day: "2-digit", month: "short", year: "2-digit" }), pct: parseFloat((cumPct * 100).toFixed(2)) };
+  });
+}
+async function fetchNews(ticker) {
+  try {
+    const res = await fetch(`${API_BASE}/api/news?symbol=${encodeURIComponent(ticker)}`);
+    if (!res.ok) return [];
+    return await res.json();
+  } catch { return []; }
+}
+
+async function fetchHistoricalPrice(ticker, date) {
+  // Fetch price at a specific date using history API
+  try {
+    const res = await fetch(`${API_BASE}/api/history?symbol=${encodeURIComponent(ticker)}&days=365`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data.candles?.length) return null;
+    // Find closest candle to requested date
+    const target = new Date(date).getTime() / 1000;
+    const sorted = data.candles.sort((a, b) => Math.abs(a.t - target) - Math.abs(b.t - target));
+    return sorted[0]?.c || null;
+  } catch { return null; }
+}
+
+
+function Spinner({ color = "#F4C542", size = 11 }) {
+  return <span style={{ display: "inline-block", width: size, height: size, borderRadius: "50%", border: `1.5px solid ${color}`, borderTopColor: "transparent", animation: "spin 0.7s linear infinite", flexShrink: 0 }} />;
+}
+
+// ─── PRO GATE ─────────────────────────────────────────────────────────────────
+function ProGate({ feat, children, h = 180 }) {
+  const { plan, setShowUpgrade } = usePlan();
+  if (PLANS[plan]?.features[feat]) return children;
+  return (
+    <div style={{ position: "relative" }}>
+      <div style={{ filter: "blur(5px)", pointerEvents: "none", opacity: 0.25, minHeight: h }}>{children}</div>
+      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10 }}>
+        <span style={{ fontSize: 24 }}>🔒</span>
+        <span style={{ fontSize: 12, color: "#bbb" }}>Disponibile con Piano Pro</span>
+        <button onClick={() => setShowUpgrade(true)} style={{ background: "#F4C542", border: "none", color: "#0D0F14", fontFamily: "inherit", fontSize: 11, fontWeight: 600, padding: "8px 20px", borderRadius: 4, cursor: "pointer" }}>Sblocca Pro</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── UPGRADE MODAL ────────────────────────────────────────────────────────────
+function UpgradeModal({ onClose }) {
+  const { setPlan } = usePlan();
+  const perks = [["📈","Prezzi live reali"],["🤖","Analisi AI per titolo"],["📊","Storico grafici"],["🔔","Alert target prezzo"],["⚖️","Confronto titoli"],["📥","Export CSV"],["📐","Benchmark vs S&P500"],["♾️","Titoli illimitati"],["☁️","Sync cloud (presto)"],["💱","Multi-valuta"]];
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style={{ background: "#0f1117", border: "1px solid #2a2d35", borderRadius: 14, padding: "36px 38px", maxWidth: 480, width: "100%", position: "relative" }}>
+        <button onClick={onClose} style={{ position: "absolute", top: 14, right: 18, background: "none", border: "none", color: "#444", cursor: "pointer", fontSize: 18 }}>✕</button>
+        <div style={{ fontFamily: "'Fraunces', serif", fontSize: 30, fontWeight: 300, marginBottom: 4 }}>Portfolio <span style={{ color: "#F4C542" }}>Pro</span></div>
+        <div style={{ fontSize: 12, color: "#555", marginBottom: 24 }}>Tutto quello che serve per investire con più consapevolezza.</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7, marginBottom: 26 }}>
+          {perks.map(([icon, label]) => (
+            <div key={label} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", background: "#13151c", borderRadius: 6, fontSize: 12, color: "#aaa" }}>
+              {icon} {label}
+            </div>
+          ))}
+        </div>
+        <div style={{ textAlign: "center", marginBottom: 20 }}>
+          <div style={{ fontFamily: "'Fraunces', serif", fontSize: 38, color: "#F4C542" }}>€12<span style={{ fontSize: 14, color: "#555" }}>/mese</span></div>
+          <div style={{ fontSize: 11, color: "#444", marginTop: 3 }}>oppure <strong style={{ color: "#888" }}>€99/anno</strong> · Cancella quando vuoi</div>
+        </div>
+        <button onClick={() => { setPlan("pro"); onClose(); }} style={{ width: "100%", background: "#F4C542", border: "none", color: "#0D0F14", fontFamily: "inherit", fontSize: 13, fontWeight: 700, padding: "14px", borderRadius: 8, cursor: "pointer" }}>
+          Attiva Pro — Demo gratuita
+        </button>
+        <div style={{ fontSize: 10, color: "#2a2d35", textAlign: "center", marginTop: 10 }}>Demo: in produzione aprirà Stripe Checkout</div>
+      </div>
+    </div>
+  );
+}
+
+// ─── AUTH SCREEN ──────────────────────────────────────────────────────────────
+function AuthScreen({ onAuth }) {
+  const [mode, setMode] = useState("login");
+  const [email, setEmail] = useState("");
+  const [pw, setPw] = useState("");
+  const [name, setName] = useState("");
+  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function submit() {
+    if (!email || !pw) return setErr("Compila tutti i campi.");
+    if (mode === "register" && !name) return setErr("Inserisci il tuo nome.");
+    setLoading(true); setErr("");
+    try {
+      let user;
+      if (mode === "register") {
+        user = await signUp(email, pw, name);
+        if (!user) { setErr("Controlla la tua email per confermare la registrazione."); setLoading(false); return; }
+      } else {
+        user = await signIn(email, pw);
+      }
+      onAuth({ id: user.id, email: user.email, name: user.user_metadata?.name || email.split("@")[0] });
+    } catch (e) {
+      setErr(e.message === "Invalid login credentials" ? "Email o password errati." : e.message);
+    }
+    setLoading(false);
+  }
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#0D0F14", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontFamily: "'DM Mono', monospace", padding: 20 }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600&display=swap');
+        *{box-sizing:border-box;margin:0;padding:0}
+        input{background:#13151c;border:1px solid #2a2d35;color:#E8E6DF;font-family:inherit;font-size:13px;padding:11px 14px;border-radius:6px;outline:none;width:100%}
+        input:focus{border-color:#F4C542} input::placeholder{color:#3a3d45}
+        @keyframes spin{to{transform:rotate(360deg)}}
+        @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+      `}</style>
+      <div style={{ animation: "fadeUp 0.4s ease", width: "100%", maxWidth: 400 }}>
+        <div style={{ textAlign: "center", marginBottom: 36 }}>
+          <div style={{ fontFamily: "'Fraunces', serif", fontSize: 38, fontWeight: 300, color: "#F4C542", letterSpacing: "-0.02em" }}>Portfolio</div>
+          <div style={{ fontSize: 9, color: "#2a2d35", letterSpacing: "0.4em", textTransform: "uppercase", marginTop: 2 }}>Tracker</div>
+        </div>
+        <div style={{ background: "#0f1117", border: "1px solid #1a1d26", borderRadius: 12, padding: "30px 28px" }}>
+          <div style={{ display: "flex", background: "#13151c", borderRadius: 6, padding: 3, marginBottom: 22 }}>
+            {[["login","Accedi"],["register","Registrati"]].map(([m, label]) => (
+              <button key={m} onClick={() => { setMode(m); setErr(""); }} style={{ flex: 1, background: mode === m ? "#1a1d26" : "transparent", border: "none", color: mode === m ? "#E8E6DF" : "#444", fontFamily: "inherit", fontSize: 11, padding: "8px", borderRadius: 4, cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.1em", transition: "all 0.15s" }}>{label}</button>
+            ))}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {mode === "register" && <input placeholder="Nome" value={name} onChange={e => setName(e.target.value)} />}
+            <input placeholder="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} />
+            <input placeholder="Password" type="password" value={pw} onChange={e => setPw(e.target.value)} onKeyDown={e => e.key === "Enter" && submit()} />
+          </div>
+          {err && <div style={{ fontSize: 11, color: "#E87040", marginTop: 10 }}>{err}</div>}
+          <button onClick={submit} disabled={loading} style={{ marginTop: 18, width: "100%", background: "#F4C542", border: "none", color: "#0D0F14", fontFamily: "inherit", fontSize: 12, fontWeight: 700, padding: "13px", borderRadius: 6, cursor: loading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: loading ? 0.7 : 1 }}>
+            {loading && <Spinner color="#0D0F14" />}
+            {mode === "login" ? "Entra nel portafoglio" : "Crea Account"}
+          </button>
+          <div style={{ fontSize: 10, color: "#2a2d35", textAlign: "center", marginTop: 12 }}>Benvenuto su Portfolio Tracker</div>
+        </div>
+        <div style={{ fontSize: 9, color: "#1e2028", textAlign: "center", marginTop: 18, lineHeight: 1.8 }}>
+          ⚠️ Strumento a scopo puramente informativo.<br />Non costituisce consulenza finanziaria ai sensi MiFID II.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── TICKER AUTOCOMPLETE ──────────────────────────────────────────────────────
+function TickerAutocomplete({ value, onChange, onSelect }) {
+  const [open, setOpen] = useState(false);
+  const [hi, setHi] = useState(0);
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [dropPos, setDropPos] = useState({ top: 0, left: 0, width: 320 });
+  const ref = useRef(null);
+  const inputRef = useRef(null);
+  const cache = useRef({});
+  const timer = useRef(null);
+
+  useEffect(() => {
+    clearTimeout(timer.current);
+    if (!open || !value) { setResults([]); setLoading(false); return; }
+    const k = value.toUpperCase();
+    if (cache.current[k]) { setResults(cache.current[k]); return; }
+    setLoading(true);
+    timer.current = setTimeout(async () => {
+      const r = await fetchTickerSearch(value);
+      cache.current[k] = r;
+      setResults(r);
+      setLoading(false);
+    }, 320);
+    return () => clearTimeout(timer.current);
+  }, [value, open]);
+
+  // Recalculate position every time dropdown opens or results change
+  useEffect(() => {
+    if (!open || !inputRef.current) return;
+    const rect = inputRef.current.getBoundingClientRect();
+    setDropPos({
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: Math.max(rect.width, 320),
+    });
+  }, [open, results.length]);
+
+  useEffect(() => { setHi(0); }, [results]);
+  useEffect(() => {
+    const fn = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", fn);
+    return () => document.removeEventListener("mousedown", fn);
+  }, []);
+
+  function handleKey(e) {
+    if (!open) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); setHi(h => Math.min(h+1, results.length-1)); }
+    if (e.key === "ArrowUp")   { e.preventDefault(); setHi(h => Math.max(h-1, 0)); }
+    if (e.key === "Enter" && results[hi]) { e.preventDefault(); onSelect(results[hi]); setOpen(false); }
+    if (e.key === "Escape") setOpen(false);
+  }
+
+  const dropdown = open && value.length > 0 && (loading || results.length > 0) && createPortal(
+    <div style={{
+      position: "fixed",
+      top: dropPos.top,
+      left: dropPos.left,
+      width: dropPos.width,
+      zIndex: 2147483647,
+      background: "#13151c",
+      border: "1px solid #2a2d35",
+      borderRadius: 8,
+      boxShadow: "0 16px 48px rgba(0,0,0,0.95)",
+      overflow: "hidden",
+      maxHeight: 280,
+      overflowY: "auto",
+    }}>
+      {loading && results.length === 0
+        ? <div style={{ padding: "12px 16px", fontSize: 11, color: "#555", display: "flex", alignItems: "center", gap: 8 }}><Spinner /> Ricerca ticker…</div>
+        : results.map((t, i) => (
+          <div key={t.ticker+i}
+            onMouseDown={e => { e.preventDefault(); onSelect(t); setOpen(false); }}
+            onMouseEnter={() => setHi(i)}
+            style={{ padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", background: i === hi ? "#1a1d26" : "transparent", borderBottom: i < results.length-1 ? "1px solid #161820" : "none" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 13, fontWeight: 500, color: "#E8E6DF", minWidth: 52 }}>{t.ticker}</span>
+              <span style={{ fontSize: 11, color: "#555" }}>{t.name}</span>
+            </div>
+            <div style={{ display: "flex", gap: 5 }}>
+              {t.exchange && <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 2, background: "#0D0F14", color: "#444" }}>{t.exchange}</span>}
+              {t.sector && <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 2, background: "#0D0F14", color: "#666" }}>{t.sector}</span>}
+            </div>
+          </div>
+        ))
+      }
+    </div>,
+    document.body
+  );
+
+  return (
+    <div ref={ref} style={{ position: "relative", flex: 1, minWidth: 130 }}>
+      <div style={{ fontSize: 10, color: "#555", marginBottom: 5, letterSpacing: "0.12em", textTransform: "uppercase" }}>Ticker</div>
+      <input ref={inputRef} placeholder="AAPL, ENI, PLAB…" value={value} autoComplete="off"
+        onChange={e => { onChange(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)} onKeyDown={handleKey} />
+      {dropdown}
+    </div>
+  );
+}
+
+// ─── DEFAULT DATA ─────────────────────────────────────────────────────────────
+const DEFAULT_STOCKS = [
+  { id: 1, ticker: "AAPL",  qty: 10, buyPrice: 175.0, currentPrice: 213.49, sector: "Tech",     priceReal: false, buyDate: "01/01/24" },
+  { id: 2, ticker: "MSFT",  qty: 5,  buyPrice: 380.0, currentPrice: 415.32, sector: "Tech",     priceReal: false, buyDate: "15/03/24" },
+  { id: 3, ticker: "NVDA",  qty: 8,  buyPrice: 495.0, currentPrice: 875.20, sector: "Tech",     priceReal: false, buyDate: "10/06/24" },
+];
+
+// ─── WATCHLIST TAB ────────────────────────────────────────────────────────────
+function WatchlistTab({ eurRate, fmt, fmtPct }) {
+  const [watchlist, setWatchlist] = useState(() => ls("pt_watchlist", []));
+  const [form, setForm] = useState({ ticker: "", sector: "Altro", note: "" });
+  const [prices, setPrices] = useState({});
+  const [loading, setLoading] = useState({});
+  const [err, setErr] = useState("");
+
+  const saveWatchlist = (items) => { setWatchlist(items); lsSet("pt_watchlist", items); };
+
+  useEffect(() => {
+    watchlist.forEach(item => {
+      if (prices[item.ticker]) return;
+      setLoading(l => ({ ...l, [item.ticker]: true }));
+      fetchRealPrice(item.ticker).then(p => {
+        setPrices(prev => ({ ...prev, [item.ticker]: p }));
+        setLoading(l => ({ ...l, [item.ticker]: false }));
+      });
+    });
+  }, [watchlist.length]);
+
+  function addToWatchlist() {
+    const t = form.ticker.trim().toUpperCase();
+    if (!t) return setErr("Inserisci un ticker.");
+    if (watchlist.find(w => w.ticker === t)) return setErr("Già in watchlist.");
+    setErr("");
+    const item = { ticker: t, sector: form.sector, note: form.note, addedAt: new Date().toLocaleDateString("it-IT"), id: Date.now() };
+    saveWatchlist([...watchlist, item]);
+    setForm({ ticker: "", sector: "Altro", note: "" });
+  }
+
+  return (
+    <div className="fade-up">
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300 }}>Watchlist</div>
+        <div style={{ fontSize: 11, color: "#444", marginTop: 2 }}>Titoli da monitorare senza averli in portafoglio</div>
+      </div>
+
+      {/* Add form */}
+      <div className="card" style={{ marginBottom: 20, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <div style={{ flex: "0 0 110px" }}>
+          <div style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 5 }}>Ticker</div>
+          <input value={form.ticker} onChange={e => setForm(f => ({ ...f, ticker: e.target.value.toUpperCase() }))}
+            placeholder="AAPL" onKeyDown={e => e.key === "Enter" && addToWatchlist()} style={{ textTransform: "uppercase" }}/>
+        </div>
+        <div style={{ flex: "0 0 140px" }}>
+          <div style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 5 }}>Settore</div>
+          <select value={form.sector} onChange={e => setForm(f => ({ ...f, sector: e.target.value }))}>
+            {SECTORS.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+        <div style={{ flex: 1, minWidth: 150 }}>
+          <div style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 5 }}>Nota (opzionale)</div>
+          <input value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="Perché mi interessa…"/>
+        </div>
+        <button className="add-btn" onClick={addToWatchlist}>+ Aggiungi</button>
+        {err && <span style={{ fontSize: 11, color: "#E87040" }}>{err}</span>}
+      </div>
+
+      {/* List */}
+      {watchlist.length === 0 ? (
+        <div style={{ textAlign: "center", marginTop: 60, color: "#444", fontSize: 12 }}>Nessun titolo in watchlist — aggiungine uno sopra.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {watchlist.map(item => {
+            const price = prices[item.ticker];
+            const isLoading = loading[item.ticker];
+            return (
+              <div key={item.id} className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px" }}>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+                    <span style={{ fontFamily: "'Fraunces', serif", fontSize: 18, fontWeight: 300 }}>{item.ticker}</span>
+                    {item.sector && <span style={{ fontSize: 9, background: "#1a1d26", color: "#555", padding: "2px 7px", borderRadius: 2 }}>{item.sector}</span>}
+                    <span style={{ fontSize: 9, color: "#333" }}>aggiunto {item.addedAt}</span>
+                  </div>
+                  {item.note && <div style={{ fontSize: 11, color: "#555", marginTop: 2 }}>{item.note}</div>}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                  <div style={{ textAlign: "right" }}>
+                    {isLoading ? <Spinner /> : price ? (
+                      <>
+                        <div style={{ fontFamily: "'Fraunces', serif", fontSize: 16 }}>${fmt(price)}</div>
+                        <div style={{ fontSize: 10, color: "#444" }}>€{fmt(price * eurRate)}</div>
+                      </>
+                    ) : <div style={{ fontSize: 11, color: "#444" }}>N/D</div>}
+                  </div>
+                  <button onClick={() => saveWatchlist(watchlist.filter(w => w.id !== item.id))}
+                    style={{ background: "none", border: "none", color: "#333", cursor: "pointer", fontSize: 14, transition: "color 0.15s" }}
+                    onMouseEnter={e => e.target.style.color = "#E87040"}
+                    onMouseLeave={e => e.target.style.color = "#333"}>✕</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ─── EDIT MODAL ───────────────────────────────────────────────────────────────
+function EditModal({ stock, onClose, onSave }) {
+  const [qty, setQty] = useState(String(stock.qty));
+  const [buyPrice, setBuyPrice] = useState(String(stock.buyPrice));
+  const [targetPrice, setTargetPrice] = useState(String(stock.targetPrice || ""));
+  const [stopLoss, setStopLoss] = useState(String(stock.stopLoss || ""));
+  const [sector, setSector] = useState(stock.sector || "Altro");
+
+  useEffect(() => {
+    const fn = e => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", fn);
+    return () => window.removeEventListener("keydown", fn);
+  }, []);
+
+  function handleSave() {
+    onSave({ ...stock, qty: parseFloat(qty)||stock.qty, buyPrice: parseFloat(buyPrice)||stock.buyPrice, targetPrice: parseFloat(targetPrice)||null, stopLoss: parseFloat(stopLoss)||null, sector });
+    onClose();
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 9100, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: "#0D0F14", border: "1px solid #1a1d26", borderRadius: 12, width: "100%", maxWidth: 400, padding: "28px 28px 24px", animation: "fadeUp 0.2s ease" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 22 }}>
+          <div>
+            <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300 }}>{stock.ticker}</div>
+            <div style={{ fontSize: 10, color: "#444", marginTop: 2 }}>Modifica posizione</div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "1px solid #2a2d35", color: "#555", fontFamily: "inherit", fontSize: 16, padding: "4px 10px", borderRadius: 4, cursor: "pointer" }}>✕</button>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {[
+            { label: "Quantità", value: qty, set: setQty, placeholder: "10" },
+            { label: "Prezzo di acquisto (USD)", value: buyPrice, set: setBuyPrice, placeholder: "175.00", step: "0.01" },
+            { label: "🎯 Target Price (USD)", value: targetPrice, set: setTargetPrice, placeholder: "Es. 220.00 — lascia vuoto per rimuovere", step: "0.01" },
+            { label: "🛑 Stop Loss (USD)", value: stopLoss, set: setStopLoss, placeholder: "Es. 150.00 — lascia vuoto per rimuovere", step: "0.01" },
+          ].map(f => (
+            <div key={f.label}>
+              <div style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6 }}>{f.label}</div>
+              <input type="number" step={f.step||"1"} placeholder={f.placeholder} value={f.value} onChange={e => f.set(e.target.value)} style={{ fontSize: 13 }}/>
+            </div>
+          ))}
+          <div>
+            <div style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6 }}>Settore</div>
+            <select value={sector} onChange={e => setSector(e.target.value)}>
+              {SECTORS.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 10, marginTop: 22 }}>
+          <button className="add-btn" onClick={handleSave} style={{ flex: 1, justifyContent: "center" }}>✓ Salva modifiche</button>
+          <button className="action-btn" onClick={onClose}>Annulla</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── STOCK DETAIL MODAL ───────────────────────────────────────────────────────
+function StockModal({ stock, onClose, notes, setNotes, alerts, setAlerts, handleRemove, sym, rate, fmt, fmtPct, handleAI, aiLoading, aiText, plan }) {
+  const [chartPeriod, setChartPeriod] = useState(30);
+  const [history, setHistory] = useState(stock.history || []);
+  const [histLoading, setHistLoading] = useState(false);
+  const [news, setNews] = useState([]);
+  const [newsLoading, setNewsLoading] = useState(true);
+  const pnlPct = (stock.currentPrice - stock.buyPrice) / stock.buyPrice * 100;
+  const pnlAbs = (stock.currentPrice - stock.buyPrice) * stock.qty * rate;
+  const isUp = pnlPct >= 0;
+
+  useEffect(() => {
+    setHistLoading(true);
+    fetchRealHistory(stock.ticker, chartPeriod).then(candles => {
+      setHistory(candles || simulateHistory(stock.currentPrice, chartPeriod));
+      setHistLoading(false);
+    });
+  }, [stock.ticker, chartPeriod]);
+
+  useEffect(() => {
+    setNewsLoading(true);
+    fetchNews(stock.ticker).then(items => { setNews(items); setNewsLoading(false); });
+  }, [stock.ticker]);
+
+  useEffect(() => {
+    const handler = e => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 9000, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: "#0D0F14", border: "1px solid #1a1d26", borderRadius: "12px 12px 0 0", width: "100%", maxWidth: 800, maxHeight: "88vh", overflowY: "auto", padding: "24px 28px", animation: "fadeUp 0.25s ease" }}>
+
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontFamily: "'Fraunces', serif", fontSize: 28, fontWeight: 300 }}>{stock.ticker}</span>
+              <span style={{ fontSize: 9, padding: "2px 8px", borderRadius: 2, background: "#1a1d26", color: "#666", letterSpacing: "0.08em", textTransform: "uppercase" }}>{stock.sector}</span>
+              {stock.priceReal && <span style={{ fontSize: 8, background: "#1a2a1a", color: "#5EC98A", padding: "2px 7px", borderRadius: 2 }}>LIVE</span>}
+            </div>
+            <div style={{ fontSize: 10, color: "#2a2d35", marginTop: 3 }}>Acquistato il {stock.buyDate} · {stock.qty} azioni</div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontFamily: "'Fraunces', serif", fontSize: 24, fontWeight: 300 }}>{sym}{fmt(stock.currentPrice * rate)}</div>
+              <div style={{ fontSize: 12, color: isUp ? "#5EC98A" : "#E87040" }}>{isUp?"+":""}{sym}{fmt(Math.abs(pnlAbs))} · {fmtPct(pnlPct)}</div>
+            </div>
+            <button onClick={onClose} style={{ background: "none", border: "1px solid #2a2d35", color: "#555", fontFamily: "inherit", fontSize: 16, padding: "4px 10px", borderRadius: 4, cursor: "pointer" }}>✕</button>
+          </div>
+        </div>
+
+        {/* KPIs */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 16 }}>
+          {[
+            { l: "P.Acquisto",   v: `${sym}${fmt(stock.buyPrice * rate)}` },
+            { l: "Valore Pos.",  v: `${sym}${fmt(stock.qty * stock.currentPrice * rate)}` },
+            { l: "Costo Tot.",   v: `${sym}${fmt(stock.qty * stock.buyPrice * rate)}` },
+            { l: "P&L Totale",   v: `${isUp?"+":""}${sym}${fmt(Math.abs(pnlAbs))}`, c: isUp?"#5EC98A":"#E87040" },
+          ].map(k => (
+            <div key={k.l} style={{ background: "#0f1117", border: "1px solid #1a1d26", borderRadius: 6, padding: "12px 14px" }}>
+              <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6 }}>{k.l}</div>
+              <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 300, color: k.c || "#E8E6DF" }}>{k.v}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Chart */}
+        <div style={{ background: "#0f1117", border: "1px solid #1a1d26", borderRadius: 6, padding: "14px 16px", marginBottom: 14 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em" }}>Andamento</div>
+            <div style={{ display: "flex", gap: 4 }}>
+              {[{l:"1M",v:30},{l:"3M",v:90},{l:"6M",v:180},{l:"1A",v:365}].map(p => (
+                <button key={p.v} onClick={() => setChartPeriod(p.v)}
+                  style={{ background: chartPeriod===p.v?"#F4C542":"none", border:`1px solid ${chartPeriod===p.v?"#F4C542":"#2a2d35"}`, color: chartPeriod===p.v?"#0D0F14":"#555", fontFamily:"inherit", fontSize:9, padding:"3px 8px", borderRadius:3, cursor:"pointer" }}>
+                  {p.l}
+                </button>
+              ))}
+            </div>
+          </div>
+          {histLoading ? (
+            <div style={{ height: 140, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, color: "#555", fontSize: 11 }}><Spinner /> Caricamento…</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={140}>
+              <AreaChart data={history}>
+                <defs><linearGradient id="mg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#F4C542" stopOpacity={0.18}/><stop offset="95%" stopColor="#F4C542" stopOpacity={0}/></linearGradient></defs>
+                <XAxis dataKey="date" tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false} interval={Math.floor(history.length/5)}/>
+                <YAxis tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false} domain={["auto","auto"]} width={50} tickFormatter={v => `${sym}${v}`}/>
+                <Tooltip contentStyle={{ background: "#0f1117", border: "1px solid #2a2d35", borderRadius: 4, fontSize: 11, color: "#E8E6DF" }} formatter={v => [`${sym}${v}`, "Prezzo"]}/>
+                <ReferenceLine y={stock.buyPrice} stroke="#E87040" strokeDasharray="4 3" strokeWidth={1}/>
+                <Area type="monotone" dataKey="price" stroke="#F4C542" strokeWidth={1.5} fill="url(#mg)" dot={false}/>
+              </AreaChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+
+        {/* AI */}
+        <div style={{ background: "#0f1117", border: "1px solid #1a1d26", borderRadius: 6, padding: "14px 16px", marginBottom: 14 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em" }}>🤖 Analisi AI</div>
+            <button onClick={() => handleAI(stock)} disabled={aiLoading[stock.id]}
+              style={{ background: "none", border: "1px solid #2a2d35", color: "#888", fontFamily: "inherit", fontSize: 10, padding: "5px 12px", borderRadius: 3, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+              {aiLoading[stock.id] ? <><Spinner size={9}/> Analisi…</> : "Analizza ora"}
+            </button>
+          </div>
+          {aiText[stock.id]
+            ? <div style={{ fontSize: 12, color: "#aaa", lineHeight: 1.8 }}>{aiText[stock.id]}</div>
+            : <div style={{ fontSize: 11, color: "#2a2d35" }}>Clicca "Analizza ora" per un'analisi AI contestuale.</div>}
+        </div>
+
+        {/* Target & Stop */}
+        <div style={{ background: "#0f1117", border: "1px solid #1a1d26", borderRadius: 6, padding: "14px 16px", marginBottom: 14 }}>
+          <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 12 }}>🎯 Target Price & Stop Loss</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 9, color: "#5EC98A", marginBottom: 5 }}>Target Price (USD)</div>
+              <input type="number" step="0.01" value={stock.targetPrice || ""} onChange={e => {
+                const v = parseFloat(e.target.value) || null;
+                stock.targetPrice = v;
+              }} placeholder="Es. 200.00" style={{ fontSize: 12, padding: "7px 10px" }}
+              onBlur={e => {
+                const v = parseFloat(e.target.value) || null;
+                // bubble up via a custom event pattern — we just store locally for now
+              }}/>
+              {stock.targetPrice && stock.currentPrice >= stock.targetPrice && (
+                <div style={{ fontSize: 9, color: "#5EC98A", marginTop: 4 }}>✓ Target raggiunto!</div>
+              )}
+            </div>
+            <div>
+              <div style={{ fontSize: 9, color: "#E87040", marginBottom: 5 }}>Stop Loss (USD)</div>
+              <input type="number" step="0.01" value={stock.stopLoss || ""} onChange={e => {
+                const v = parseFloat(e.target.value) || null;
+                stock.stopLoss = v;
+              }} placeholder="Es. 150.00" style={{ fontSize: 12, padding: "7px 10px" }}/>
+              {stock.stopLoss && stock.currentPrice <= stock.stopLoss && (
+                <div style={{ fontSize: 9, color: "#E87040", marginTop: 4 }}>⚠️ Stop Loss raggiunto!</div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Notes */}
+        <div style={{ background: "#0f1117", border: "1px solid #1a1d26", borderRadius: 6, padding: "14px 16px", marginBottom: 14 }}>
+          <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8 }}>📝 Note</div>
+          <textarea rows={3} value={notes[stock.id] || ""} onChange={e => setNotes(n => ({ ...n, [stock.id]: e.target.value }))}
+            placeholder={`Motivo acquisto, target price, strategia…`} style={{ resize: "vertical", lineHeight: 1.7, fontSize: 12, width: "100%", background: "#13151c", border: "1px solid #2a2d35", color: "#E8E6DF", fontFamily: "inherit", padding: "9px 12px", borderRadius: 4, outline: "none" }}/>
+        </div>
+
+        {/* News */}
+        <div style={{ background: "#0f1117", border: "1px solid #1a1d26", borderRadius: 6, padding: "14px 16px", marginBottom: 14 }}>
+          <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 10 }}>📰 Ultime notizie</div>
+          {newsLoading ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#444", fontSize: 11 }}><Spinner size={9}/> Caricamento notizie…</div>
+          ) : news.length === 0 ? (
+            <div style={{ fontSize: 11, color: "#2a2d35" }}>Nessuna notizia recente trovata per {stock.ticker}.</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {news.map((n, i) => (
+                <a key={n.id || i} href={n.url} target="_blank" rel="noopener noreferrer"
+                  style={{ textDecoration: "none", display: "block", padding: "10px 12px", background: "#13151c", borderRadius: 6, border: "1px solid #1a1d26", transition: "border-color 0.15s" }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor = "#F4C542"}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = "#1a1d26"}>
+                  <div style={{ fontSize: 12, color: "#E8E6DF", lineHeight: 1.5, marginBottom: 4 }}>{n.headline}</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: 9, color: "#444" }}>{n.source}</span>
+                    <span style={{ fontSize: 9, color: "#333" }}>{n.datetime ? new Date(n.datetime * 1000).toLocaleDateString("it-IT") : ""}</span>
+                  </div>
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Delete */}
+        <button onClick={() => { handleRemove(stock.id); onClose(); }}
+          style={{ background: "none", border: "1px solid #2a2d35", color: "#E87040", fontFamily: "inherit", fontSize: 11, padding: "8px 16px", borderRadius: 4, cursor: "pointer", width: "100%" }}>
+          🗑 Rimuovi {stock.ticker} dal portafoglio
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
+function SimulazioniTab({ stocks, sym, rate, fmt, fmtPct }) {
+  const [selectedScenario, setSelectedScenario] = useState(SCENARIOS[0]);
+  const [scenarioData, setScenarioData] = useState({});
+  const [loading, setLoading] = useState(false);
+
+  const totalValue   = stocks.reduce((s, x) => s + x.qty * x.currentPrice, 0);
+  const totalInvested = stocks.reduce((s, x) => s + x.qty * x.buyPrice, 0);
+
+  useEffect(() => {
+    const key = selectedScenario.id;
+    if (scenarioData[key]) return;
+    setLoading(true);
+
+    if (!selectedScenario.real) {
+      // Simulate for old scenarios
+      const days = Math.round((new Date(selectedScenario.to) - new Date(selectedScenario.from)) / 86400000 / 7);
+      const chartData = simulateScenario(selectedScenario, days);
+      // Per-stock simulation based on sector beta
+      const stockResults = stocks.map(s => {
+        const beta = s.sector === "Tech" ? 1.4 : s.sector === "Energy" ? 0.9 : 1.0;
+        const pct = selectedScenario.spx / 100 * beta * (0.85 + Math.random() * 0.3);
+        const pnl = s.qty * s.currentPrice * rate * pct;
+        return { ...s, scenarioPct: pct * 100, scenarioPnl: pnl };
+      });
+      setScenarioData(d => ({ ...d, [key]: { chartData, stockResults } }));
+      setLoading(false);
+    } else {
+      // Fetch real data for each stock
+      Promise.all(stocks.map(s => fetchScenarioData(s.ticker, selectedScenario))).then(results => {
+        // Build combined portfolio chart
+        const maxLen = Math.max(...results.map(r => r?.length || 0));
+        const chartData = Array.from({ length: maxLen }, (_, i) => {
+          const point = { date: results.find(r => r)?.[i]?.date || "" };
+          let totalPct = 0, totalWeight = 0;
+          results.forEach((r, j) => {
+            if (r && r[i]) {
+              const weight = stocks[j].qty * stocks[j].currentPrice / totalValue;
+              totalPct += r[i].pct * weight;
+              totalWeight += weight;
+            }
+          });
+          point.pct = totalWeight > 0 ? parseFloat((totalPct / totalWeight).toFixed(2)) : 0;
+          return point;
+        });
+
+        const stockResults = stocks.map((s, i) => {
+          const r = results[i];
+          if (!r || r.length === 0) {
+            // Fallback to simulation if no data
+            const beta = 1.0;
+            const pct = selectedScenario.spx / 100 * beta;
+            return { ...s, scenarioPct: pct * 100, scenarioPnl: s.qty * s.currentPrice * rate * pct, noData: true };
+          }
+          const pct = r[r.length - 1].pct;
+          const pnl = s.qty * s.currentPrice * rate * pct / 100;
+          return { ...s, scenarioPct: pct, scenarioPnl: pnl, noData: false };
+        });
+
+        setScenarioData(d => ({ ...d, [key]: { chartData, stockResults } }));
+        setLoading(false);
+      });
+    }
+  }, [selectedScenario.id, stocks.length]);
+
+  const data = scenarioData[selectedScenario.id];
+  const totalScenarioPnl = data ? data.stockResults.reduce((s, x) => s + x.scenarioPnl, 0) : 0;
+  const totalScenarioPct = totalValue > 0 ? totalScenarioPnl / (totalValue * rate) * 100 : 0;
+
+  return (
+    <div className="fade-up">
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300 }}>Stress Test Storico</div>
+        <div style={{ fontSize: 11, color: "#444", marginTop: 2 }}>Come sarebbe andato il tuo portafoglio durante le grandi crisi?</div>
+      </div>
+
+      {/* Scenario selector */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 24 }}>
+        {SCENARIOS.map(s => (
+          <button key={s.id} onClick={() => setSelectedScenario(s)}
+            style={{ background: selectedScenario.id === s.id ? s.color + "22" : "none", border: `1px solid ${selectedScenario.id === s.id ? s.color : "#2a2d35"}`, color: selectedScenario.id === s.id ? s.color : "#555", fontFamily: "inherit", fontSize: 11, padding: "7px 14px", borderRadius: 4, cursor: "pointer", transition: "all 0.15s" }}>
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Scenario description */}
+      <div style={{ background: "#0f1117", border: `1px solid ${selectedScenario.color}33`, borderRadius: 6, padding: "12px 16px", marginBottom: 20, display: "flex", alignItems: "center", gap: 16 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, color: "#E8E6DF", fontWeight: 500 }}>{selectedScenario.label}</div>
+          <div style={{ fontSize: 11, color: "#555", marginTop: 3 }}>{selectedScenario.desc} · {selectedScenario.from} → {selectedScenario.to}</div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: 10, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em" }}>S&P 500</div>
+          <div style={{ fontFamily: "'Fraunces', serif", fontSize: 20, color: selectedScenario.spx >= 0 ? "#5EC98A" : "#E87040" }}>
+            {selectedScenario.spx >= 0 ? "+" : ""}{selectedScenario.spx}%
+          </div>
+        </div>
+        {!selectedScenario.real && <div style={{ fontSize: 9, background: "#1a1d26", color: "#555", padding: "3px 8px", borderRadius: 3 }}>Simulato</div>}
+      </div>
+
+      {loading ? (
+        <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", gap: 10, color: "#555", fontSize: 12 }}>
+          <Spinner /> Caricamento dati storici…
+        </div>
+      ) : data ? (
+        <>
+          {/* KPIs */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 20 }}>
+            {[
+              { l: "Impatto Portafoglio", v: `${totalScenarioPnl >= 0 ? "+" : ""}${sym}${fmt(Math.abs(totalScenarioPnl))}`, c: totalScenarioPnl >= 0 ? "#5EC98A" : "#E87040" },
+              { l: "Performance %",       v: `${totalScenarioPct >= 0 ? "+" : ""}${totalScenarioPct.toFixed(2)}%`, c: totalScenarioPct >= 0 ? "#5EC98A" : "#E87040" },
+              { l: "Valore Finale",       v: `${sym}${fmt((totalValue + totalScenarioPnl / rate) * rate)}`, c: "#E8E6DF" },
+            ].map(k => (
+              <div key={k.l} className="card">
+                <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 7 }}>{k.l}</div>
+                <div style={{ fontFamily: "'Fraunces', serif", fontSize: 20, fontWeight: 300, color: k.c }}>{k.v}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Chart */}
+          <div className="card" style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 12 }}>
+              Andamento portafoglio — {selectedScenario.label}
+            </div>
+            <ResponsiveContainer width="100%" height={180}>
+              <AreaChart data={data.chartData}>
+                <defs>
+                  <linearGradient id="scg" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={selectedScenario.color} stopOpacity={0.2}/>
+                    <stop offset="95%" stopColor={selectedScenario.color} stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="date" tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false} interval={Math.floor((data.chartData.length || 1) / 5)}/>
+                <YAxis tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false} domain={["auto","auto"]} width={45} tickFormatter={v => `${v > 0 ? "+" : ""}${v}%`}/>
+                <Tooltip contentStyle={{ background: "#0f1117", border: "1px solid #2a2d35", borderRadius: 4, fontSize: 11, color: "#E8E6DF" }} formatter={v => [`${v > 0 ? "+" : ""}${v}%`, "Portafoglio"]}/>
+                <ReferenceLine y={0} stroke="#2a2d35" strokeDasharray="4 3" strokeWidth={1}/>
+                <Area type="monotone" dataKey="pct" stroke={selectedScenario.color} strokeWidth={1.5} fill="url(#scg)" dot={false}/>
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Per-stock table */}
+          <div className="card">
+            <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 14 }}>Dettaglio per titolo</div>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid #1a1d26" }}>
+                  {["Ticker", "Settore", "Valore Attuale", "Performance Scenario", "P&L Scenario"].map(h => (
+                    <th key={h} style={{ textAlign: "left", padding: "6px 10px", fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.08em" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data.stockResults.map(s => (
+                  <tr key={s.id} style={{ borderBottom: "1px solid #0f1117" }}>
+                    <td style={{ padding: "10px 10px", color: "#E8E6DF", fontWeight: 500 }}>
+                      {s.ticker}
+                      {s.noData && <span style={{ fontSize: 8, color: "#444", marginLeft: 6 }}>(sim.)</span>}
+                    </td>
+                    <td style={{ padding: "10px 10px", color: "#555" }}>{s.sector}</td>
+                    <td style={{ padding: "10px 10px" }}>{sym}{fmt(s.qty * s.currentPrice * rate)}</td>
+                    <td style={{ padding: "10px 10px", color: s.scenarioPct >= 0 ? "#5EC98A" : "#E87040", fontWeight: 500 }}>
+                      {s.scenarioPct >= 0 ? "+" : ""}{s.scenarioPct.toFixed(2)}%
+                    </td>
+                    <td style={{ padding: "10px 10px", color: s.scenarioPnl >= 0 ? "#5EC98A" : "#E87040" }}>
+                      {s.scenarioPnl >= 0 ? "+" : ""}{sym}{fmt(Math.abs(s.scenarioPnl))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{ marginTop: 14, padding: "10px 10px", background: "#0a0c10", borderRadius: 4, fontSize: 10, color: "#333" }}>
+              ⚠️ Simulazione basata su dati storici reali{!selectedScenario.real ? " interpolati" : ""}. Le performance passate non garantiscono risultati futuri. Non costituisce consulenza finanziaria ai sensi MiFID II.
+            </div>
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+// ─── MAIN APP ─────────────────────────────────────────────────────────────────
+// ─── WHAT IF TAB ──────────────────────────────────────────────────────────────
+function WhatIfTab({ fmt, fmtPct, eurRate }) {
+  const [ticker, setTicker] = useState("");
+  const [amount, setAmount] = useState("");
+  const [date, setDate] = useState(() => {
+    const d = new Date(); d.setFullYear(d.getFullYear() - 1);
+    return d.toISOString().split("T")[0];
+  });
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function simulate() {
+    const t = ticker.trim().toUpperCase();
+    const amt = parseFloat(amount);
+    if (!t || !amt || !date) return setErr("Compila tutti i campi.");
+    setErr(""); setLoading(true); setResult(null);
+    try {
+      // Current price
+      const curRes = await fetch(`${API_BASE}/api/price?symbol=${t}`);
+      const curData = await curRes.json();
+      const currentPrice = curData.price;
+      if (!currentPrice) { setErr("Ticker non trovato o prezzo non disponibile."); setLoading(false); return; }
+
+      const buyDate = new Date(date);
+      const today = new Date();
+      const daysDiff = Math.round((today - buyDate) / (1000 * 60 * 60 * 24));
+      const daysToFetch = Math.min(Math.max(daysDiff + 30, 60), 365);
+
+      // Try real historical data
+      let buyPrice = null;
+      let chartData = [];
+
+      const histRes = await fetch(`${API_BASE}/api/history?symbol=${t}&days=${daysToFetch}`);
+      const histData = await histRes.json();
+      const candles = histData.candles || [];
+
+      if (candles.length) {
+        // API returns {date, price} — find closest to buyDate by index
+        // Candles are sorted oldest to newest
+        const totalCandles = candles.length;
+        const buyIdx = Math.max(0, Math.round((1 - Math.min(daysDiff, daysToFetch) / daysToFetch) * totalCandles));
+        buyPrice = candles[buyIdx]?.price || candles[0]?.price;
+
+        // Chart: all candles from buyIdx onward
+        chartData = candles.slice(buyIdx).map(c => ({
+          date: c.date,
+          valore: parseFloat(((amt / buyPrice) * c.price).toFixed(2)),
+        }));
+        if (chartData.length) chartData[chartData.length - 1].valore = parseFloat(((amt / buyPrice) * currentPrice).toFixed(2));
+      }
+
+      // Fallback: if no candles, estimate buy price from % change
+      if (!buyPrice) {
+        // Assume market grew ~10%/year annualized as rough baseline
+        const yearsAgo = daysDiff / 365;
+        buyPrice = currentPrice / Math.pow(1.10, yearsAgo);
+        // Build simulated chart
+        chartData = Array.from({ length: 60 }, (_, i) => {
+          const progress = i / 59;
+          const val = (amt / buyPrice) * (buyPrice + (currentPrice - buyPrice) * progress);
+          const d = new Date(buyDate);
+          d.setDate(d.getDate() + Math.floor(progress * daysDiff));
+          return { date: d.toLocaleDateString("it-IT", { day: "2-digit", month: "short" }), valore: parseFloat(val.toFixed(2)) };
+        });
+      }
+
+      const shares = amt / buyPrice;
+      const currentValue = shares * currentPrice;
+      const pnl = currentValue - amt;
+      const pct = (pnl / amt) * 100;
+
+      setResult({ ticker: t, amount: amt, shares: parseFloat(shares.toFixed(4)), buyPrice, currentPrice, currentValue, pnl, pct, chartData, date, real: candles.length > 0 });
+    } catch (e) {
+      setErr("Errore nel calcolo. Riprova.");
+    }
+    setLoading(false);
+  }
+
+  // Preset examples
+  const presets = [
+    { label: "AAPL 1 anno fa", ticker: "AAPL", date: (() => { const d = new Date(); d.setFullYear(d.getFullYear()-1); return d.toISOString().split("T")[0]; })() },
+    { label: "NVDA 2 anni fa", ticker: "NVDA", date: (() => { const d = new Date(); d.setFullYear(d.getFullYear()-2); return d.toISOString().split("T")[0]; })() },
+    { label: "MSFT 5 anni fa", ticker: "MSFT", date: (() => { const d = new Date(); d.setFullYear(d.getFullYear()-5); return d.toISOString().split("T")[0]; })() },
+  ];
+
+  return (
+    <div className="fade-up">
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300 }}>E se avessi comprato…?</div>
+        <div style={{ fontSize: 11, color: "#444", marginTop: 2 }}>Scopri quanto varrebbe oggi un investimento passato</div>
+      </div>
+
+      {/* Form */}
+      <div className="card" style={{ marginBottom: 20 }}>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <div style={{ flex: "0 0 100px" }}>
+            <div style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 5 }}>Ticker</div>
+            <input value={ticker} onChange={e => setTicker(e.target.value.toUpperCase())} placeholder="AAPL" style={{ textTransform: "uppercase" }}/>
+          </div>
+          <div style={{ flex: "0 0 140px" }}>
+            <div style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 5 }}>Data acquisto</div>
+            <input type="date" value={date} onChange={e => setDate(e.target.value)} max={new Date().toISOString().split("T")[0]}/>
+          </div>
+          <div style={{ flex: "0 0 130px" }}>
+            <div style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 5 }}>Importo investito ($)</div>
+            <input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="1000"/>
+          </div>
+          <button className="add-btn" onClick={simulate} disabled={loading}>
+            {loading ? <><Spinner color="#0D0F14" size={10}/> Calcolo…</> : "Simula →"}
+          </button>
+        </div>
+        {err && <div style={{ fontSize: 11, color: "#E87040", marginTop: 10 }}>{err}</div>}
+
+        {/* Presets */}
+        <div style={{ marginTop: 14, display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 9, color: "#333", alignSelf: "center" }}>Prova con:</span>
+          {presets.map(p => (
+            <button key={p.label} onClick={() => { setTicker(p.ticker); setDate(p.date); setAmount("1000"); }}
+              style={{ background: "none", border: "1px solid #2a2d35", color: "#555", fontFamily: "inherit", fontSize: 10, padding: "4px 10px", borderRadius: 3, cursor: "pointer", transition: "all 0.15s" }}
+              onMouseEnter={e => { e.target.style.borderColor="#F4C542"; e.target.style.color="#F4C542"; }}
+              onMouseLeave={e => { e.target.style.borderColor="#2a2d35"; e.target.style.color="#555"; }}>
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Result */}
+      {result && (
+        <div className="fade-up">
+          {/* Big result */}
+          <div className="card" style={{ marginBottom: 16, textAlign: "center", padding: "28px 20px", border: `1px solid ${result.pct >= 0 ? "#5EC98A33" : "#E8704033"}` }}>
+            <div style={{ fontSize: 10, color: "#444", textTransform: "uppercase", letterSpacing: "0.15em", marginBottom: 8 }}>
+              ${fmt(result.amount)} in {result.ticker} il {new Date(result.date).toLocaleDateString("it-IT")}
+              {result.real
+                ? <span style={{ marginLeft: 8, fontSize: 8, background: "#5EC98A22", color: "#5EC98A", padding: "2px 6px", borderRadius: 3 }}>● DATI REALI</span>
+                : <span style={{ marginLeft: 8, fontSize: 8, background: "#F4C54222", color: "#F4C542", padding: "2px 6px", borderRadius: 3 }}>~ STIMATO</span>
+              }
+            </div>
+            <div style={{ fontFamily: "'Fraunces', serif", fontSize: 44, fontWeight: 300, color: result.pct >= 0 ? "#5EC98A" : "#E87040", lineHeight: 1 }}>
+              ${fmt(result.currentValue)}
+            </div>
+            <div style={{ fontSize: 13, color: "#555", marginTop: 4 }}>€{fmt(result.currentValue * eurRate)}</div>
+            <div style={{ fontSize: 20, color: result.pct >= 0 ? "#5EC98A" : "#E87040", marginTop: 12, fontWeight: 500 }}>
+              {result.pct >= 0 ? "+" : ""}${fmt(Math.abs(result.pnl))} · {fmtPct(result.pct)}
+            </div>
+            <div style={{ fontSize: 11, color: "#444", marginTop: 8 }}>
+              {result.shares} azioni · acquisto ${fmt(result.buyPrice)} → oggi ${fmt(result.currentPrice)}
+            </div>
+          </div>
+
+          {/* KPIs */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 16 }}>
+            {[
+              { l: "Investito", v: `$${fmt(result.amount)}` },
+              { l: "Valore oggi", v: `$${fmt(result.currentValue)}`, c: result.pct >= 0 ? "#5EC98A" : "#E87040" },
+              { l: "Rendimento", v: fmtPct(result.pct), c: result.pct >= 0 ? "#5EC98A" : "#E87040" },
+            ].map(k => (
+              <div key={k.l} className="card" style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6 }}>{k.l}</div>
+                <div style={{ fontFamily: "'Fraunces', serif", fontSize: 16, fontWeight: 300, color: k.c || "#E8E6DF" }}>{k.v}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Chart */}
+          <div className="card">
+            <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 12 }}>Andamento investimento</div>
+            <ResponsiveContainer width="100%" height={180}>
+              <AreaChart data={result.chartData}>
+                <defs>
+                  <linearGradient id="wg" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={result.pct >= 0 ? "#5EC98A" : "#E87040"} stopOpacity={0.2}/>
+                    <stop offset="95%" stopColor={result.pct >= 0 ? "#5EC98A" : "#E87040"} stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="date" tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false} interval={Math.floor(result.chartData.length / 5)}/>
+                <YAxis tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false} domain={["auto","auto"]} width={55} tickFormatter={v => `$${(v/1000).toFixed(1)}k`}/>
+                <Tooltip contentStyle={{ background: "#0f1117", border: "1px solid #2a2d35", borderRadius: 4, fontSize: 11, color: "#E8E6DF" }} formatter={v => [`$${fmt(v)}`, "Valore"]}/>
+                <ReferenceLine y={result.amount} stroke="#F4C542" strokeDasharray="4 3" strokeWidth={1} label={{ value: "Investito", fill: "#F4C542", fontSize: 8, position: "insideTopRight" }}/>
+                <Area type="monotone" dataKey="valore" stroke={result.pct >= 0 ? "#5EC98A" : "#E87040"} strokeWidth={1.5} fill="url(#wg)" dot={false}/>
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [userLoading, setUserLoading] = useState(true);
+
+  // Check Supabase session on mount
+  useEffect(() => {
+    getSession().then(u => {
+      if (u) setUser({ id: u.id, email: u.email, name: u.user_metadata?.name || u.email.split("@")[0] });
+      setUserLoading(false);
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        setUser({ id: session.user.id, email: session.user.email, name: session.user.user_metadata?.name || session.user.email.split("@")[0] });
+      } else {
+        setUser(null);
+      }
+    });
+    return () => listener.subscription.unsubscribe();
+  }, []);
+  const [plan, setPlanRaw] = useState(() => ls("pt_plan", "free"));
+  const [showUpgrade, setShowUpgrade] = useState(false);
+  const currency = "USD";
+  const sym = "$";
+  const rate = 1;
+  const [eurRate, setEurRate] = useState(0.92); // live EUR/USD rate
+
+  // Fetch live EUR rate on mount
+  useEffect(() => {
+    fetch("https://api.exchangerate-api.com/v4/latest/USD")
+      .then(r => r.json())
+      .then(d => { if (d.rates?.EUR) setEurRate(parseFloat(d.rates.EUR.toFixed(4))); })
+      .catch(() => {}); // fallback to 0.92
+  }, []);
+
+  const setPlan = (p) => { setPlanRaw(p); lsSet("pt_plan", p); };
+
+  const [stocks, setStocksRaw] = useState([]);
+  const [notes, setNotesRaw] = useState({});
+  const [alerts, setAlertsRaw] = useState({});
+  const [dataLoading, setDataLoading] = useState(false);
+
+  // Load data from Supabase when user logs in
+  useEffect(() => {
+    if (!user) { setStocksRaw([]); setNotesRaw({}); setAlertsRaw({}); return; }
+    setDataLoading(true);
+    Promise.all([loadStocks(user.id), loadNotes(user.id), loadAlerts(user.id)]).then(([dbStocks, dbNotes, dbAlerts]) => {
+      const mapped = dbStocks.map(s => ({
+        id: s.id, dbId: s.id,
+        ticker: s.ticker, qty: s.qty, buyPrice: s.buy_price,
+        currentPrice: s.current_price || s.buy_price,
+        sector: s.sector, buyDate: s.buy_date, priceReal: s.price_real,
+        history: simulateHistory(s.current_price || s.buy_price)
+      }));
+      setStocksRaw(mapped.length > 0 ? mapped : []);
+      setNotesRaw(dbNotes);
+      setAlertsRaw(dbAlerts);
+      setDataLoading(false);
+    }).catch(() => {
+      setStocksRaw([]);
+      setDataLoading(false);
+    });
+  }, [user?.id]);
+
+  const setStocks = fn => setStocksRaw(prev => typeof fn === "function" ? fn(prev) : fn);
+  const setNotes  = fn => setNotesRaw(prev => typeof fn === "function" ? fn(prev) : fn);
+  const setAlerts = fn => setAlertsRaw(prev => typeof fn === "function" ? fn(prev) : fn);
+
+  const [activeTab, setActiveTab] = useState("overview");
+  const [selectedId, setSelectedId] = useState(null);
+  const [editId, setEditId] = useState(null);
+  const [showForm, setShowForm] = useState(false);
+  const [chartPeriod, setChartPeriod] = useState(30); // 30, 90, 180, 365
+  const [periodHistory, setPeriodHistory] = useState({});
+  const [periodLoading, setPeriodLoading] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [importPreview, setImportPreview] = useState([]);
+  const [importErr, setImportErr] = useState("");
+  const csvInputRef = useRef(null);
+  const [form, setForm] = useState({ ticker: "", qty: "", buyPrice: "", sector: "Altro" });
+  const [adding, setAdding] = useState(false);
+  const [formErr, setFormErr] = useState("");
+  const [compareA, setCompareA] = useState(null);
+  const [compareB, setCompareB] = useState(null);
+  const [aiText, setAiText] = useState({});
+  const [aiLoading, setAiLoading] = useState({});
+  const [firedAlerts, setFiredAlerts] = useState([]);
+  const nextId = useRef(200);
+
+  const displayStock = stocks.find(s => s.id === selectedId) || stocks[0];
+  const totalInvested = stocks.reduce((s, x) => s + x.qty * x.buyPrice, 0) * rate;
+  const totalValue    = stocks.reduce((s, x) => s + x.qty * x.currentPrice, 0) * rate;
+  const totalPnL      = totalValue - totalInvested;
+  const totalPct      = totalInvested > 0 ? (totalPnL / totalInvested) * 100 : 0;
+
+  const sectorData = Object.entries(
+    stocks.reduce((acc, s) => { acc[s.sector] = (acc[s.sector] || 0) + s.qty * s.currentPrice * rate; return acc; }, {})
+  ).map(([name, value]) => ({ name, value: parseFloat(value.toFixed(2)) }));
+
+  const portfolioHistory = stocks[0]?.history.map((_, i) => ({
+    date: stocks[0].history[i].date,
+    valore: parseFloat(stocks.reduce((s, st) => s + st.qty * (st.history[i]?.price || st.currentPrice), 0).toFixed(2))
+  })) || [];
+
+  // YTD benchmark — costruito sui prezzi reali, non sulla history simulata
+  const ytdHistory = (() => {
+    if (!stocks.length) return [];
+    const days = 30;
+    // S&P500 YTD 2024 reale: ~+24%. Usiamo un valore fisso realistico
+    const spxYTD = 8.2; // YTD simulato S&P500 periodo corrente
+    const result = [];
+    for (let i = 0; i <= days; i++) {
+      const progress = i / days;
+      // Portfolio: interpolazione lineare da 0% a totalPct
+      const portPct = parseFloat((totalPct * progress).toFixed(2));
+      // S&P500: interpolazione lineare con piccolo rumore
+      const noise = (Math.random() - 0.5) * 0.3;
+      const spx = parseFloat((spxYTD * progress + noise).toFixed(2));
+      const d = new Date(); d.setDate(d.getDate() - (days - i));
+      result.push({
+        date: d.toLocaleDateString("it-IT", { day: "2-digit", month: "short" }),
+        portafoglio: portPct,
+        spx,
+      });
+    }
+    return result;
+  })();
+
+  // Alert check
+  useEffect(() => {
+    const fired = [];
+    stocks.forEach(s => {
+      const a = alerts[s.id];
+      if (!a) return;
+      if (a.above && s.currentPrice >= a.above) fired.push({ id: s.id, msg: `▲ ${s.ticker} ha superato ${sym}${fmt(a.above)}` });
+      if (a.below && s.currentPrice <= a.below) fired.push({ id: s.id, msg: `▼ ${s.ticker} è sceso sotto ${sym}${fmt(a.below)}` });
+    });
+    setFiredAlerts(fired);
+  }, [stocks, alerts]);
+
+  // Fetch real prices + history on mount via Finnhub proxy
+  useEffect(() => {
+    (async () => {
+      const updated = await Promise.all(stocks.map(async s => {
+        const real = await fetchRealPrice(s.ticker);
+        const history = await fetchRealHistory(s.ticker) || simulateHistory(real || s.buyPrice);
+        if (real && history.length > 0) history[history.length - 1].price = real;
+        return { ...s, currentPrice: real || s.currentPrice, history, priceReal: !!real };
+      }));
+      setStocksRaw(updated);
+    })();
+  }, []);
+
+  async function handleAdd() {
+    const t = form.ticker.trim().toUpperCase();
+    const q = parseFloat(form.qty);
+    const p = parseFloat(form.buyPrice);
+    if (!t) return setFormErr("Inserisci un ticker.");
+    if (!q || q <= 0) return setFormErr("Quantità non valida.");
+    if (!p || p <= 0) return setFormErr("Prezzo non valido.");
+    if (plan === "free" && stocks.length >= PLANS.free.maxStocks) { setShowUpgrade(true); return; }
+    setFormErr(""); setAdding(true);
+    const realPrice = plan === "pro" ? await fetchRealPrice(t) : null;
+    const curPrice = realPrice || p * (1 + (Math.random() - 0.45) * 0.3);
+    const history = simulateHistory(curPrice);
+    if (realPrice) history[history.length - 1].price = realPrice;
+    const ns = { ticker: t, qty: q, buyPrice: p, currentPrice: parseFloat(curPrice.toFixed(2)), history, sector: form.sector || "Altro", priceReal: !!realPrice, buyDate: new Date().toLocaleDateString("it-IT") };
+    // Save to Supabase if logged in
+    let dbId = null;
+    if (user) {
+      try { const saved = await saveStock(user.id, ns); dbId = saved.id; } catch {}
+    }
+    const withId = { ...ns, id: dbId || nextId.current++, dbId };
+    setStocks(prev => [...prev, withId]);
+    setSelectedId(withId.id);
+    setForm({ ticker: "", qty: "", buyPrice: "", sector: "Altro" });
+    setAdding(false); setShowForm(false);
+  }
+
+  function handleRemove(id) {
+    const stock = stocks.find(s => s.id === id);
+    if (stock?.dbId && user) deleteStock(stock.dbId).catch(() => {});
+    setStocks(prev => prev.filter(s => s.id !== id));
+    if (selectedId === id) setSelectedId(stocks.find(s => s.id !== id)?.id || null);
+  }
+
+  function handleEdit(updated) {
+    setStocks(prev => prev.map(s => s.id === updated.id ? { ...s, ...updated } : s));
+    if (updated.dbId && user) {
+      saveStock(user.id, {
+        ticker: updated.ticker,
+        qty: updated.qty,
+        buyPrice: updated.buyPrice,
+        currentPrice: updated.currentPrice,
+        sector: updated.sector,
+        buyDate: updated.buyDate,
+        priceReal: updated.priceReal,
+        targetPrice: updated.targetPrice || null,
+        stopLoss: updated.stopLoss || null,
+        dbId: updated.dbId,
+      }).catch(e => console.error("Errore salvataggio:", e));
+    }
+  }
+
+  function exportCSV() {
+    const rows = [["Ticker","Settore","Quantità","P.Acquisto","P.Attuale","Valore","P&L","P&L%","Data","Note"],
+      ...stocks.map(s => {
+        const pnl = (s.currentPrice - s.buyPrice) * s.qty * rate;
+        const pct = (s.currentPrice - s.buyPrice) / s.buyPrice * 100;
+        return [s.ticker, s.sector, s.qty, `${sym}${fmt(s.buyPrice*rate)}`, `${sym}${fmt(s.currentPrice*rate)}`, `${sym}${fmt(s.qty*s.currentPrice*rate)}`, `${sym}${fmt(Math.abs(pnl))}`, fmtPct(pct), s.buyDate, notes[s.id] || ""];
+      })
+    ];
+    const csv = rows.map(r => r.map(c => `"${c}"`).join(",")).join("\n");
+    const a = document.createElement("a"); a.href = "data:text/csv;charset=utf-8," + encodeURIComponent(csv); a.download = "portafoglio.csv"; a.click();
+  }
+
+  // Fetch history when period changes for selected stock
+  useEffect(() => {
+    if (!displayStock) return;
+    const key = `${displayStock.ticker}_${chartPeriod}`;
+    if (periodHistory[key]) return;
+    setPeriodLoading(true);
+    fetchRealHistory(displayStock.ticker, chartPeriod).then(candles => {
+      setPeriodHistory(h => ({ ...h, [key]: candles || simulateHistory(displayStock.currentPrice, chartPeriod) }));
+      setPeriodLoading(false);
+    });
+  }, [displayStock?.ticker, chartPeriod]);
+
+  const currentHistory = (() => {
+    if (!displayStock) return [];
+    const key = `${displayStock.ticker}_${chartPeriod}`;
+    return periodHistory[key] || displayStock.history;
+  })();
+
+  // CSV Import — supports Degiro, Fineco, generic format
+  function parseCSV(text) {
+    const lines = text.trim().split("\n").filter(l => l.trim());
+    if (lines.length < 2) return [];
+    const header = lines[0].toLowerCase().replace(/"/g, "");
+    const cols = header.split(/[,;]/);
+
+    // Detect format
+    const isDegiro  = cols.some(c => c.includes("prodotto")) && cols.some(c => c.includes("quantità"));
+    const isFineco  = cols.some(c => c.includes("titolo")) && cols.some(c => c.includes("quantita"));
+    const isGeneric = cols.some(c => c.includes("ticker") || c.includes("symbol"));
+
+    return lines.slice(1).map(line => {
+      const parts = line.replace(/"/g, "").split(/[,;]/);
+      const get = i => parts[i]?.trim() || "";
+
+      if (isDegiro) {
+        const tickerIdx = cols.findIndex(c => c.includes("simbolo") || c.includes("codice"));
+        const qtyIdx    = cols.findIndex(c => c.includes("quantità") || c.includes("quantita"));
+        const priceIdx  = cols.findIndex(c => c.includes("prezzo") || c.includes("valore"));
+        return { ticker: get(tickerIdx) || get(0), qty: parseFloat(get(qtyIdx)) || 0, buyPrice: parseFloat(get(priceIdx)?.replace(",",".")) || 0, sector: "Altro" };
+      }
+      if (isFineco) {
+        const tickerIdx = cols.findIndex(c => c.includes("ticker") || c.includes("codice"));
+        const qtyIdx    = cols.findIndex(c => c.includes("quantita") || c.includes("quantità"));
+        const priceIdx  = cols.findIndex(c => c.includes("prezzo") || c.includes("costo medio"));
+        return { ticker: get(tickerIdx) || get(0), qty: parseFloat(get(qtyIdx)) || 0, buyPrice: parseFloat(get(priceIdx)?.replace(",",".")) || 0, sector: "Altro" };
+      }
+      // Generic: ticker, qty, buyPrice
+      const tickerIdx = cols.findIndex(c => c.includes("ticker") || c.includes("symbol"));
+      const qtyIdx    = cols.findIndex(c => c.includes("qty") || c.includes("quantity") || c.includes("quantit"));
+      const priceIdx  = cols.findIndex(c => c.includes("price") || c.includes("prezzo") || c.includes("buy"));
+      return {
+        ticker:   get(tickerIdx >= 0 ? tickerIdx : 0).toUpperCase(),
+        qty:      parseFloat(get(qtyIdx >= 0 ? qtyIdx : 1)) || 0,
+        buyPrice: parseFloat(get(priceIdx >= 0 ? priceIdx : 2)?.replace(",",".")) || 0,
+        sector:   "Altro"
+      };
+    }).filter(r => r.ticker && r.qty > 0 && r.buyPrice > 0);
+  }
+
+  function handleCSVFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportErr("");
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const text = ev.target.result;
+      const rows = parseCSV(text);
+      if (rows.length === 0) { setImportErr("Nessun dato valido trovato. Controlla il formato del file."); return; }
+      setImportPreview(rows);
+    };
+    reader.readAsText(file, "UTF-8");
+  }
+
+  async function confirmImport() {
+    if (plan === "free" && stocks.length + importPreview.length > PLANS.free.maxStocks) {
+      setShowUpgrade(true); return;
+    }
+    const imported = await Promise.all(importPreview.map(async (r, i) => {
+      const real = await fetchRealPrice(r.ticker);
+      const history = simulateHistory(real || r.buyPrice);
+      return { id: nextId.current++, ticker: r.ticker, qty: r.qty, buyPrice: r.buyPrice, currentPrice: real || r.buyPrice, history, sector: r.sector, priceReal: !!real, buyDate: new Date().toLocaleDateString("it-IT") };
+    }));
+    setStocks(prev => [...prev, ...imported]);
+    setImportPreview([]);
+    setShowImport(false);
+    setSelectedId(imported[0]?.id);
+  }
+
+  // PDF Report
+  function exportPDF() {
+    const date = new Date().toLocaleDateString("it-IT", { day: "2-digit", month: "long", year: "numeric" });
+    const rows = stocks.map(s => {
+      const pnl = (s.currentPrice - s.buyPrice) * s.qty * rate;
+      const pct = (s.currentPrice - s.buyPrice) / s.buyPrice * 100;
+      return `<tr>
+        <td>${s.ticker}</td><td>${s.sector}</td><td>${s.qty}</td>
+        <td>${sym}${fmt(s.buyPrice*rate)}</td><td>${sym}${fmt(s.currentPrice*rate)}</td>
+        <td>${sym}${fmt(s.qty*s.currentPrice*rate)}</td>
+        <td style="color:${pnl>=0?"#16a34a":"#dc2626"}">${pnl>=0?"+":""}${sym}${fmt(Math.abs(pnl))}</td>
+        <td style="color:${pct>=0?"#16a34a":"#dc2626"}">${fmtPct(pct)}</td>
+      </tr>`;
+    }).join("");
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+    <title>Report Portafoglio — ${date}</title>
+    <style>
+      body{font-family:'Helvetica Neue',sans-serif;color:#1a1a1a;padding:40px;max-width:900px;margin:0 auto}
+      h1{font-size:28px;font-weight:300;margin-bottom:4px}
+      .sub{color:#888;font-size:13px;margin-bottom:32px}
+      .kpi-row{display:flex;gap:20px;margin-bottom:32px}
+      .kpi{background:#f8f8f8;border-radius:8px;padding:16px 20px;flex:1}
+      .kpi-label{font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#888;margin-bottom:6px}
+      .kpi-val{font-size:22px;font-weight:300}
+      table{width:100%;border-collapse:collapse;font-size:13px}
+      th{text-align:left;padding:8px 12px;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:#888;border-bottom:2px solid #eee}
+      td{padding:10px 12px;border-bottom:1px solid #f0f0f0}
+      tr:hover td{background:#fafafa}
+      .footer{margin-top:40px;font-size:10px;color:#ccc;text-align:center;line-height:1.8}
+      .positive{color:#16a34a} .negative{color:#dc2626}
+    </style></head><body>
+    <h1>Portfolio Report</h1>
+    <div class="sub">Generato il ${date} · ${user?.name || ""}</div>
+    <div class="kpi-row">
+      <div class="kpi"><div class="kpi-label">Valore Totale</div><div class="kpi-val">${sym}${fmt(totalValue)}</div></div>
+      <div class="kpi"><div class="kpi-label">Investito</div><div class="kpi-val">${sym}${fmt(totalInvested)}</div></div>
+      <div class="kpi"><div class="kpi-label">P&L Totale</div><div class="kpi-val" style="color:${totalPnL>=0?"#16a34a":"#dc2626"}">${totalPnL>=0?"+":""}${sym}${fmt(Math.abs(totalPnL))}</div></div>
+      <div class="kpi"><div class="kpi-label">Performance</div><div class="kpi-val" style="color:${totalPct>=0?"#16a34a":"#dc2626"}">${fmtPct(totalPct)}</div></div>
+    </div>
+    <table><thead><tr><th>Ticker</th><th>Settore</th><th>Q.tà</th><th>P.Acquisto</th><th>P.Attuale</th><th>Valore</th><th>P&L</th><th>P&L%</th></tr></thead>
+    <tbody>${rows}</tbody></table>
+    <div class="footer">⚠️ Documento generato da Portfolio Tracker a scopo puramente informativo.<br>Non costituisce consulenza finanziaria ai sensi della normativa MiFID II.<br>Dati con possibile ritardo di 15 minuti.</div>
+    </body></html>`;
+
+    const win = window.open("", "_blank");
+    win.document.write(html);
+    win.document.close();
+    setTimeout(() => win.print(), 500);
+  }
+
+  async function handleAI(stock) {
+    if (aiLoading[stock.id]) return;
+    setAiLoading(l => ({ ...l, [stock.id]: true }));
+    const text = await fetchAIAnalysis(stock, notes[stock.id], sym, currency);
+    setAiText(t => ({ ...t, [stock.id]: text }));
+    setAiLoading(l => ({ ...l, [stock.id]: false }));
+  }
+
+  const planCtx = { plan, setPlan, setShowUpgrade };
+  const currCtx = { currency, sym, rate, eurRate };
+
+  if (userLoading) return (
+    <div style={{ minHeight: "100vh", background: "#0D0F14", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'DM Mono', monospace" }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600&display=swap'); *{box-sizing:border-box;margin:0;padding:0} @keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      <div style={{ textAlign: "center" }}>
+        <div style={{ fontFamily: "'Fraunces', serif", fontSize: 28, fontWeight: 300, color: "#F4C542", marginBottom: 16 }}>Portfolio</div>
+        <span style={{ display: "inline-block", width: 16, height: 16, borderRadius: "50%", border: "2px solid #F4C542", borderTopColor: "transparent", animation: "spin 0.7s linear infinite" }} />
+      </div>
+    </div>
+  );
+
+  if (!user) return <AuthScreen onAuth={u => setUser(u)} />;
+
+  return (
+    <PlanCtx.Provider value={planCtx}>
+      <CurrencyCtx.Provider value={currCtx}>
+        <div style={{ minHeight: "100vh", background: "#0D0F14", color: "#E8E6DF", fontFamily: "'DM Mono', 'Courier New', monospace" }}>
+          <style>{`
+            @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600&display=swap');
+            *{box-sizing:border-box;margin:0;padding:0}
+            ::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-track{background:#0D0F14} ::-webkit-scrollbar-thumb{background:#2a2d35;border-radius:2px}
+            input,textarea,select{background:#13151c;border:1px solid #2a2d35;color:#E8E6DF;font-family:inherit;font-size:13px;padding:9px 12px;border-radius:4px;outline:none;width:100%}
+            input:focus,textarea:focus{border-color:#F4C542} input::placeholder,textarea::placeholder{color:#3a3d45}
+            select{cursor:pointer}
+            .tab-btn{background:none;border:none;cursor:pointer;font-family:inherit;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;padding:8px 14px;color:#555;transition:color 0.2s;white-space:nowrap;border-bottom:1.5px solid transparent}
+            .tab-btn:hover{color:#aaa} .tab-btn.active{color:#F4C542;border-bottom-color:#F4C542}
+            .action-btn{background:none;border:1px solid #2a2d35;cursor:pointer;font-family:inherit;color:#aaa;font-size:11px;padding:6px 14px;border-radius:4px;transition:all 0.15s;letter-spacing:0.06em;white-space:nowrap}
+            .action-btn:hover{border-color:#F4C542;color:#F4C542}
+            .remove-btn{background:none;border:none;cursor:pointer;color:#333;font-size:13px;padding:2px 6px;transition:color 0.15s;flex-shrink:0}
+            .remove-btn:hover{color:#E87040}
+            .stock-row{border-bottom:1px solid #0f1117;transition:background 0.12s;cursor:pointer}
+            .stock-row:hover{background:#12141b}
+            .stock-row.active{background:#14171f;border-left:2px solid #F4C542}
+            .add-btn{background:#F4C542;border:none;color:#0D0F14;font-family:inherit;font-size:12px;font-weight:600;padding:10px 20px;border-radius:4px;cursor:pointer;display:flex;align-items:center;gap:7px;white-space:nowrap;transition:opacity 0.15s}
+            .add-btn:hover{opacity:0.85} .add-btn:disabled{opacity:0.5;cursor:not-allowed}
+            .card{background:#0f1117;border:1px solid #1a1d26;border-radius:6px;padding:16px 18px}
+            @keyframes spin{to{transform:rotate(360deg)}}
+            @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+            .fade-up{animation:fadeUp 0.3s ease forwards}
+
+            /* ── MOBILE ── */
+            @media(max-width:768px){
+              .desktop-sidebar{display:none!important}
+              .desktop-tabs{display:none!important}
+              .mobile-nav{display:flex!important}
+              .mobile-header-actions .action-btn{font-size:10px;padding:5px 8px}
+              .main-content{padding:12px 12px 80px!important}
+              .header-logo span:last-child{display:none}
+              .kpi-grid{grid-template-columns:repeat(2,1fr)!important}
+              .comparison-grid{grid-template-columns:1fr!important}
+              .card{padding:12px 14px!important}
+              table{font-size:11px!important}
+              th,td{padding:8px 6px 8px 0!important;font-size:10px!important}
+              .add-btn{font-size:12px;padding:9px 16px}
+              .action-btn{font-size:10px;padding:5px 8px}
+              input,select,textarea{font-size:14px!important} /* prevents iOS zoom */
+              .hide-mobile{display:none!important}
+            }
+            @media(min-width:769px){
+              .mobile-nav{display:none!important}
+              .mobile-portfolio-header{display:none!important}
+            }
+          `}</style>
+
+          {/* Alert toasts */}
+          {firedAlerts.length > 0 && (
+            <div style={{ position: "fixed", top: 16, right: 16, zIndex: 8888, display: "flex", flexDirection: "column", gap: 8 }}>
+              {firedAlerts.map((a, i) => (
+                <div key={i} style={{ background: "#1a1400", border: "1px solid #F4C542", borderRadius: 6, padding: "10px 16px", fontSize: 12, color: "#F4C542", display: "flex", alignItems: "center", gap: 10 }}>
+                  🔔 {a.msg}
+                  <button onClick={() => setFiredAlerts(x => x.filter((_,j) => j !== i))} style={{ background: "none", border: "none", color: "#F4C542", cursor: "pointer", fontSize: 14, marginLeft: 4 }}>✕</button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} />}
+
+          {/* Header */}
+          <div style={{ padding: "0 16px 0 20px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #161820", height: 52, gap: 10 }}>
+            {/* Logo */}
+            <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexShrink: 0 }}>
+              <span style={{ fontFamily: "'Fraunces', serif", fontSize: 19, fontWeight: 300, color: "#F4C542" }}>Portfolio</span>
+              <span className="hide-mobile" style={{ fontSize: 9, color: "#2a2d35", letterSpacing: "0.2em", textTransform: "uppercase" }}>Tracker</span>
+              {plan === "pro" && <span style={{ fontSize: 8, background: "#F4C542", color: "#0D0F14", padding: "2px 6px", borderRadius: 2, fontWeight: 700, letterSpacing: "0.1em" }}>PRO</span>}
+            </div>
+            {/* Desktop tabs */}
+            <div style={{ display: "flex", alignItems: "center", gap: 0, overflowX: "auto", flex: 1, justifyContent: "center" }} className="desktop-tabs">
+              {["overview","titoli","settori","watchlist","confronto","alert","simulazioni","whatif"].map(t => (
+                <button key={t} className={`tab-btn ${activeTab === t ? "active" : ""}`} onClick={() => setActiveTab(t)}>
+                  {t === "whatif" ? "e se?" : t}
+                </button>
+              ))}
+            </div>
+            {/* Actions */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+              {plan === "free" && <button className="action-btn" onClick={() => setShowUpgrade(true)} style={{ color: "#F4C542", borderColor: "#F4C542", fontSize: 10, padding: "4px 8px" }}>✦ Pro</button>}
+              <button className="action-btn hide-mobile" onClick={() => setShowImport(v => !v)}>↑ CSV</button>
+              {plan === "pro" && <>
+                <button onClick={exportCSV} className="action-btn hide-mobile" style={{ fontSize: 9, padding: "4px 10px" }}>↓ CSV</button>
+                <button onClick={exportPDF} className="action-btn hide-mobile" style={{ fontSize: 9, padding: "4px 10px" }}>↓ PDF</button>
+              </>}
+              <button className="add-btn" onClick={() => setShowForm(v => !v)} style={{ fontSize: 11, padding: "6px 12px" }}>{showForm ? "✕" : "+ Aggiungi"}</button>
+              {/* Mobile: user avatar button */}
+              <button onClick={() => signOut().then(() => setUser(null))}
+                style={{ background: "#1a1d26", border: "1px solid #2a2d35", borderRadius: "50%", width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, color: "#555", fontSize: 11, fontFamily: "inherit" }}
+                title={`${user.name} — Esci`}>
+                {user.name?.charAt(0).toUpperCase() || "U"}
+              </button>
+            </div>
+          </div>
+
+          {/* Add form */}
+          {showForm && (
+            <div className="fade-up" style={{ padding: "14px 28px", background: "#0a0c10", borderBottom: "1px solid #1a1d26", display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+              <TickerAutocomplete value={form.ticker} onChange={v => setForm(f => ({ ...f, ticker: v }))} onSelect={t => setForm(f => ({ ...f, ticker: t.ticker, sector: t.sector || "Altro" }))} />
+              <div style={{ flex: 1, minWidth: 130 }}>
+                <div style={{ fontSize: 10, color: "#555", marginBottom: 5, letterSpacing: "0.1em", textTransform: "uppercase" }}>Settore</div>
+                <select value={form.sector} onChange={e => setForm(f => ({ ...f, sector: e.target.value }))}>
+                  {SECTORS.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div style={{ flex: 1, minWidth: 90 }}>
+                <div style={{ fontSize: 10, color: "#555", marginBottom: 5, letterSpacing: "0.1em", textTransform: "uppercase" }}>Quantità</div>
+                <input type="number" placeholder="10" value={form.qty} onChange={e => setForm(f => ({ ...f, qty: e.target.value }))} />
+              </div>
+              <div style={{ flex: 1, minWidth: 120 }}>
+                <div style={{ fontSize: 10, color: "#555", marginBottom: 5, letterSpacing: "0.1em", textTransform: "uppercase" }}>Prezzo Acquisto</div>
+                <input type="number" placeholder="175.00" value={form.buyPrice} onChange={e => setForm(f => ({ ...f, buyPrice: e.target.value }))} />
+              </div>
+              <button className="add-btn" onClick={handleAdd} disabled={adding}>
+                {adding && <Spinner color="#0D0F14" />}
+                {adding ? "Recupero prezzo…" : "Aggiungi"}
+              </button>
+              {plan === "free" && stocks.length >= PLANS.free.maxStocks && <span style={{ fontSize: 11, color: "#E87040", alignSelf: "center" }}>Limite Free: max {PLANS.free.maxStocks} titoli</span>}
+              {formErr && <span style={{ fontSize: 11, color: "#E87040", alignSelf: "center" }}>{formErr}</span>}
+            </div>
+          )}
+
+          {/* Import CSV panel */}
+          {showImport && (
+            <div className="fade-up" style={{ padding: "16px 28px", background: "#0a0c10", borderBottom: "1px solid #1a1d26" }}>
+              <input ref={csvInputRef} type="file" accept=".csv,.txt" style={{ display: "none" }} onChange={handleCSVFile} />
+              {importPreview.length === 0 ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+                  <div style={{ fontSize: 12, color: "#555" }}>Supporta file CSV di <strong style={{color:"#888"}}>Degiro</strong>, <strong style={{color:"#888"}}>Fineco</strong> e formato generico (ticker, qty, prezzo)</div>
+                  <button className="add-btn" onClick={() => csvInputRef.current?.click()}>📂 Scegli file CSV</button>
+                  {importErr && <span style={{ fontSize: 11, color: "#E87040" }}>{importErr}</span>}
+                </div>
+              ) : (
+                <div>
+                  <div style={{ fontSize: 11, color: "#5EC98A", marginBottom: 10 }}>✓ Trovati {importPreview.length} titoli — controlla e conferma</div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+                    {importPreview.map((r, i) => (
+                      <div key={i} style={{ background: "#13151c", border: "1px solid #2a2d35", borderRadius: 4, padding: "6px 12px", fontSize: 12 }}>
+                        <span style={{ color: "#E8E6DF", fontWeight: 500 }}>{r.ticker}</span>
+                        <span style={{ color: "#555", marginLeft: 8 }}>{r.qty} az. @ ${r.buyPrice}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button className="add-btn" onClick={confirmImport}>✓ Importa tutti</button>
+                    <button className="action-btn" onClick={() => { setImportPreview([]); setImportErr(""); }}>✕ Annulla</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div style={{ display: "flex", height: "calc(100vh - 52px)", overflow: "hidden" }}>
+
+            {/* Main — full width, no sidebar */}
+            <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px" }} className="main-content">
+
+              {/* OVERVIEW */}
+              {activeTab === "overview" && (
+                <div className="fade-up">
+                  {stocks.length === 0 ? (
+                    /* Empty state */
+                    <div style={{ textAlign: "center", marginTop: 80 }}>
+                      <div style={{ fontFamily: "'Fraunces', serif", fontSize: 36, fontWeight: 300, color: "#F4C542", marginBottom: 12 }}>◈</div>
+                      <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300, marginBottom: 8 }}>Portafoglio vuoto</div>
+                      <div style={{ fontSize: 12, color: "#444", marginBottom: 24, lineHeight: 1.8 }}>Aggiungi il tuo primo titolo per iniziare a tracciare il tuo portafoglio.</div>
+                      <button className="add-btn" style={{ margin: "0 auto" }} onClick={() => setShowForm(true)}>+ Aggiungi il primo titolo</button>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Portfolio KPIs */}
+                      <div className="kpi-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 20 }}>
+                        {[
+                          { l: "Valore Totale",   v: `$${fmt(totalValue)}`,                                      sub: `€${fmt(totalValue * eurRate)}`,         c: "#E8E6DF" },
+                          { l: "Investito",        v: `$${fmt(totalInvested)}`,                                   sub: `€${fmt(totalInvested * eurRate)}`,       c: "#888" },
+                          { l: "P&L Totale",       v: `${totalPnL>=0?"+":""}$${fmt(Math.abs(totalPnL))}`,        sub: `${totalPnL>=0?"+":""}€${fmt(Math.abs(totalPnL * eurRate))}`, c: totalPnL>=0?"#5EC98A":"#E87040" },
+                          { l: "Performance",      v: fmtPct(totalPct),                                          sub: null,                                      c: totalPct>=0?"#5EC98A":"#E87040" },
+                        ].map(k => (
+                          <div key={k.l} className="card">
+                            <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 7 }}>{k.l}</div>
+                            <div style={{ fontFamily: "'Fraunces', serif", fontSize: 18, fontWeight: 300, color: k.c }}>{k.v}</div>
+                            {k.sub && <div style={{ fontSize: 10, color: "#333", marginTop: 3 }}>{k.sub}</div>}
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Portfolio chart */}
+                      <div className="card" style={{ marginBottom: 16 }}>
+                        <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 12 }}>Andamento Portafoglio — 30 giorni</div>
+                        <ProGate feat="history" h={160}>
+                          <ResponsiveContainer width="100%" height={160}>
+                            <AreaChart data={portfolioHistory}>
+                              <defs>
+                                <linearGradient id="pg2" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="#F4C542" stopOpacity={0.18}/>
+                                  <stop offset="95%" stopColor="#F4C542" stopOpacity={0}/>
+                                </linearGradient>
+                              </defs>
+                              <XAxis dataKey="date" tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false} interval={4}/>
+                              <YAxis tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false} domain={["auto","auto"]} width={60} tickFormatter={v => `${sym}${(v*rate/1000).toFixed(1)}k`}/>
+                              <Tooltip contentStyle={{ background: "#0f1117", border: "1px solid #2a2d35", borderRadius: 4, fontSize: 11, color: "#E8E6DF" }} formatter={v => [`${sym}${fmt(v*rate,0)}`, "Portafoglio"]}/>
+                              <Area type="monotone" dataKey="valore" stroke="#F4C542" strokeWidth={1.5} fill="url(#pg2)" dot={false}/>
+                            </AreaChart>
+                          </ResponsiveContainer>
+                        </ProGate>
+                      </div>
+
+                      {/* Positions table */}
+                      <div className="card" style={{ marginBottom: 16 }}>
+                        <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 14 }}>Posizioni</div>
+                        <div style={{ overflowX: "auto" }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, minWidth: 600 }}>
+                            <thead>
+                              <tr style={{ borderBottom: "1px solid #1a1d26" }}>
+                                {["Ticker","Q.tà","Acquisto","Attuale (USD)","Attuale (EUR)","Valore","P&L","P&L%","Target","Stop",""].map(h => (
+                                  <th key={h} style={{ textAlign: "left", padding: "0 8px 8px 0", fontSize: 8, color: "#444", letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 400 }}>{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {stocks.map(s => {
+                                const pnl = (s.currentPrice - s.buyPrice) * s.qty;
+                                const pct = (s.currentPrice - s.buyPrice) / s.buyPrice * 100;
+                                const tp = s.targetPrice;
+                                const sl = s.stopLoss;
+                                return (
+                                  <tr key={s.id} style={{ borderBottom: "1px solid #0f1117", cursor: "pointer" }} onClick={() => setSelectedId(s.id)}>
+                                    <td style={{ padding: "10px 8px 10px 0" }}>
+                                      <span style={{ fontWeight: 500 }}>{s.ticker}</span>
+                                      {s.priceReal && <span style={{ fontSize: 7, background: "#1a2a1a", color: "#5EC98A", padding: "1px 5px", borderRadius: 2, marginLeft: 6 }}>LIVE</span>}
+                                      {alerts[s.id] && <span style={{ fontSize: 9, marginLeft: 4 }}>🔔</span>}
+                                    </td>
+                                    <td style={{ padding: "10px 8px 10px 0", color: "#888" }}>{s.qty}</td>
+                                    <td style={{ padding: "10px 8px 10px 0", color: "#888" }}>${fmt(s.buyPrice)}</td>
+                                    <td style={{ padding: "10px 8px 10px 0" }}>${fmt(s.currentPrice)}</td>
+                                    <td style={{ padding: "10px 8px 10px 0", color: "#555" }}>€{fmt(s.currentPrice * eurRate)}</td>
+                                    <td style={{ padding: "10px 8px 10px 0" }}>${fmt(s.qty * s.currentPrice)}</td>
+                                    <td style={{ padding: "10px 8px 10px 0", color: pnl>=0?"#5EC98A":"#E87040" }}>{pnl>=0?"+":""}${fmt(Math.abs(pnl))}</td>
+                                    <td style={{ padding: "10px 8px 10px 0", color: pct>=0?"#5EC98A":"#E87040", fontWeight: 500 }}>{fmtPct(pct)}</td>
+                                    <td style={{ padding: "10px 8px 10px 0", color: tp ? (s.currentPrice >= tp ? "#5EC98A" : "#444") : "#2a2d35", fontSize: 11 }}>
+                                      {tp ? `$${fmt(tp)}` : "—"}
+                                    </td>
+                                    <td style={{ padding: "10px 8px 10px 0", color: sl ? (s.currentPrice <= sl ? "#E87040" : "#444") : "#2a2d35", fontSize: 11 }}>
+                                      {sl ? `$${fmt(sl)}` : "—"}
+                                    </td>
+                                    <td style={{ padding: "10px 0", whiteSpace: "nowrap" }}>
+                                      <button onClick={e => { e.stopPropagation(); setEditId(s.id); }}
+                                        style={{ background: "none", border: "1px solid #2a2d35", color: "#555", fontFamily: "inherit", fontSize: 9, padding: "3px 8px", borderRadius: 3, cursor: "pointer", marginRight: 4, transition: "all 0.15s" }}
+                                        onMouseEnter={e => { e.target.style.borderColor="#F4C542"; e.target.style.color="#F4C542"; }}
+                                        onMouseLeave={e => { e.target.style.borderColor="#2a2d35"; e.target.style.color="#555"; }}>
+                                        ✎ Modifica
+                                      </button>
+                                      <button onClick={e => { e.stopPropagation(); handleRemove(s.id); }}
+                                        style={{ background: "none", border: "1px solid #2a2d35", color: "#444", fontFamily: "inherit", fontSize: 9, padding: "3px 8px", borderRadius: 3, cursor: "pointer", transition: "all 0.15s" }}
+                                        onMouseEnter={e => { e.target.style.borderColor="#E87040"; e.target.style.color="#E87040"; }}
+                                        onMouseLeave={e => { e.target.style.borderColor="#2a2d35"; e.target.style.color="#444"; }}>
+                                        ✕
+                                      </button>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      {/* Best / Worst performers */}
+                      <div className="comparison-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                        {[
+                          { label: "🏆 Migliore", stock: [...stocks].sort((a,b) => (b.currentPrice-b.buyPrice)/b.buyPrice - (a.currentPrice-a.buyPrice)/a.buyPrice)[0], color: "#5EC98A" },
+                          { label: "📉 Peggiore", stock: [...stocks].sort((a,b) => (a.currentPrice-a.buyPrice)/a.buyPrice - (b.currentPrice-b.buyPrice)/b.buyPrice)[0], color: "#E87040" },
+                        ].map(({ label, stock, color }) => stock ? (
+                          <div key={label} className="card">
+                            <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8 }}>{label}</div>
+                            <div style={{ fontFamily: "'Fraunces', serif", fontSize: 20, fontWeight: 300 }}>{stock.ticker}</div>
+                            <div style={{ fontSize: 13, color, marginTop: 4, fontWeight: 500 }}>
+                              {fmtPct((stock.currentPrice - stock.buyPrice) / stock.buyPrice * 100)}
+                            </div>
+                            <div style={{ fontSize: 10, color: "#444", marginTop: 2 }}>{sym}{fmt(stock.currentPrice * rate)}</div>
+                          </div>
+                        ) : null)}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* STORICO */}
+              {/* TITOLI */}
+              {activeTab === "titoli" && (
+                <div className="fade-up">
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300 }}>I tuoi Titoli</div>
+                    <div style={{ fontSize: 11, color: "#444", marginTop: 2 }}>Clicca per vedere dettaglio, grafico e analisi AI</div>
+                  </div>
+                  {stocks.length === 0 ? (
+                    <div style={{ textAlign: "center", marginTop: 60, color: "#444" }}>Nessun titolo nel portafoglio.</div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {stocks.map(s => {
+                        const pnl = (s.currentPrice - s.buyPrice) * s.qty;
+                        const pct = (s.currentPrice - s.buyPrice) / s.buyPrice * 100;
+                        const isUp = pct >= 0;
+                        return (
+                          <div key={s.id} className="card" style={{ cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", transition: "border-color 0.15s" }}
+                            onClick={() => setSelectedId(s.id)}
+                            onMouseEnter={e => e.currentTarget.style.borderColor = "#F4C542"}
+                            onMouseLeave={e => e.currentTarget.style.borderColor = "#1a1d26"}>
+                            <div>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+                                <span style={{ fontFamily: "'Fraunces', serif", fontSize: 18, fontWeight: 300 }}>{s.ticker}</span>
+                                <span style={{ fontSize: 9, background: "#1a1d26", color: "#555", padding: "2px 7px", borderRadius: 2 }}>{s.sector}</span>
+                                {s.priceReal && <span style={{ fontSize: 7, background: "#1a2a1a", color: "#5EC98A", padding: "1px 5px", borderRadius: 2 }}>LIVE</span>}
+                                {alerts[s.id] && <span style={{ fontSize: 9 }}>🔔</span>}
+                              </div>
+                              <div style={{ fontSize: 10, color: "#333" }}>{s.qty} az. · acquisto ${fmt(s.buyPrice)} · {s.buyDate}</div>
+                              {(s.targetPrice || s.stopLoss) && (
+                                <div style={{ display: "flex", gap: 12, marginTop: 5 }}>
+                                  {s.targetPrice && <span style={{ fontSize: 9, color: s.currentPrice >= s.targetPrice ? "#5EC98A" : "#555" }}>🎯 Target ${fmt(s.targetPrice)}</span>}
+                                  {s.stopLoss && <span style={{ fontSize: 9, color: s.currentPrice <= s.stopLoss ? "#E87040" : "#555" }}>🛑 Stop ${fmt(s.stopLoss)}</span>}
+                                </div>
+                              )}
+                            </div>
+                            <div style={{ textAlign: "right" }}>
+                              <div style={{ fontSize: 16, fontFamily: "'Fraunces', serif" }}>${fmt(s.currentPrice)}</div>
+                              <div style={{ fontSize: 10, color: "#444" }}>€{fmt(s.currentPrice * eurRate)}</div>
+                              <div style={{ fontSize: 12, color: isUp ? "#5EC98A" : "#E87040", fontWeight: 500, marginTop: 2 }}>{isUp?"+":""}${fmt(Math.abs(pnl))} · {fmtPct(pct)}</div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* SETTORI */}
+              {activeTab === "settori" && (
+                <div className="fade-up">
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300 }}>Diversificazione</div>
+                    <div style={{ fontSize: 11, color: "#444", marginTop: 2 }}>Distribuzione del capitale per settore</div>
+                  </div>
+                  {stocks.length === 0 ? (
+                    <div style={{ textAlign: "center", marginTop: 60, color: "#444" }}>Aggiungi titoli per vedere la diversificazione.</div>
+                  ) : (
+                    <>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10, marginBottom: 24 }}>
+                        {sectorData.map((s, i) => {
+                          const pct = totalValue > 0 ? (s.value / totalValue * 100) : 0;
+                          const sectorStocks = stocks.filter(st => st.sector === s.name);
+                          const sectorPnl = sectorStocks.reduce((acc, st) => acc + (st.currentPrice - st.buyPrice) * st.qty, 0);
+                          const color = SECTOR_COLORS[i % SECTOR_COLORS.length];
+                          return (
+                            <div key={s.name} style={{ background: "#0f1117", border: `1px solid ${color}33`, borderRadius: 8, padding: "16px 18px", position: "relative", overflow: "hidden" }}>
+                              <div style={{ position: "absolute", top: 0, left: 0, width: `${pct}%`, height: 3, background: color }}/>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                                <div>
+                                  <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6 }}>{s.name}</div>
+                                  <div style={{ fontFamily: "'Fraunces', serif", fontSize: 20, fontWeight: 300, color }}>{pct.toFixed(1)}%</div>
+                                  <div style={{ fontSize: 10, color: "#555", marginTop: 3 }}>${fmt(s.value, 0)}</div>
+                                </div>
+                                <div style={{ textAlign: "right" }}>
+                                  <div style={{ fontSize: 9, color: "#333", marginBottom: 4 }}>{sectorStocks.length} titol{sectorStocks.length === 1 ? "o" : "i"}</div>
+                                  <div style={{ fontSize: 12, color: sectorPnl >= 0 ? "#5EC98A" : "#E87040", fontWeight: 500 }}>{sectorPnl>=0?"+":""}${fmt(Math.abs(sectorPnl),0)}</div>
+                                </div>
+                              </div>
+                              <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                {sectorStocks.map(st => (
+                                  <span key={st.id} style={{ fontSize: 9, background: color+"22", color, padding: "2px 7px", borderRadius: 3 }}>{st.ticker}</span>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Concentrazione risk */}
+                      <div className="card" style={{ marginBottom: 16 }}>
+                        <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 12 }}>Concentrazione per titolo</div>
+                        {[...stocks].sort((a,b) => b.qty*b.currentPrice - a.qty*a.currentPrice).map(s => {
+                          const weight = totalValue > 0 ? (s.qty * s.currentPrice / totalValue * 100) : 0;
+                          return (
+                            <div key={s.id} style={{ marginBottom: 10 }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                                <span style={{ fontSize: 12, fontWeight: 500 }}>{s.ticker}</span>
+                                <span style={{ fontSize: 11, color: "#888" }}>${fmt(s.qty*s.currentPrice,0)} · {weight.toFixed(1)}%</span>
+                              </div>
+                              <div style={{ background: "#1a1d26", borderRadius: 2, height: 2 }}>
+                                <div style={{ width: `${weight}%`, height: "100%", background: weight > 30 ? "#E87040" : "#F4C542", borderRadius: 2 }}/>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {stocks.some(s => s.qty*s.currentPrice/totalValue > 0.3) && (
+                          <div style={{ marginTop: 10, fontSize: 10, color: "#E87040" }}>⚠️ Un titolo supera il 30% del portafoglio — considera di diversificare.</div>
+                        )}
+                      </div>
+
+                      <div style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 12 }}>Benchmark vs S&P 500 (simulato)</div>
+                      <ProGate feat="benchmark" h={200}>
+                        <div className="card">
+                          <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 12 }}>Performance YTD %</div>
+                          <ResponsiveContainer width="100%" height={170}>
+                            <LineChart data={ytdHistory}>
+                              <XAxis dataKey="date" tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false} interval={6}/>
+                              <YAxis tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false} domain={["auto","auto"]} width={45} tickFormatter={v => `${v>0?"+":""}${v}%`}/>
+                              <Tooltip contentStyle={{ background: "#0f1117", border: "1px solid #2a2d35", borderRadius: 4, fontSize: 11, color: "#E8E6DF" }} formatter={(v, n) => [`${v>0?"+":""}${v}%`, n]}/>
+                              <ReferenceLine y={0} stroke="#2a2d35" strokeDasharray="4 3" strokeWidth={1}/>
+                              <Legend wrapperStyle={{ fontSize: 10, color: "#555" }}/>
+                              <Line type="monotone" dataKey="portafoglio" name="Il tuo portafoglio" stroke="#F4C542" strokeWidth={1.5} dot={false}/>
+                              <Line type="monotone" dataKey="spx" name="S&P 500 (sim.)" stroke="#5B8DEF" strokeWidth={1.5} dot={false} strokeDasharray="4 3"/>
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </ProGate>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* WATCHLIST */}
+              {activeTab === "watchlist" && <WatchlistTab eurRate={eurRate} fmt={fmt} fmtPct={fmtPct} />}
+
+              {/* CONFRONTO */}
+              {activeTab === "confronto" && (
+                <div className="fade-up">
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300 }}>Confronto Titoli</div>
+                    <div style={{ fontSize: 11, color: "#444", marginTop: 2 }}>Analisi comparativa tra due posizioni</div>
+                  </div>
+                  <ProGate feat="comparison" h={300}>
+                    <div style={{ display: "flex", gap: 14, marginBottom: 22, flexWrap: "wrap" }}>
+                      {[{label:"Titolo A",color:"#F4C542",val:compareA,set:setCompareA},{label:"Titolo B",color:"#5B8DEF",val:compareB,set:setCompareB}].map(({label,color,val,set}) => (
+                        <div key={label} style={{ flex:1, minWidth:180 }}>
+                          <div style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 7 }}>{label}</div>
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            {stocks.map(s => (
+                              <button key={s.id} onClick={() => set(s)} style={{ background: val?.id===s.id?color:"#13151c", border:`1px solid ${val?.id===s.id?color:"#2a2d35"}`, color: val?.id===s.id?"#0D0F14":"#888", fontFamily:"inherit", fontSize:12, fontWeight:500, padding:"5px 13px", borderRadius:4, cursor:"pointer", transition:"all 0.15s" }}>{s.ticker}</button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {compareA && compareB && compareA.id !== compareB.id ? (() => {
+                      const rows = [
+                        { l:"Prezzo Acquisto", a:`${sym}${fmt(compareA.buyPrice*rate)}`, b:`${sym}${fmt(compareB.buyPrice*rate)}` },
+                        { l:"Prezzo Attuale",  a:`${sym}${fmt(compareA.currentPrice*rate)}`, b:`${sym}${fmt(compareB.currentPrice*rate)}` },
+                        { l:"Quantità",        a:compareA.qty, b:compareB.qty },
+                        { l:"Valore Posizione",a:`${sym}${fmt(compareA.qty*compareA.currentPrice*rate)}`, b:`${sym}${fmt(compareB.qty*compareB.currentPrice*rate)}` },
+                        { l:"P&L assoluto", a:`${(compareA.currentPrice-compareA.buyPrice)>=0?"+":""}${sym}${fmt(Math.abs((compareA.currentPrice-compareA.buyPrice)*compareA.qty*rate))}`, b:`${(compareB.currentPrice-compareB.buyPrice)>=0?"+":""}${sym}${fmt(Math.abs((compareB.currentPrice-compareB.buyPrice)*compareB.qty*rate))}`, ac:(compareA.currentPrice-compareA.buyPrice)>=0?"#5EC98A":"#E87040", bc:(compareB.currentPrice-compareB.buyPrice)>=0?"#5EC98A":"#E87040" },
+                        { l:"P&L %", a:fmtPct((compareA.currentPrice-compareA.buyPrice)/compareA.buyPrice*100), b:fmtPct((compareB.currentPrice-compareB.buyPrice)/compareB.buyPrice*100), ac:(compareA.currentPrice-compareA.buyPrice)>=0?"#5EC98A":"#E87040", bc:(compareB.currentPrice-compareB.buyPrice)>=0?"#5EC98A":"#E87040" },
+                        { l:"Settore", a:compareA.sector, b:compareB.sector },
+                        { l:"Note", a:notes[compareA.id]||"—", b:notes[compareB.id]||"—", small:true },
+                      ];
+                      return (
+                        <>
+                          <div style={{ display:"grid", gridTemplateColumns:"130px 1fr 1fr", gap:2, marginBottom:2 }}>
+                            <div/>
+                            {[{t:compareA.ticker,c:"#F4C542"},{t:compareB.ticker,c:"#5B8DEF"}].map(({t,c}) => (
+                              <div key={t} style={{ background:"#0f1117", border:`1px solid ${c}22`, borderRadius:"6px 6px 0 0", padding:"8px 14px", textAlign:"center" }}>
+                                <span style={{ fontFamily:"'Fraunces',serif", fontSize:18, color:c }}>{t}</span>
+                              </div>
+                            ))}
+                          </div>
+                          {rows.map(m => (
+                            <div key={m.l} style={{ display:"grid", gridTemplateColumns:"130px 1fr 1fr", gap:2, marginBottom:2 }}>
+                              <div style={{ background:"#0f1117", border:"1px solid #1a1d26", padding:"8px 12px", fontSize:8, color:"#555", textTransform:"uppercase", letterSpacing:"0.08em", display:"flex", alignItems:"center" }}>{m.l}</div>
+                              {[{v:m.a,c:m.ac},{v:m.b,c:m.bc}].map(({v,c},j) => (
+                                <div key={j} style={{ background:"#0f1117", border:"1px solid #1a1d26", padding:"8px 14px", fontSize:m.small?11:12, color:c||"#E8E6DF", display:"flex", alignItems:"center" }}>{v}</div>
+                              ))}
+                            </div>
+                          ))}
+                          <div className="card" style={{ marginTop:16 }}>
+                            <div style={{ fontSize:8, color:"#444", textTransform:"uppercase", letterSpacing:"0.12em", marginBottom:12 }}>Andamento comparato</div>
+                            <ResponsiveContainer width="100%" height={180}>
+                              <AreaChart>
+                                <defs>
+                                  <linearGradient id="cA" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#F4C542" stopOpacity={0.15}/><stop offset="95%" stopColor="#F4C542" stopOpacity={0}/></linearGradient>
+                                  <linearGradient id="cB" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#5B8DEF" stopOpacity={0.15}/><stop offset="95%" stopColor="#5B8DEF" stopOpacity={0}/></linearGradient>
+                                </defs>
+                                <XAxis dataKey="date" tick={{fill:"#2a2d35",fontSize:9}} axisLine={false} tickLine={false} interval={6} data={compareA.history}/>
+                                <YAxis tick={{fill:"#2a2d35",fontSize:9}} axisLine={false} tickLine={false} domain={["auto","auto"]} width={50} tickFormatter={v=>`${sym}${v}`}/>
+                                <Tooltip contentStyle={{background:"#0f1117",border:"1px solid #2a2d35",borderRadius:4,fontSize:11,color:"#E8E6DF"}}/>
+                                <Area type="monotone" data={compareA.history} dataKey="price" name={compareA.ticker} stroke="#F4C542" strokeWidth={1.5} fill="url(#cA)" dot={false}/>
+                                <Area type="monotone" data={compareB.history} dataKey="price" name={compareB.ticker} stroke="#5B8DEF" strokeWidth={1.5} fill="url(#cB)" dot={false}/>
+                              </AreaChart>
+                            </ResponsiveContainer>
+                            <div style={{ display:"flex", gap:16, justifyContent:"center", marginTop:8 }}>
+                              {[{t:compareA.ticker,c:"#F4C542"},{t:compareB.ticker,c:"#5B8DEF"}].map(({t,c}) => (
+                                <div key={t} style={{ display:"flex", alignItems:"center", gap:5, fontSize:10, color:"#666" }}>
+                                  <div style={{ width:16, height:2, background:c, borderRadius:1 }}/> {t}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </>
+                      );
+                    })() : <div style={{ color:"#2a2d35", textAlign:"center", marginTop:50, fontSize:13 }}>Seleziona due titoli diversi per confrontarli.</div>}
+                  </ProGate>
+                </div>
+              )}
+
+              {/* ALERT */}
+              {activeTab === "alert" && (
+                <div className="fade-up">
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300 }}>Alert Prezzi</div>
+                    <div style={{ fontSize: 11, color: "#444", marginTop: 2 }}>Notifica quando un titolo supera i tuoi target</div>
+                  </div>
+                  <ProGate feat="alerts" h={200}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                      {stocks.map(s => {
+                        const a = alerts[s.id] || {};
+                        return (
+                          <div key={s.id} className="card" style={{ display:"flex", alignItems:"center", gap:18, flexWrap:"wrap" }}>
+                            <div style={{ minWidth:80 }}>
+                              <div style={{ fontSize:14, fontWeight:500 }}>{s.ticker}</div>
+                              <div style={{ fontSize:9, color:"#555", marginTop:2 }}>Attuale: {sym}{fmt(s.currentPrice*rate)}</div>
+                            </div>
+                            <div style={{ display:"flex", gap:14, flex:1, flexWrap:"wrap", alignItems:"flex-end" }}>
+                              <div style={{ flex:1, minWidth:110 }}>
+                                <div style={{ fontSize:8, color:"#444", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:5 }}>🔼 Alert sopra</div>
+                                <input type="number" placeholder={`${(s.currentPrice*1.1).toFixed(0)}`} value={a.above||""}
+                                  onChange={e => setAlerts(al => ({ ...al, [s.id]: { ...(al[s.id]||{}), above: e.target.value ? parseFloat(e.target.value) : null } }))} style={{ width:"100%" }}/>
+                              </div>
+                              <div style={{ flex:1, minWidth:110 }}>
+                                <div style={{ fontSize:8, color:"#444", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:5 }}>🔽 Alert sotto</div>
+                                <input type="number" placeholder={`${(s.currentPrice*0.9).toFixed(0)}`} value={a.below||""}
+                                  onChange={e => setAlerts(al => ({ ...al, [s.id]: { ...(al[s.id]||{}), below: e.target.value ? parseFloat(e.target.value) : null } }))} style={{ width:"100%" }}/>
+                              </div>
+                              {(a.above || a.below) && (
+                                <button onClick={() => setAlerts(al => { const n={...al}; delete n[s.id]; return n; })}
+                                  style={{ background:"none", border:"1px solid #2a2d35", color:"#E87040", fontFamily:"inherit", fontSize:9, padding:"5px 10px", borderRadius:3, cursor:"pointer", whiteSpace:"nowrap" }}>
+                                  ✕ Rimuovi
+                                </button>
+                              )}
+                            </div>
+                            {(a.above || a.below) && <span style={{ fontSize:9, color:"#5EC98A" }}>🔔 attivo</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div style={{ marginTop:16, padding:"12px 16px", background:"#0a0c10", borderRadius:6, fontSize:9, color:"#2a2d35", lineHeight:1.8 }}>
+                      In produzione: notifiche via <strong style={{color:"#333"}}>email</strong> (Resend) e <strong style={{color:"#333"}}>push</strong> (Web Push API) · Alert controllati ogni 60s durante l'orario di borsa
+                    </div>
+                  </ProGate>
+                </div>
+              )}
+
+              {/* SIMULAZIONI */}
+              {activeTab === "simulazioni" && (
+                <SimulazioniTab stocks={stocks} sym={sym} rate={rate} fmt={fmt} fmtPct={fmtPct} />
+              )}
+
+              {activeTab === "whatif" && (
+                <WhatIfTab fmt={fmt} fmtPct={fmtPct} eurRate={eurRate} />
+              )}
+
+            </div>
+          </div>
+
+          {/* Edit modal */}
+          {editId && stocks.find(s => s.id === editId) && (
+            <EditModal
+              stock={stocks.find(s => s.id === editId)}
+              onClose={() => setEditId(null)}
+              onSave={handleEdit}
+            />
+          )}
+
+          {/* Stock detail modal */}
+          {selectedId && stocks.find(s => s.id === selectedId) && (
+            <StockModal
+              stock={stocks.find(s => s.id === selectedId)}
+              onClose={() => setSelectedId(null)}
+              notes={notes} setNotes={setNotes}
+              alerts={alerts} setAlerts={setAlerts}
+              handleRemove={handleRemove}
+              sym={sym} rate={rate} fmt={fmt} fmtPct={fmtPct}
+              handleAI={handleAI} aiLoading={aiLoading} aiText={aiText}
+              plan={plan} eurRate={eurRate}
+            />
+          )}
+
+          {/* Mobile portfolio summary */}
+          <div className="mobile-portfolio-header" style={{ padding: "12px 16px", borderBottom: "1px solid #161820", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <div style={{ fontSize: 8, color: "#2a2d35", letterSpacing: "0.18em", textTransform: "uppercase" }}>Portafoglio</div>
+              <div style={{ fontFamily: "'Fraunces', serif", fontSize: 20, fontWeight: 300, color: "#E8E6DF" }}>{sym}{fmt(totalValue)}</div>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: 13, color: totalPnL >= 0 ? "#5EC98A" : "#E87040", fontWeight: 500 }}>{totalPnL >= 0 ? "+" : ""}{sym}{fmt(Math.abs(totalPnL))}</div>
+              <div style={{ fontSize: 10, color: totalPct >= 0 ? "#5EC98A" : "#E87040" }}>{fmtPct(totalPct)}</div>
+            </div>
+          </div>
+
+          {/* Mobile bottom navigation */}
+          <div className="mobile-nav" style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "#0a0c10", borderTop: "1px solid #161820", zIndex: 999, justifyContent: "space-around", alignItems: "center", padding: "6px 0", paddingBottom: "env(safe-area-inset-bottom)" }}>
+            {[
+              { id: "overview",    icon: "◈",  label: "Overview" },
+              { id: "titoli",      icon: "📋", label: "Titoli" },
+              { id: "settori",     icon: "◉",  label: "Settori" },
+              { id: "watchlist",   icon: "👁", label: "Watch" },
+              { id: "whatif",      icon: "🔁", label: "E se?" },
+              { id: "alert",       icon: "🔔", label: "Alert" },
+            ].map(t => (
+              <button key={t.id} onClick={() => setActiveTab(t.id)}
+                style={{ background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "4px 8px", color: activeTab === t.id ? "#F4C542" : "#444", fontFamily: "inherit", transition: "color 0.15s" }}>
+                <span style={{ fontSize: 16 }}>{t.icon}</span>
+                <span style={{ fontSize: 8, letterSpacing: "0.08em", textTransform: "uppercase" }}>{t.label}</span>
+              </button>
+            ))}
+          </div>
+
+        </div>
+      </CurrencyCtx.Provider>
+    </PlanCtx.Provider>
+  );
+}
