@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, createContext, useContext } from "react";
 import { PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area, ReferenceLine, LineChart, Line, Legend } from "recharts";
+import { supabase, signIn, signUp, signOut, getSession, loadStocks, saveStock, deleteStock, loadNotes, saveNote, loadAlerts, saveAlert, deleteAlert } from "./utils/supabase";
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const SECTOR_COLORS = ["#F4C542","#E87040","#5B8DEF","#5EC98A","#BF6EEA","#F06292","#26C6DA","#FF7043"];
@@ -151,11 +152,19 @@ function AuthScreen({ onAuth }) {
     if (!email || !pw) return setErr("Compila tutti i campi.");
     if (mode === "register" && !name) return setErr("Inserisci il tuo nome.");
     setLoading(true); setErr("");
-    await new Promise(r => setTimeout(r, 600));
-    // TODO: replace with → supabase.auth.signInWithPassword({ email, password: pw })
-    const user = { id: btoa(email).replace(/[^a-z0-9]/gi, ""), email, name: name || email.split("@")[0] };
-    lsSet("pt_user", user);
-    onAuth(user);
+    try {
+      let user;
+      if (mode === "register") {
+        user = await signUp(email, pw, name);
+        if (!user) { setErr("Controlla la tua email per confermare la registrazione."); setLoading(false); return; }
+      } else {
+        user = await signIn(email, pw);
+      }
+      onAuth({ id: user.id, email: user.email, name: user.user_metadata?.name || email.split("@")[0] });
+    } catch (e) {
+      setErr(e.message === "Invalid login credentials" ? "Email o password errati." : e.message);
+    }
+    setLoading(false);
   }
 
   return (
@@ -189,7 +198,7 @@ function AuthScreen({ onAuth }) {
             {loading && <Spinner color="#0D0F14" />}
             {mode === "login" ? "Entra nel portafoglio" : "Crea Account"}
           </button>
-          <div style={{ fontSize: 10, color: "#2a2d35", textAlign: "center", marginTop: 12 }}>Demo — qualsiasi email/password funziona</div>
+          <div style={{ fontSize: 10, color: "#2a2d35", textAlign: "center", marginTop: 12 }}>Benvenuto su Portfolio Tracker</div>
         </div>
         <div style={{ fontSize: 9, color: "#1e2028", textAlign: "center", marginTop: 18, lineHeight: 1.8 }}>
           ⚠️ Strumento a scopo puramente informativo.<br />Non costituisce consulenza finanziaria ai sensi MiFID II.
@@ -276,7 +285,24 @@ const DEFAULT_STOCKS = [
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [user, setUser] = useState(() => ls("pt_user", null));
+  const [user, setUser] = useState(null);
+  const [userLoading, setUserLoading] = useState(true);
+
+  // Check Supabase session on mount
+  useEffect(() => {
+    getSession().then(u => {
+      if (u) setUser({ id: u.id, email: u.email, name: u.user_metadata?.name || u.email.split("@")[0] });
+      setUserLoading(false);
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        setUser({ id: session.user.id, email: session.user.email, name: session.user.user_metadata?.name || session.user.email.split("@")[0] });
+      } else {
+        setUser(null);
+      }
+    });
+    return () => listener.subscription.unsubscribe();
+  }, []);
   const [plan, setPlanRaw] = useState(() => ls("pt_plan", "free"));
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [currency, setCurrency] = useState(() => ls("pt_currency", "USD"));
@@ -284,17 +310,36 @@ export default function App() {
   const sym = CURRENCIES[currency]?.symbol || "$";
   const rate = CURRENCIES[currency]?.rate || 1;
 
-  const uid = user?.id || "demo";
-  const [stocks, setStocksRaw] = useState(() => {
-    const saved = ls(`pt_stocks_${uid}`, null);
-    return (saved || DEFAULT_STOCKS).map(s => ({ ...s, history: simulateHistory(s.currentPrice || s.buyPrice) }));
-  });
-  const [notes, setNotesRaw] = useState(() => ls(`pt_notes_${uid}`, {}));
-  const [alerts, setAlertsRaw] = useState(() => ls(`pt_alerts_${uid}`, {}));
+  const [stocks, setStocksRaw] = useState([]);
+  const [notes, setNotesRaw] = useState({});
+  const [alerts, setAlertsRaw] = useState({});
+  const [dataLoading, setDataLoading] = useState(false);
 
-  const setStocks = fn => setStocksRaw(prev => { const next = typeof fn === "function" ? fn(prev) : fn; lsSet(`pt_stocks_${uid}`, next.map(s => ({ ...s, history: [] }))); return next; });
-  const setNotes  = fn => setNotesRaw(prev => { const next = typeof fn === "function" ? fn(prev) : fn; lsSet(`pt_notes_${uid}`, next); return next; });
-  const setAlerts = fn => setAlertsRaw(prev => { const next = typeof fn === "function" ? fn(prev) : fn; lsSet(`pt_alerts_${uid}`, next); return next; });
+  // Load data from Supabase when user logs in
+  useEffect(() => {
+    if (!user) { setStocksRaw([]); setNotesRaw({}); setAlertsRaw({}); return; }
+    setDataLoading(true);
+    Promise.all([loadStocks(user.id), loadNotes(user.id), loadAlerts(user.id)]).then(([dbStocks, dbNotes, dbAlerts]) => {
+      const mapped = dbStocks.map(s => ({
+        id: s.id, dbId: s.id,
+        ticker: s.ticker, qty: s.qty, buyPrice: s.buy_price,
+        currentPrice: s.current_price || s.buy_price,
+        sector: s.sector, buyDate: s.buy_date, priceReal: s.price_real,
+        history: simulateHistory(s.current_price || s.buy_price)
+      }));
+      setStocksRaw(mapped.length > 0 ? mapped : DEFAULT_STOCKS.map(s => ({ ...s, history: simulateHistory(s.currentPrice) })));
+      setNotesRaw(dbNotes);
+      setAlertsRaw(dbAlerts);
+      setDataLoading(false);
+    }).catch(() => {
+      setStocksRaw(DEFAULT_STOCKS.map(s => ({ ...s, history: simulateHistory(s.currentPrice) })));
+      setDataLoading(false);
+    });
+  }, [user?.id]);
+
+  const setStocks = fn => setStocksRaw(prev => typeof fn === "function" ? fn(prev) : fn);
+  const setNotes  = fn => setNotesRaw(prev => typeof fn === "function" ? fn(prev) : fn);
+  const setAlerts = fn => setAlertsRaw(prev => typeof fn === "function" ? fn(prev) : fn);
 
   const [activeTab, setActiveTab] = useState("overview");
   const [selectedId, setSelectedId] = useState(stocks[0]?.id || null);
@@ -374,14 +419,22 @@ export default function App() {
     const curPrice = realPrice || p * (1 + (Math.random() - 0.45) * 0.3);
     const history = simulateHistory(curPrice);
     if (realPrice) history[history.length - 1].price = realPrice;
-    const ns = { id: nextId.current++, ticker: t, qty: q, buyPrice: p, currentPrice: parseFloat(curPrice.toFixed(2)), history, sector: form.sector || "Altro", priceReal: !!realPrice, buyDate: new Date().toLocaleDateString("it-IT") };
-    setStocks(prev => [...prev, ns]);
-    setSelectedId(ns.id);
+    const ns = { ticker: t, qty: q, buyPrice: p, currentPrice: parseFloat(curPrice.toFixed(2)), history, sector: form.sector || "Altro", priceReal: !!realPrice, buyDate: new Date().toLocaleDateString("it-IT") };
+    // Save to Supabase if logged in
+    let dbId = null;
+    if (user) {
+      try { const saved = await saveStock(user.id, ns); dbId = saved.id; } catch {}
+    }
+    const withId = { ...ns, id: dbId || nextId.current++, dbId };
+    setStocks(prev => [...prev, withId]);
+    setSelectedId(withId.id);
     setForm({ ticker: "", qty: "", buyPrice: "", sector: "Altro" });
     setAdding(false); setShowForm(false);
   }
 
   function handleRemove(id) {
+    const stock = stocks.find(s => s.id === id);
+    if (stock?.dbId && user) deleteStock(stock.dbId).catch(() => {});
     setStocks(prev => prev.filter(s => s.id !== id));
     if (selectedId === id) setSelectedId(stocks.find(s => s.id !== id)?.id || null);
   }
@@ -548,6 +601,16 @@ export default function App() {
   const planCtx = { plan, setPlan, setShowUpgrade };
   const currCtx = { currency, setCurrency, sym, rate };
 
+  if (userLoading) return (
+    <div style={{ minHeight: "100vh", background: "#0D0F14", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'DM Mono', monospace" }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600&display=swap'); *{box-sizing:border-box;margin:0;padding:0} @keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      <div style={{ textAlign: "center" }}>
+        <div style={{ fontFamily: "'Fraunces', serif", fontSize: 28, fontWeight: 300, color: "#F4C542", marginBottom: 16 }}>Portfolio</div>
+        <span style={{ display: "inline-block", width: 16, height: 16, borderRadius: "50%", border: "2px solid #F4C542", borderTopColor: "transparent", animation: "spin 0.7s linear infinite" }} />
+      </div>
+    </div>
+  );
+
   if (!user) return <AuthScreen onAuth={u => setUser(u)} />;
 
   return (
@@ -611,7 +674,7 @@ export default function App() {
               {plan === "free" && <button className="action-btn" onClick={() => setShowUpgrade(true)} style={{ color: "#F4C542", borderColor: "#F4C542" }}>✦ Pro</button>}
               <button className="action-btn" onClick={() => setShowImport(v => !v)}>↑ Import CSV</button>
               <button className="action-btn" onClick={() => setShowForm(v => !v)}>{showForm ? "✕" : "+ Aggiungi"}</button>
-              <button className="action-btn" onClick={() => { lsSet("pt_user", null); setUser(null); }} style={{ color: "#333", fontSize: 10 }}>{user.name} ↩</button>
+              <button className="action-btn" onClick={() => signOut().then(() => setUser(null))} style={{ color: "#333", fontSize: 10 }}>{user.name} ↩</button>
             </div>
           </div>
 
