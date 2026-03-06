@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, createContext, useContext } from "react";
+import { createPortal } from "react-dom";
 import { PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area, ReferenceLine, LineChart, Line, Legend } from "recharts";
 import { supabase, signIn, signUp, signOut, getSession, loadStocks, saveStock, deleteStock, loadNotes, saveNote, loadAlerts, saveAlert, deleteAlert } from "./utils/supabase";
 
@@ -285,26 +286,68 @@ function TickerAutocomplete({ value, onChange, onSelect }) {
     return () => clearTimeout(timer.current);
   }, [value, open]);
 
+  // Recalculate position every time dropdown opens or results change
   useEffect(() => {
-    if (open && inputRef.current) {
-      const rect = inputRef.current.getBoundingClientRect();
-      setDropPos({ top: rect.bottom + window.scrollY + 4, left: rect.left + window.scrollX, width: Math.max(rect.width, 320) });
-    }
-  }, [open, results]);
+    if (!open || !inputRef.current) return;
+    const rect = inputRef.current.getBoundingClientRect();
+    setDropPos({
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: Math.max(rect.width, 320),
+    });
+  }, [open, results.length]);
 
   useEffect(() => { setHi(0); }, [results]);
   useEffect(() => {
     const fn = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    document.addEventListener("mousedown", fn); return () => document.removeEventListener("mousedown", fn);
+    document.addEventListener("mousedown", fn);
+    return () => document.removeEventListener("mousedown", fn);
   }, []);
 
   function handleKey(e) {
     if (!open) return;
     if (e.key === "ArrowDown") { e.preventDefault(); setHi(h => Math.min(h+1, results.length-1)); }
-    if (e.key === "ArrowUp") { e.preventDefault(); setHi(h => Math.max(h-1, 0)); }
+    if (e.key === "ArrowUp")   { e.preventDefault(); setHi(h => Math.max(h-1, 0)); }
     if (e.key === "Enter" && results[hi]) { e.preventDefault(); onSelect(results[hi]); setOpen(false); }
     if (e.key === "Escape") setOpen(false);
   }
+
+  const dropdown = open && value.length > 0 && (loading || results.length > 0) && createPortal(
+    <div style={{
+      position: "fixed",
+      top: dropPos.top,
+      left: dropPos.left,
+      width: dropPos.width,
+      zIndex: 2147483647,
+      background: "#13151c",
+      border: "1px solid #2a2d35",
+      borderRadius: 8,
+      boxShadow: "0 16px 48px rgba(0,0,0,0.95)",
+      overflow: "hidden",
+      maxHeight: 280,
+      overflowY: "auto",
+    }}>
+      {loading && results.length === 0
+        ? <div style={{ padding: "12px 16px", fontSize: 11, color: "#555", display: "flex", alignItems: "center", gap: 8 }}><Spinner /> Ricerca ticker…</div>
+        : results.map((t, i) => (
+          <div key={t.ticker+i}
+            onMouseDown={e => { e.preventDefault(); onSelect(t); setOpen(false); }}
+            onMouseEnter={() => setHi(i)}
+            style={{ padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", background: i === hi ? "#1a1d26" : "transparent", borderBottom: i < results.length-1 ? "1px solid #161820" : "none" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 13, fontWeight: 500, color: "#E8E6DF", minWidth: 52 }}>{t.ticker}</span>
+              <span style={{ fontSize: 11, color: "#555" }}>{t.name}</span>
+            </div>
+            <div style={{ display: "flex", gap: 5 }}>
+              {t.exchange && <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 2, background: "#0D0F14", color: "#444" }}>{t.exchange}</span>}
+              {t.sector && <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 2, background: "#0D0F14", color: "#666" }}>{t.sector}</span>}
+            </div>
+          </div>
+        ))
+      }
+    </div>,
+    document.body
+  );
 
   return (
     <div ref={ref} style={{ position: "relative", flex: 1, minWidth: 130 }}>
@@ -312,25 +355,7 @@ function TickerAutocomplete({ value, onChange, onSelect }) {
       <input ref={inputRef} placeholder="AAPL, ENI, PLAB…" value={value} autoComplete="off"
         onChange={e => { onChange(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)} onKeyDown={handleKey} />
-      {open && value.length > 0 && (loading || results.length > 0) && (
-        <div style={{ position: "fixed", top: dropPos.top, left: dropPos.left, width: dropPos.width, zIndex: 99999, background: "#13151c", border: "1px solid #2a2d35", borderRadius: 8, boxShadow: "0 12px 40px rgba(0,0,0,0.9)", overflow: "hidden", maxHeight: 280, overflowY: "auto" }}>
-          {loading && results.length === 0
-            ? <div style={{ padding: "12px 16px", fontSize: 11, color: "#555", display: "flex", alignItems: "center", gap: 8 }}><Spinner /> Ricerca ticker…</div>
-            : results.map((t, i) => (
-              <div key={t.ticker+i} onMouseDown={() => { onSelect(t); setOpen(false); }} onMouseEnter={() => setHi(i)}
-                style={{ padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", background: i === hi ? "#1a1d26" : "transparent", borderBottom: i < results.length-1 ? "1px solid #161820" : "none" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ fontSize: 13, fontWeight: 500, color: "#E8E6DF", minWidth: 52 }}>{t.ticker}</span>
-                  <span style={{ fontSize: 11, color: "#555" }}>{t.name}</span>
-                </div>
-                <div style={{ display: "flex", gap: 5 }}>
-                  {t.exchange && <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 2, background: "#0D0F14", color: "#444" }}>{t.exchange}</span>}
-                  {t.sector && <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 2, background: "#0D0F14", color: "#666" }}>{t.sector}</span>}
-                </div>
-              </div>
-            ))}
-        </div>
-      )}
+      {dropdown}
     </div>
   );
 }
@@ -940,16 +965,22 @@ export default function App() {
     valore: parseFloat(stocks.reduce((s, st) => s + st.qty * (st.history[i]?.price || st.currentPrice), 0).toFixed(2))
   })) || [];
 
-  // YTD benchmark — portfolio % vs S&P500 % from Jan 1
+  // YTD benchmark — real portfolio % vs simulated S&P500 from same start
   const ytdHistory = (() => {
-    if (!portfolioHistory.length) return [];
+    if (!portfolioHistory.length || !stocks.length) return [];
     const basePortfolio = portfolioHistory[0]?.valore || 1;
-    // Simulate S&P500 YTD with realistic drift (~10% annualized + noise)
-    let spxPct = 0;
-    return portfolioHistory.map((pt, i) => {
-      spxPct += (Math.random() - 0.468) * 0.6; // slight upward bias
-      const portfolioPct = basePortfolio > 0 ? ((pt.valore - basePortfolio) / basePortfolio * 100) : 0;
-      return { date: pt.date, portafoglio: parseFloat(portfolioPct.toFixed(2)), spx: parseFloat(spxPct.toFixed(2)) };
+    // Real portfolio % change over the history window
+    const portfolioPcts = portfolioHistory.map(pt => ({
+      date: pt.date,
+      portafoglio: basePortfolio > 0 ? parseFloat(((pt.valore - basePortfolio) / basePortfolio * 100).toFixed(2)) : 0,
+    }));
+    // Simulate S&P500 that ends near totalPct / 2 (realistic: market moves less than individual stocks)
+    const spxTarget = totalPct * 0.45; // S&P typically moves less than concentrated portfolio
+    return portfolioPcts.map((pt, i) => {
+      const progress = i / Math.max(portfolioPcts.length - 1, 1);
+      const noise = (Math.random() - 0.5) * 0.4;
+      const spx = parseFloat((spxTarget * progress + noise).toFixed(2));
+      return { ...pt, spx };
     });
   })();
 
