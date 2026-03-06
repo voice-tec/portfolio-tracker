@@ -80,12 +80,28 @@ async function claudeCall(system, userMsg, tools = []) {
   return (data.content || []).map(b => b.text || "").join("").trim();
 }
 
-async function fetchAIAnalysis(stock, note, sym) {
-  return claudeCall(
-    `Sei un assistente finanziario informativo. Rispondi in italiano, max 5 frasi, cerca notizie recenti sul titolo. Termina SEMPRE con: "⚠️ Solo a scopo informativo — non costituisce consulenza finanziaria ai sensi MiFID II."`,
-    `Analisi su ${stock.ticker}: ${stock.qty} azioni, acquisto ${sym}${fmt(stock.buyPrice)}, attuale ${sym}${fmt(stock.currentPrice)}, P&L ${fmtPct((stock.currentPrice - stock.buyPrice) / stock.buyPrice * 100)}. Note: "${note || 'nessuna'}"`,
-    [{ type: "web_search_20250305", name: "web_search" }]
-  );
+async function fetchAIAnalysis(stock, note, sym, currency) {
+  try {
+    const pnlPct = ((stock.currentPrice - stock.buyPrice) / stock.buyPrice * 100).toFixed(2);
+    const res = await fetch(`${API_BASE}/api/analyze`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ticker: stock.ticker,
+        qty: stock.qty,
+        buyPrice: (stock.buyPrice).toFixed(2),
+        currentPrice: (stock.currentPrice).toFixed(2),
+        pnlPct,
+        note: note || "",
+        currency: sym,
+      })
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    return data.analysis || "Analisi non disponibile.";
+  } catch (err) {
+    return "Errore nel recupero dell'analisi. Riprova tra qualche secondo.";
+  }
 }
 
 // ─── SCENARIOS ────────────────────────────────────────────────────────────────
@@ -809,7 +825,7 @@ export default function App() {
   async function handleAI(stock) {
     if (aiLoading[stock.id]) return;
     setAiLoading(l => ({ ...l, [stock.id]: true }));
-    const text = await fetchAIAnalysis(stock, notes[stock.id], sym);
+    const text = await fetchAIAnalysis(stock, notes[stock.id], sym, currency);
     setAiText(t => ({ ...t, [stock.id]: text }));
     setAiLoading(l => ({ ...l, [stock.id]: false }));
   }
@@ -855,6 +871,22 @@ export default function App() {
             @keyframes spin{to{transform:rotate(360deg)}}
             @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
             .fade-up{animation:fadeUp 0.3s ease forwards}
+
+            /* ── MOBILE ── */
+            @media(max-width:768px){
+              .desktop-sidebar{display:none!important}
+              .desktop-tabs{display:none!important}
+              .mobile-nav{display:flex!important}
+              .mobile-header-actions .action-btn{font-size:10px;padding:5px 8px}
+              .main-content{padding:14px 14px 80px!important}
+              .header-logo span:last-child{display:none}
+              .kpi-grid{grid-template-columns:repeat(2,1fr)!important}
+              .comparison-grid{grid-template-columns:1fr!important}
+            }
+            @media(min-width:769px){
+              .mobile-nav{display:none!important}
+              .mobile-portfolio-header{display:none!important}
+            }
           `}</style>
 
           {/* Alert toasts */}
@@ -878,7 +910,7 @@ export default function App() {
               <span style={{ fontSize: 9, color: "#2a2d35", letterSpacing: "0.2em", textTransform: "uppercase" }}>Tracker</span>
               {plan === "pro" && <span style={{ fontSize: 8, background: "#F4C542", color: "#0D0F14", padding: "2px 6px", borderRadius: 2, fontWeight: 700, letterSpacing: "0.1em" }}>PRO</span>}
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 0, overflowX: "auto", flex: 1, justifyContent: "center" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 0, overflowX: "auto", flex: 1, justifyContent: "center" }} className="desktop-tabs">
               {["overview","storico","settori","confronto","alert","simulazioni"].map(t => (
                 <button key={t} className={`tab-btn ${activeTab === t ? "active" : ""}`} onClick={() => setActiveTab(t)}>{t}</button>
               ))}
@@ -948,7 +980,7 @@ export default function App() {
           <div style={{ display: "flex", height: "calc(100vh - 52px)", overflow: "hidden" }}>
 
             {/* Sidebar */}
-            <div style={{ width: 258, borderRight: "1px solid #161820", flexShrink: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <div className="desktop-sidebar" style={{ width: 258, borderRight: "1px solid #161820", flexShrink: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
               <div style={{ padding: "16px 18px 14px", borderBottom: "1px solid #161820" }}>
                 <div style={{ fontSize: 9, color: "#2a2d35", letterSpacing: "0.18em", textTransform: "uppercase", marginBottom: 5 }}>Valore Portafoglio</div>
                 <div style={{ fontFamily: "'Fraunces', serif", fontSize: 24, fontWeight: 300, letterSpacing: "-0.02em" }}>{sym}{fmt(totalValue)}</div>
@@ -1008,7 +1040,7 @@ export default function App() {
             </div>
 
             {/* Main */}
-            <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px" }}>
+            <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px" }} className="main-content">
 
               {/* OVERVIEW */}
               {activeTab === "overview" && (
@@ -1037,7 +1069,7 @@ export default function App() {
                         </div>
 
                         {/* KPIs */}
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 14 }}>
+                        <div className="kpi-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 14 }}>
                           {[
                             { l: "Prezzo Acquisto",  v: `${sym}${fmt(displayStock.buyPrice * rate)}` },
                             { l: "Valore Posizione", v: `${sym}${fmt(displayStock.qty * displayStock.currentPrice * rate)}` },
@@ -1361,6 +1393,36 @@ export default function App() {
             </div>
           </div>
         </div>
+          {/* Mobile portfolio summary */}
+          <div className="mobile-portfolio-header" style={{ padding: "12px 16px", borderBottom: "1px solid #161820", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <div style={{ fontSize: 8, color: "#2a2d35", letterSpacing: "0.18em", textTransform: "uppercase" }}>Portafoglio</div>
+              <div style={{ fontFamily: "'Fraunces', serif", fontSize: 20, fontWeight: 300, color: "#E8E6DF" }}>{sym}{fmt(totalValue)}</div>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: 13, color: totalPnL >= 0 ? "#5EC98A" : "#E87040", fontWeight: 500 }}>{totalPnL >= 0 ? "+" : ""}{sym}{fmt(Math.abs(totalPnL))}</div>
+              <div style={{ fontSize: 10, color: totalPct >= 0 ? "#5EC98A" : "#E87040" }}>{fmtPct(totalPct)}</div>
+            </div>
+          </div>
+
+          {/* Mobile bottom navigation */}
+          <div className="mobile-nav" style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "#0a0c10", borderTop: "1px solid #161820", zIndex: 999, justifyContent: "space-around", alignItems: "center", padding: "8px 0", paddingBottom: "env(safe-area-inset-bottom)" }}>
+            {[
+              { id: "overview",    icon: "◈", label: "Titoli" },
+              { id: "storico",     icon: "📈", label: "Storico" },
+              { id: "settori",     icon: "◉", label: "Settori" },
+              { id: "confronto",   icon: "⇄", label: "Confronto" },
+              { id: "alert",       icon: "🔔", label: "Alert" },
+              { id: "simulazioni", icon: "⚡", label: "Stress" },
+            ].map(t => (
+              <button key={t.id} onClick={() => setActiveTab(t.id)}
+                style={{ background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "4px 8px", color: activeTab === t.id ? "#F4C542" : "#444", fontFamily: "inherit", transition: "color 0.15s" }}>
+                <span style={{ fontSize: 16 }}>{t.icon}</span>
+                <span style={{ fontSize: 8, letterSpacing: "0.08em", textTransform: "uppercase" }}>{t.label}</span>
+              </button>
+            ))}
+          </div>
+
       </CurrencyCtx.Provider>
     </PlanCtx.Provider>
   );
