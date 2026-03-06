@@ -88,7 +88,40 @@ async function fetchAIAnalysis(stock, note, sym) {
   );
 }
 
-// ─── SPINNER ──────────────────────────────────────────────────────────────────
+// ─── SCENARIOS ────────────────────────────────────────────────────────────────
+const SCENARIOS = [
+  { id: "covid",      label: "🦠 Covid Crash",        from: "2020-02-19", to: "2020-03-23",  spx: -34, real: true,  color: "#E87040", desc: "Il mercato perde il 34% in 33 giorni" },
+  { id: "postcovid",  label: "🚀 Post-Covid Rally",    from: "2020-03-23", to: "2021-12-31",  spx: +114, real: true, color: "#5EC98A", desc: "La ripresa più rapida della storia" },
+  { id: "bull2017",   label: "📈 Bull Run 2017",       from: "2017-01-01", to: "2017-12-31",  spx: +19,  real: true, color: "#5B8DEF", desc: "Un anno eccezionale per i mercati" },
+  { id: "gfc",        label: "💥 Financial Crisis",    from: "2007-10-01", to: "2009-03-09",  spx: -57, real: false, color: "#BF6EEA", desc: "La peggior crisi dal 1929 (-57% S&P500)" },
+  { id: "dotcom",     label: "🫧 Dot-com Bubble",      from: "2000-03-10", to: "2002-10-09",  spx: -49, real: false, color: "#F06292", desc: "Il crollo delle aziende tech (-49% S&P500)" },
+];
+
+async function fetchScenarioData(symbol, scenario) {
+  if (!scenario.real) return null; // use simulation for old scenarios
+  try {
+    const res = await fetch(`${API_BASE}/api/scenario?symbol=${encodeURIComponent(symbol)}&from=${scenario.from}&to=${scenario.to}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.candles || null;
+  } catch { return null; }
+}
+
+function simulateScenario(scenario, days) {
+  // Simulate based on S&P500 performance with some variance
+  const totalPct = scenario.spx / 100;
+  const n = days || 60;
+  let cumPct = 0;
+  return Array.from({ length: n }, (_, i) => {
+    const progress = i / n;
+    const trend = totalPct * progress;
+    const noise = (Math.random() - 0.5) * 0.04;
+    cumPct = trend + noise;
+    const d = new Date(scenario.from);
+    d.setDate(d.getDate() + Math.floor(i * (new Date(scenario.to) - new Date(scenario.from)) / 1000 / 60 / 60 / 24 / n));
+    return { date: d.toLocaleDateString("it-IT", { day: "2-digit", month: "short", year: "2-digit" }), pct: parseFloat((cumPct * 100).toFixed(2)) };
+  });
+}
 function Spinner({ color = "#F4C542", size = 11 }) {
   return <span style={{ display: "inline-block", width: size, height: size, borderRadius: "50%", border: `1.5px solid ${color}`, borderTopColor: "transparent", animation: "spin 0.7s linear infinite", flexShrink: 0 }} />;
 }
@@ -282,6 +315,189 @@ const DEFAULT_STOCKS = [
   { id: 2, ticker: "MSFT",  qty: 5,  buyPrice: 380.0, currentPrice: 415.32, sector: "Tech",     priceReal: false, buyDate: "15/03/24" },
   { id: 3, ticker: "NVDA",  qty: 8,  buyPrice: 495.0, currentPrice: 875.20, sector: "Tech",     priceReal: false, buyDate: "10/06/24" },
 ];
+
+// ─── SIMULAZIONI TAB ──────────────────────────────────────────────────────────
+function SimulazioniTab({ stocks, sym, rate, fmt, fmtPct }) {
+  const [selectedScenario, setSelectedScenario] = useState(SCENARIOS[0]);
+  const [scenarioData, setScenarioData] = useState({});
+  const [loading, setLoading] = useState(false);
+
+  const totalValue   = stocks.reduce((s, x) => s + x.qty * x.currentPrice, 0);
+  const totalInvested = stocks.reduce((s, x) => s + x.qty * x.buyPrice, 0);
+
+  useEffect(() => {
+    const key = selectedScenario.id;
+    if (scenarioData[key]) return;
+    setLoading(true);
+
+    if (!selectedScenario.real) {
+      // Simulate for old scenarios
+      const days = Math.round((new Date(selectedScenario.to) - new Date(selectedScenario.from)) / 86400000 / 7);
+      const chartData = simulateScenario(selectedScenario, days);
+      // Per-stock simulation based on sector beta
+      const stockResults = stocks.map(s => {
+        const beta = s.sector === "Tech" ? 1.4 : s.sector === "Energy" ? 0.9 : 1.0;
+        const pct = selectedScenario.spx / 100 * beta * (0.85 + Math.random() * 0.3);
+        const pnl = s.qty * s.currentPrice * rate * pct;
+        return { ...s, scenarioPct: pct * 100, scenarioPnl: pnl };
+      });
+      setScenarioData(d => ({ ...d, [key]: { chartData, stockResults } }));
+      setLoading(false);
+    } else {
+      // Fetch real data for each stock
+      Promise.all(stocks.map(s => fetchScenarioData(s.ticker, selectedScenario))).then(results => {
+        // Build combined portfolio chart
+        const maxLen = Math.max(...results.map(r => r?.length || 0));
+        const chartData = Array.from({ length: maxLen }, (_, i) => {
+          const point = { date: results.find(r => r)?.[i]?.date || "" };
+          let totalPct = 0, totalWeight = 0;
+          results.forEach((r, j) => {
+            if (r && r[i]) {
+              const weight = stocks[j].qty * stocks[j].currentPrice / totalValue;
+              totalPct += r[i].pct * weight;
+              totalWeight += weight;
+            }
+          });
+          point.pct = totalWeight > 0 ? parseFloat((totalPct / totalWeight).toFixed(2)) : 0;
+          return point;
+        });
+
+        const stockResults = stocks.map((s, i) => {
+          const r = results[i];
+          if (!r || r.length === 0) {
+            // Fallback to simulation if no data
+            const beta = 1.0;
+            const pct = selectedScenario.spx / 100 * beta;
+            return { ...s, scenarioPct: pct * 100, scenarioPnl: s.qty * s.currentPrice * rate * pct, noData: true };
+          }
+          const pct = r[r.length - 1].pct;
+          const pnl = s.qty * s.currentPrice * rate * pct / 100;
+          return { ...s, scenarioPct: pct, scenarioPnl: pnl, noData: false };
+        });
+
+        setScenarioData(d => ({ ...d, [key]: { chartData, stockResults } }));
+        setLoading(false);
+      });
+    }
+  }, [selectedScenario.id, stocks.length]);
+
+  const data = scenarioData[selectedScenario.id];
+  const totalScenarioPnl = data ? data.stockResults.reduce((s, x) => s + x.scenarioPnl, 0) : 0;
+  const totalScenarioPct = totalValue > 0 ? totalScenarioPnl / (totalValue * rate) * 100 : 0;
+
+  return (
+    <div className="fade-up">
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300 }}>Stress Test Storico</div>
+        <div style={{ fontSize: 11, color: "#444", marginTop: 2 }}>Come sarebbe andato il tuo portafoglio durante le grandi crisi?</div>
+      </div>
+
+      {/* Scenario selector */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 24 }}>
+        {SCENARIOS.map(s => (
+          <button key={s.id} onClick={() => setSelectedScenario(s)}
+            style={{ background: selectedScenario.id === s.id ? s.color + "22" : "none", border: `1px solid ${selectedScenario.id === s.id ? s.color : "#2a2d35"}`, color: selectedScenario.id === s.id ? s.color : "#555", fontFamily: "inherit", fontSize: 11, padding: "7px 14px", borderRadius: 4, cursor: "pointer", transition: "all 0.15s" }}>
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Scenario description */}
+      <div style={{ background: "#0f1117", border: `1px solid ${selectedScenario.color}33`, borderRadius: 6, padding: "12px 16px", marginBottom: 20, display: "flex", alignItems: "center", gap: 16 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, color: "#E8E6DF", fontWeight: 500 }}>{selectedScenario.label}</div>
+          <div style={{ fontSize: 11, color: "#555", marginTop: 3 }}>{selectedScenario.desc} · {selectedScenario.from} → {selectedScenario.to}</div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: 10, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em" }}>S&P 500</div>
+          <div style={{ fontFamily: "'Fraunces', serif", fontSize: 20, color: selectedScenario.spx >= 0 ? "#5EC98A" : "#E87040" }}>
+            {selectedScenario.spx >= 0 ? "+" : ""}{selectedScenario.spx}%
+          </div>
+        </div>
+        {!selectedScenario.real && <div style={{ fontSize: 9, background: "#1a1d26", color: "#555", padding: "3px 8px", borderRadius: 3 }}>Simulato</div>}
+      </div>
+
+      {loading ? (
+        <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", gap: 10, color: "#555", fontSize: 12 }}>
+          <Spinner /> Caricamento dati storici…
+        </div>
+      ) : data ? (
+        <>
+          {/* KPIs */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 20 }}>
+            {[
+              { l: "Impatto Portafoglio", v: `${totalScenarioPnl >= 0 ? "+" : ""}${sym}${fmt(Math.abs(totalScenarioPnl))}`, c: totalScenarioPnl >= 0 ? "#5EC98A" : "#E87040" },
+              { l: "Performance %",       v: `${totalScenarioPct >= 0 ? "+" : ""}${totalScenarioPct.toFixed(2)}%`, c: totalScenarioPct >= 0 ? "#5EC98A" : "#E87040" },
+              { l: "Valore Finale",       v: `${sym}${fmt((totalValue + totalScenarioPnl / rate) * rate)}`, c: "#E8E6DF" },
+            ].map(k => (
+              <div key={k.l} className="card">
+                <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 7 }}>{k.l}</div>
+                <div style={{ fontFamily: "'Fraunces', serif", fontSize: 20, fontWeight: 300, color: k.c }}>{k.v}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Chart */}
+          <div className="card" style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 12 }}>
+              Andamento portafoglio — {selectedScenario.label}
+            </div>
+            <ResponsiveContainer width="100%" height={180}>
+              <AreaChart data={data.chartData}>
+                <defs>
+                  <linearGradient id="scg" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={selectedScenario.color} stopOpacity={0.2}/>
+                    <stop offset="95%" stopColor={selectedScenario.color} stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="date" tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false} interval={Math.floor((data.chartData.length || 1) / 5)}/>
+                <YAxis tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false} domain={["auto","auto"]} width={45} tickFormatter={v => `${v > 0 ? "+" : ""}${v}%`}/>
+                <Tooltip contentStyle={{ background: "#0f1117", border: "1px solid #2a2d35", borderRadius: 4, fontSize: 11, color: "#E8E6DF" }} formatter={v => [`${v > 0 ? "+" : ""}${v}%`, "Portafoglio"]}/>
+                <ReferenceLine y={0} stroke="#2a2d35" strokeDasharray="4 3" strokeWidth={1}/>
+                <Area type="monotone" dataKey="pct" stroke={selectedScenario.color} strokeWidth={1.5} fill="url(#scg)" dot={false}/>
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Per-stock table */}
+          <div className="card">
+            <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 14 }}>Dettaglio per titolo</div>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid #1a1d26" }}>
+                  {["Ticker", "Settore", "Valore Attuale", "Performance Scenario", "P&L Scenario"].map(h => (
+                    <th key={h} style={{ textAlign: "left", padding: "6px 10px", fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.08em" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data.stockResults.map(s => (
+                  <tr key={s.id} style={{ borderBottom: "1px solid #0f1117" }}>
+                    <td style={{ padding: "10px 10px", color: "#E8E6DF", fontWeight: 500 }}>
+                      {s.ticker}
+                      {s.noData && <span style={{ fontSize: 8, color: "#444", marginLeft: 6 }}>(sim.)</span>}
+                    </td>
+                    <td style={{ padding: "10px 10px", color: "#555" }}>{s.sector}</td>
+                    <td style={{ padding: "10px 10px" }}>{sym}{fmt(s.qty * s.currentPrice * rate)}</td>
+                    <td style={{ padding: "10px 10px", color: s.scenarioPct >= 0 ? "#5EC98A" : "#E87040", fontWeight: 500 }}>
+                      {s.scenarioPct >= 0 ? "+" : ""}{s.scenarioPct.toFixed(2)}%
+                    </td>
+                    <td style={{ padding: "10px 10px", color: s.scenarioPnl >= 0 ? "#5EC98A" : "#E87040" }}>
+                      {s.scenarioPnl >= 0 ? "+" : ""}{sym}{fmt(Math.abs(s.scenarioPnl))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{ marginTop: 14, padding: "10px 10px", background: "#0a0c10", borderRadius: 4, fontSize: 10, color: "#333" }}>
+              ⚠️ Simulazione basata su dati storici reali{!selectedScenario.real ? " interpolati" : ""}. Le performance passate non garantiscono risultati futuri. Non costituisce consulenza finanziaria ai sensi MiFID II.
+            </div>
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function App() {
@@ -663,7 +879,7 @@ export default function App() {
               {plan === "pro" && <span style={{ fontSize: 8, background: "#F4C542", color: "#0D0F14", padding: "2px 6px", borderRadius: 2, fontWeight: 700, letterSpacing: "0.1em" }}>PRO</span>}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 0, overflowX: "auto", flex: 1, justifyContent: "center" }}>
-              {["overview","storico","settori","confronto","alert"].map(t => (
+              {["overview","storico","settori","confronto","alert","simulazioni"].map(t => (
                 <button key={t} className={`tab-btn ${activeTab === t ? "active" : ""}`} onClick={() => setActiveTab(t)}>{t}</button>
               ))}
             </div>
@@ -1135,6 +1351,11 @@ export default function App() {
                     </div>
                   </ProGate>
                 </div>
+              )}
+
+              {/* SIMULAZIONI */}
+              {activeTab === "simulazioni" && (
+                <SimulazioniTab stocks={stocks} sym={sym} rate={rate} fmt={fmt} fmtPct={fmtPct} />
               )}
 
             </div>
