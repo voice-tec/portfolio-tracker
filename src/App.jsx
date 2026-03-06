@@ -332,7 +332,129 @@ const DEFAULT_STOCKS = [
   { id: 3, ticker: "NVDA",  qty: 8,  buyPrice: 495.0, currentPrice: 875.20, sector: "Tech",     priceReal: false, buyDate: "10/06/24" },
 ];
 
-// ─── SIMULAZIONI TAB ──────────────────────────────────────────────────────────
+// ─── STOCK DETAIL MODAL ───────────────────────────────────────────────────────
+function StockModal({ stock, onClose, notes, setNotes, alerts, setAlerts, handleRemove, sym, rate, fmt, fmtPct, handleAI, aiLoading, aiText, plan }) {
+  const [chartPeriod, setChartPeriod] = useState(30);
+  const [history, setHistory] = useState(stock.history || []);
+  const [histLoading, setHistLoading] = useState(false);
+  const pnlPct = (stock.currentPrice - stock.buyPrice) / stock.buyPrice * 100;
+  const pnlAbs = (stock.currentPrice - stock.buyPrice) * stock.qty * rate;
+  const isUp = pnlPct >= 0;
+
+  useEffect(() => {
+    setHistLoading(true);
+    fetchRealHistory(stock.ticker, chartPeriod).then(candles => {
+      setHistory(candles || simulateHistory(stock.currentPrice, chartPeriod));
+      setHistLoading(false);
+    });
+  }, [stock.ticker, chartPeriod]);
+
+  // Close on backdrop click or Escape
+  useEffect(() => {
+    const handler = e => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 9000, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: "#0D0F14", border: "1px solid #1a1d26", borderRadius: "12px 12px 0 0", width: "100%", maxWidth: 800, maxHeight: "88vh", overflowY: "auto", padding: "24px 28px", animation: "fadeUp 0.25s ease" }}>
+
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontFamily: "'Fraunces', serif", fontSize: 28, fontWeight: 300 }}>{stock.ticker}</span>
+              <span style={{ fontSize: 9, padding: "2px 8px", borderRadius: 2, background: "#1a1d26", color: "#666", letterSpacing: "0.08em", textTransform: "uppercase" }}>{stock.sector}</span>
+              {stock.priceReal && <span style={{ fontSize: 8, background: "#1a2a1a", color: "#5EC98A", padding: "2px 7px", borderRadius: 2 }}>LIVE</span>}
+            </div>
+            <div style={{ fontSize: 10, color: "#2a2d35", marginTop: 3 }}>Acquistato il {stock.buyDate} · {stock.qty} azioni</div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontFamily: "'Fraunces', serif", fontSize: 24, fontWeight: 300 }}>{sym}{fmt(stock.currentPrice * rate)}</div>
+              <div style={{ fontSize: 12, color: isUp ? "#5EC98A" : "#E87040" }}>{isUp?"+":""}{sym}{fmt(Math.abs(pnlAbs))} · {fmtPct(pnlPct)}</div>
+            </div>
+            <button onClick={onClose} style={{ background: "none", border: "1px solid #2a2d35", color: "#555", fontFamily: "inherit", fontSize: 16, padding: "4px 10px", borderRadius: 4, cursor: "pointer" }}>✕</button>
+          </div>
+        </div>
+
+        {/* KPIs */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 16 }}>
+          {[
+            { l: "P.Acquisto",   v: `${sym}${fmt(stock.buyPrice * rate)}` },
+            { l: "Valore Pos.",  v: `${sym}${fmt(stock.qty * stock.currentPrice * rate)}` },
+            { l: "Costo Tot.",   v: `${sym}${fmt(stock.qty * stock.buyPrice * rate)}` },
+            { l: "P&L Totale",   v: `${isUp?"+":""}${sym}${fmt(Math.abs(pnlAbs))}`, c: isUp?"#5EC98A":"#E87040" },
+          ].map(k => (
+            <div key={k.l} style={{ background: "#0f1117", border: "1px solid #1a1d26", borderRadius: 6, padding: "12px 14px" }}>
+              <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6 }}>{k.l}</div>
+              <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 300, color: k.c || "#E8E6DF" }}>{k.v}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Chart */}
+        <div style={{ background: "#0f1117", border: "1px solid #1a1d26", borderRadius: 6, padding: "14px 16px", marginBottom: 14 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em" }}>Andamento</div>
+            <div style={{ display: "flex", gap: 4 }}>
+              {[{l:"1M",v:30},{l:"3M",v:90},{l:"6M",v:180},{l:"1A",v:365}].map(p => (
+                <button key={p.v} onClick={() => setChartPeriod(p.v)}
+                  style={{ background: chartPeriod===p.v?"#F4C542":"none", border:`1px solid ${chartPeriod===p.v?"#F4C542":"#2a2d35"}`, color: chartPeriod===p.v?"#0D0F14":"#555", fontFamily:"inherit", fontSize:9, padding:"3px 8px", borderRadius:3, cursor:"pointer" }}>
+                  {p.l}
+                </button>
+              ))}
+            </div>
+          </div>
+          {histLoading ? (
+            <div style={{ height: 140, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, color: "#555", fontSize: 11 }}><Spinner /> Caricamento…</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={140}>
+              <AreaChart data={history}>
+                <defs><linearGradient id="mg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#F4C542" stopOpacity={0.18}/><stop offset="95%" stopColor="#F4C542" stopOpacity={0}/></linearGradient></defs>
+                <XAxis dataKey="date" tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false} interval={Math.floor(history.length/5)}/>
+                <YAxis tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false} domain={["auto","auto"]} width={50} tickFormatter={v => `${sym}${v}`}/>
+                <Tooltip contentStyle={{ background: "#0f1117", border: "1px solid #2a2d35", borderRadius: 4, fontSize: 11, color: "#E8E6DF" }} formatter={v => [`${sym}${v}`, "Prezzo"]}/>
+                <ReferenceLine y={stock.buyPrice} stroke="#E87040" strokeDasharray="4 3" strokeWidth={1}/>
+                <Area type="monotone" dataKey="price" stroke="#F4C542" strokeWidth={1.5} fill="url(#mg)" dot={false}/>
+              </AreaChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+
+        {/* AI */}
+        <div style={{ background: "#0f1117", border: "1px solid #1a1d26", borderRadius: 6, padding: "14px 16px", marginBottom: 14 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em" }}>🤖 Analisi AI</div>
+            <button onClick={() => handleAI(stock)} disabled={aiLoading[stock.id]}
+              style={{ background: "none", border: "1px solid #2a2d35", color: "#888", fontFamily: "inherit", fontSize: 10, padding: "5px 12px", borderRadius: 3, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+              {aiLoading[stock.id] ? <><Spinner size={9}/> Analisi…</> : "Analizza ora"}
+            </button>
+          </div>
+          {aiText[stock.id]
+            ? <div style={{ fontSize: 12, color: "#aaa", lineHeight: 1.8 }}>{aiText[stock.id]}</div>
+            : <div style={{ fontSize: 11, color: "#2a2d35" }}>Clicca "Analizza ora" per un'analisi AI contestuale.</div>}
+        </div>
+
+        {/* Notes */}
+        <div style={{ background: "#0f1117", border: "1px solid #1a1d26", borderRadius: 6, padding: "14px 16px", marginBottom: 14 }}>
+          <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8 }}>📝 Note</div>
+          <textarea rows={3} value={notes[stock.id] || ""} onChange={e => setNotes(n => ({ ...n, [stock.id]: e.target.value }))}
+            placeholder={`Motivo acquisto, target price, strategia…`} style={{ resize: "vertical", lineHeight: 1.7, fontSize: 12, width: "100%", background: "#13151c", border: "1px solid #2a2d35", color: "#E8E6DF", fontFamily: "inherit", padding: "9px 12px", borderRadius: 4, outline: "none" }}/>
+        </div>
+
+        {/* Delete */}
+        <button onClick={() => { handleRemove(stock.id); onClose(); }}
+          style={{ background: "none", border: "1px solid #2a2d35", color: "#E87040", fontFamily: "inherit", fontSize: 11, padding: "8px 16px", borderRadius: 4, cursor: "pointer", width: "100%" }}>
+          🗑 Rimuovi {stock.ticker} dal portafoglio
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
 function SimulazioniTab({ stocks, sym, rate, fmt, fmtPct }) {
   const [selectedScenario, setSelectedScenario] = useState(SCENARIOS[0]);
   const [scenarioData, setScenarioData] = useState({});
@@ -922,7 +1044,15 @@ export default function App() {
               {plan === "free" && <button className="action-btn" onClick={() => setShowUpgrade(true)} style={{ color: "#F4C542", borderColor: "#F4C542" }}>✦ Pro</button>}
               <button className="action-btn" onClick={() => setShowImport(v => !v)}>↑ Import CSV</button>
               <button className="action-btn" onClick={() => setShowForm(v => !v)}>{showForm ? "✕" : "+ Aggiungi"}</button>
-              <button className="action-btn" onClick={() => signOut().then(() => setUser(null))} style={{ color: "#333", fontSize: 10 }}>{user.name} ↩</button>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {plan === "pro" && (
+                  <>
+                    <button onClick={exportCSV} className="action-btn" style={{ fontSize: 9, padding: "4px 10px" }}>↓ CSV</button>
+                    <button onClick={exportPDF} className="action-btn" style={{ fontSize: 9, padding: "4px 10px" }}>↓ PDF</button>
+                  </>
+                )}
+                <button className="action-btn" onClick={() => signOut().then(() => setUser(null))} style={{ color: "#333", fontSize: 10 }}>{user.name} ↩</button>
+              </div>
             </div>
           </div>
 
@@ -979,67 +1109,7 @@ export default function App() {
 
           <div style={{ display: "flex", height: "calc(100vh - 52px)", overflow: "hidden" }}>
 
-            {/* Sidebar */}
-            <div className="desktop-sidebar" style={{ width: 258, borderRight: "1px solid #161820", flexShrink: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-              <div style={{ padding: "16px 18px 14px", borderBottom: "1px solid #161820" }}>
-                <div style={{ fontSize: 9, color: "#2a2d35", letterSpacing: "0.18em", textTransform: "uppercase", marginBottom: 5 }}>Valore Portafoglio</div>
-                <div style={{ fontFamily: "'Fraunces', serif", fontSize: 24, fontWeight: 300, letterSpacing: "-0.02em" }}>{sym}{fmt(totalValue)}</div>
-                <div style={{ display: "flex", gap: 7, marginTop: 4, alignItems: "center" }}>
-                  <span style={{ fontSize: 12, color: totalPnL >= 0 ? "#5EC98A" : "#E87040", fontWeight: 500 }}>{totalPnL >= 0 ? "+" : ""}{sym}{fmt(Math.abs(totalPnL))}</span>
-                  <span style={{ fontSize: 10, color: totalPct >= 0 ? "#5EC98A" : "#E87040" }}>({fmtPct(totalPct)})</span>
-                </div>
-                <div style={{ fontSize: 9, color: "#2a2d35", marginTop: 2 }}>Investito: {sym}{fmt(totalInvested)}</div>
-                {plan === "pro" && (
-                  <div style={{ display: "flex", gap: 6, marginTop: 9 }}>
-                    <button onClick={exportCSV} style={{ background: "none", border: "1px solid #1a1d26", color: "#444", fontFamily: "inherit", fontSize: 9, padding: "4px 10px", borderRadius: 3, cursor: "pointer", letterSpacing: "0.08em", transition: "all 0.15s" }}
-                      onMouseEnter={e => { e.target.style.borderColor = "#F4C542"; e.target.style.color = "#F4C542"; }}
-                      onMouseLeave={e => { e.target.style.borderColor = "#1a1d26"; e.target.style.color = "#444"; }}>
-                      ↓ CSV
-                    </button>
-                    <button onClick={exportPDF} style={{ background: "none", border: "1px solid #1a1d26", color: "#444", fontFamily: "inherit", fontSize: 9, padding: "4px 10px", borderRadius: 3, cursor: "pointer", letterSpacing: "0.08em", transition: "all 0.15s" }}
-                      onMouseEnter={e => { e.target.style.borderColor = "#F4C542"; e.target.style.color = "#F4C542"; }}
-                      onMouseLeave={e => { e.target.style.borderColor = "#1a1d26"; e.target.style.color = "#444"; }}>
-                      ↓ PDF
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              <div style={{ flex: 1, overflowY: "auto" }}>
-                {stocks.map(s => {
-                  const pnlPct = (s.currentPrice - s.buyPrice) / s.buyPrice * 100;
-                  const isUp = pnlPct >= 0;
-                  return (
-                    <div key={s.id} className={`stock-row ${displayStock?.id === s.id ? "active" : ""}`}
-                      style={{ padding: "10px 18px", display: "flex", alignItems: "center", justifyContent: "space-between" }}
-                      onClick={() => { setSelectedId(s.id); setActiveTab("overview"); }}>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                          <span style={{ fontSize: 13, fontWeight: 500, letterSpacing: "0.04em" }}>{s.ticker}</span>
-                          {s.priceReal && <span style={{ fontSize: 7, background: "#1a2a1a", color: "#5EC98A", padding: "1px 5px", borderRadius: 2 }}>LIVE</span>}
-                          {alerts[s.id] && <span style={{ fontSize: 9 }}>🔔</span>}
-                        </div>
-                        <div style={{ fontSize: 9, color: "#2a2d35", marginTop: 2 }}>{s.qty} az · acquisto {sym}{fmt(s.buyPrice * rate)}</div>
-                      </div>
-                      <div style={{ textAlign: "right", display: "flex", alignItems: "center", gap: 6 }}>
-                        <div>
-                          <div style={{ fontSize: 12 }}>{sym}{fmt(s.currentPrice * rate)}</div>
-                          <div style={{ fontSize: 9, color: isUp ? "#5EC98A" : "#E87040" }}>{isUp ? "▲" : "▼"} {Math.abs(pnlPct).toFixed(1)}%</div>
-                        </div>
-                        <button className="remove-btn" onClick={e => { e.stopPropagation(); handleRemove(s.id); }}>✕</button>
-                      </div>
-                    </div>
-                  );
-                })}
-                {stocks.length === 0 && <div style={{ padding: "28px 18px", color: "#2a2d35", fontSize: 12, textAlign: "center" }}>Portafoglio vuoto.</div>}
-              </div>
-
-              <div style={{ padding: "10px 18px", borderTop: "1px solid #0f1117", fontSize: 8, color: "#1e2028", lineHeight: 1.7 }}>
-                ⚠️ Solo a scopo informativo. Non costituisce consulenza finanziaria ai sensi MiFID II.
-              </div>
-            </div>
-
-            {/* Main */}
+            {/* Main — full width, no sidebar */}
             <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px" }} className="main-content">
 
               {/* OVERVIEW */}
@@ -1108,7 +1178,7 @@ export default function App() {
                                 const pnl = (s.currentPrice - s.buyPrice) * s.qty * rate;
                                 const pct = (s.currentPrice - s.buyPrice) / s.buyPrice * 100;
                                 return (
-                                  <tr key={s.id} style={{ borderBottom: "1px solid #0f1117", cursor: "pointer" }} onClick={() => { setSelectedId(s.id); setActiveTab("storico"); }}>
+                                  <tr key={s.id} style={{ borderBottom: "1px solid #0f1117", cursor: "pointer" }} onClick={() => setSelectedId(s.id)}>
                                     <td style={{ padding: "10px 8px 10px 0" }}>
                                       <span style={{ fontWeight: 500 }}>{s.ticker}</span>
                                       {s.priceReal && <span style={{ fontSize: 7, background: "#1a2a1a", color: "#5EC98A", padding: "1px 5px", borderRadius: 2, marginLeft: 6 }}>LIVE</span>}
@@ -1391,6 +1461,20 @@ export default function App() {
             </div>
           </div>
         </div>
+          {/* Stock detail modal */}
+          {selectedId && stocks.find(s => s.id === selectedId) && (
+            <StockModal
+              stock={stocks.find(s => s.id === selectedId)}
+              onClose={() => setSelectedId(null)}
+              notes={notes} setNotes={setNotes}
+              alerts={alerts} setAlerts={setAlerts}
+              handleRemove={handleRemove}
+              sym={sym} rate={rate} fmt={fmt} fmtPct={fmtPct}
+              handleAI={handleAI} aiLoading={aiLoading} aiText={aiText}
+              plan={plan}
+            />
+          )}
+
           {/* Mobile portfolio summary */}
           <div className="mobile-portfolio-header" style={{ padding: "12px 16px", borderBottom: "1px solid #161820", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div>
