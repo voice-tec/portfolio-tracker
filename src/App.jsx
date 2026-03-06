@@ -559,12 +559,12 @@ export default function App() {
         sector: s.sector, buyDate: s.buy_date, priceReal: s.price_real,
         history: simulateHistory(s.current_price || s.buy_price)
       }));
-      setStocksRaw(mapped.length > 0 ? mapped : DEFAULT_STOCKS.map(s => ({ ...s, history: simulateHistory(s.currentPrice) })));
+      setStocksRaw(mapped.length > 0 ? mapped : []);
       setNotesRaw(dbNotes);
       setAlertsRaw(dbAlerts);
       setDataLoading(false);
     }).catch(() => {
-      setStocksRaw(DEFAULT_STOCKS.map(s => ({ ...s, history: simulateHistory(s.currentPrice) })));
+      setStocksRaw([]);
       setDataLoading(false);
     });
   }, [user?.id]);
@@ -1045,108 +1045,106 @@ export default function App() {
               {/* OVERVIEW */}
               {activeTab === "overview" && (
                 <div className="fade-up">
-                  {displayStock ? (() => {
-                    const pnlPct = (displayStock.currentPrice - displayStock.buyPrice) / displayStock.buyPrice * 100;
-                    const pnlAbs = (displayStock.currentPrice - displayStock.buyPrice) * displayStock.qty * rate;
-                    const isUp = pnlPct >= 0;
-                    return (
-                      <>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
-                          <div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                              <span style={{ fontFamily: "'Fraunces', serif", fontSize: 32, fontWeight: 300, letterSpacing: "-0.02em" }}>{displayStock.ticker}</span>
-                              <span style={{ fontSize: 9, padding: "2px 8px", borderRadius: 2, background: "#1a1d26", color: "#666", letterSpacing: "0.08em", textTransform: "uppercase" }}>{displayStock.sector}</span>
-                              {displayStock.priceReal && <span style={{ fontSize: 8, background: "#1a2a1a", color: "#5EC98A", padding: "2px 7px", borderRadius: 2 }}>LIVE</span>}
-                            </div>
-                            <div style={{ fontSize: 10, color: "#2a2d35", marginTop: 3 }}>Acquistato il {displayStock.buyDate} · {displayStock.qty} azioni</div>
+                  {stocks.length === 0 ? (
+                    /* Empty state */
+                    <div style={{ textAlign: "center", marginTop: 80 }}>
+                      <div style={{ fontFamily: "'Fraunces', serif", fontSize: 36, fontWeight: 300, color: "#F4C542", marginBottom: 12 }}>◈</div>
+                      <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300, marginBottom: 8 }}>Portafoglio vuoto</div>
+                      <div style={{ fontSize: 12, color: "#444", marginBottom: 24, lineHeight: 1.8 }}>Aggiungi il tuo primo titolo per iniziare a tracciare il tuo portafoglio.</div>
+                      <button className="add-btn" style={{ margin: "0 auto" }} onClick={() => setShowForm(true)}>+ Aggiungi il primo titolo</button>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Portfolio KPIs */}
+                      <div className="kpi-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 20 }}>
+                        {[
+                          { l: "Valore Totale",   v: `${sym}${fmt(totalValue)}`,                                                   c: "#E8E6DF" },
+                          { l: "Investito",        v: `${sym}${fmt(totalInvested)}`,                                                c: "#888" },
+                          { l: "P&L Totale",       v: `${totalPnL>=0?"+":""}${sym}${fmt(Math.abs(totalPnL))}`,                     c: totalPnL>=0?"#5EC98A":"#E87040" },
+                          { l: "Performance",      v: fmtPct(totalPct),                                                            c: totalPct>=0?"#5EC98A":"#E87040" },
+                        ].map(k => (
+                          <div key={k.l} className="card">
+                            <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 7 }}>{k.l}</div>
+                            <div style={{ fontFamily: "'Fraunces', serif", fontSize: 18, fontWeight: 300, color: k.c }}>{k.v}</div>
                           </div>
-                          <div style={{ textAlign: "right" }}>
-                            <div style={{ fontFamily: "'Fraunces', serif", fontSize: 28, fontWeight: 300 }}>{sym}{fmt(displayStock.currentPrice * rate)}</div>
-                            <div style={{ fontSize: 12, color: isUp ? "#5EC98A" : "#E87040", marginTop: 2 }}>
-                              {isUp ? "+" : ""}{sym}{fmt(Math.abs(pnlAbs))} · {fmtPct(pnlPct)}
+                        ))}
+                      </div>
+
+                      {/* Portfolio chart */}
+                      <div className="card" style={{ marginBottom: 16 }}>
+                        <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 12 }}>Andamento Portafoglio — 30 giorni</div>
+                        <ProGate feat="history" h={160}>
+                          <ResponsiveContainer width="100%" height={160}>
+                            <AreaChart data={portfolioHistory}>
+                              <defs>
+                                <linearGradient id="pg2" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="#F4C542" stopOpacity={0.18}/>
+                                  <stop offset="95%" stopColor="#F4C542" stopOpacity={0}/>
+                                </linearGradient>
+                              </defs>
+                              <XAxis dataKey="date" tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false} interval={4}/>
+                              <YAxis tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false} domain={["auto","auto"]} width={60} tickFormatter={v => `${sym}${(v*rate/1000).toFixed(1)}k`}/>
+                              <Tooltip contentStyle={{ background: "#0f1117", border: "1px solid #2a2d35", borderRadius: 4, fontSize: 11, color: "#E8E6DF" }} formatter={v => [`${sym}${fmt(v*rate,0)}`, "Portafoglio"]}/>
+                              <Area type="monotone" dataKey="valore" stroke="#F4C542" strokeWidth={1.5} fill="url(#pg2)" dot={false}/>
+                            </AreaChart>
+                          </ResponsiveContainer>
+                        </ProGate>
+                      </div>
+
+                      {/* Positions table */}
+                      <div className="card" style={{ marginBottom: 16 }}>
+                        <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 14 }}>Posizioni</div>
+                        <div style={{ overflowX: "auto" }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, minWidth: 500 }}>
+                            <thead>
+                              <tr style={{ borderBottom: "1px solid #1a1d26" }}>
+                                {["Ticker","Q.tà","P.Acquisto","P.Attuale","Valore","P&L","P&L%"].map(h => (
+                                  <th key={h} style={{ textAlign: "left", padding: "0 8px 8px 0", fontSize: 8, color: "#444", letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 400 }}>{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {stocks.map(s => {
+                                const pnl = (s.currentPrice - s.buyPrice) * s.qty * rate;
+                                const pct = (s.currentPrice - s.buyPrice) / s.buyPrice * 100;
+                                return (
+                                  <tr key={s.id} style={{ borderBottom: "1px solid #0f1117", cursor: "pointer" }} onClick={() => { setSelectedId(s.id); setActiveTab("storico"); }}>
+                                    <td style={{ padding: "10px 8px 10px 0" }}>
+                                      <span style={{ fontWeight: 500 }}>{s.ticker}</span>
+                                      {s.priceReal && <span style={{ fontSize: 7, background: "#1a2a1a", color: "#5EC98A", padding: "1px 5px", borderRadius: 2, marginLeft: 6 }}>LIVE</span>}
+                                    </td>
+                                    <td style={{ padding: "10px 8px 10px 0", color: "#888" }}>{s.qty}</td>
+                                    <td style={{ padding: "10px 8px 10px 0", color: "#888" }}>{sym}{fmt(s.buyPrice*rate)}</td>
+                                    <td style={{ padding: "10px 8px 10px 0" }}>{sym}{fmt(s.currentPrice*rate)}</td>
+                                    <td style={{ padding: "10px 8px 10px 0" }}>{sym}{fmt(s.qty*s.currentPrice*rate)}</td>
+                                    <td style={{ padding: "10px 8px 10px 0", color: pnl>=0?"#5EC98A":"#E87040" }}>{pnl>=0?"+":""}{sym}{fmt(Math.abs(pnl))}</td>
+                                    <td style={{ padding: "10px 8px 10px 0", color: pct>=0?"#5EC98A":"#E87040", fontWeight: 500 }}>{fmtPct(pct)}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      {/* Best / Worst performers */}
+                      <div className="comparison-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                        {[
+                          { label: "🏆 Migliore", stock: [...stocks].sort((a,b) => (b.currentPrice-b.buyPrice)/b.buyPrice - (a.currentPrice-a.buyPrice)/a.buyPrice)[0], color: "#5EC98A" },
+                          { label: "📉 Peggiore", stock: [...stocks].sort((a,b) => (a.currentPrice-a.buyPrice)/a.buyPrice - (b.currentPrice-b.buyPrice)/b.buyPrice)[0], color: "#E87040" },
+                        ].map(({ label, stock, color }) => stock ? (
+                          <div key={label} className="card">
+                            <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8 }}>{label}</div>
+                            <div style={{ fontFamily: "'Fraunces', serif", fontSize: 20, fontWeight: 300 }}>{stock.ticker}</div>
+                            <div style={{ fontSize: 13, color, marginTop: 4, fontWeight: 500 }}>
+                              {fmtPct((stock.currentPrice - stock.buyPrice) / stock.buyPrice * 100)}
                             </div>
+                            <div style={{ fontSize: 10, color: "#444", marginTop: 2 }}>{sym}{fmt(stock.currentPrice * rate)}</div>
                           </div>
-                        </div>
-
-                        {/* KPIs */}
-                        <div className="kpi-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 14 }}>
-                          {[
-                            { l: "Prezzo Acquisto",  v: `${sym}${fmt(displayStock.buyPrice * rate)}` },
-                            { l: "Valore Posizione", v: `${sym}${fmt(displayStock.qty * displayStock.currentPrice * rate)}` },
-                            { l: "Costo Totale",     v: `${sym}${fmt(displayStock.qty * displayStock.buyPrice * rate)}` },
-                            { l: "Peso Portafoglio", v: `${((displayStock.qty * displayStock.currentPrice * rate / totalValue) * 100).toFixed(1)}%` },
-                          ].map(k => (
-                            <div key={k.l} className="card">
-                              <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 7 }}>{k.l}</div>
-                              <div style={{ fontFamily: "'Fraunces', serif", fontSize: 17, fontWeight: 300 }}>{k.v}</div>
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* Chart with period selector */}
-                        <div className="card" style={{ marginBottom: 12 }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                            <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em" }}>Andamento Prezzo</div>
-                            <div style={{ display: "flex", gap: 4 }}>
-                              {[{l:"1M",v:30},{l:"3M",v:90},{l:"6M",v:180},{l:"1A",v:365}].map(p => (
-                                <button key={p.v} onClick={() => setChartPeriod(p.v)}
-                                  style={{ background: chartPeriod===p.v?"#F4C542":"none", border:`1px solid ${chartPeriod===p.v?"#F4C542":"#2a2d35"}`, color: chartPeriod===p.v?"#0D0F14":"#555", fontFamily:"inherit", fontSize:9, padding:"3px 8px", borderRadius:3, cursor:"pointer", transition:"all 0.15s" }}>
-                                  {p.l}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                          <ProGate feat="history" h={150}>
-                            {periodLoading ? (
-                              <div style={{ height: 150, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, color: "#555", fontSize: 11 }}><Spinner /> Caricamento…</div>
-                            ) : (
-                              <ResponsiveContainer width="100%" height={150}>
-                                <AreaChart data={currentHistory}>
-                                  <defs>
-                                    <linearGradient id="sg" x1="0" y1="0" x2="0" y2="1">
-                                      <stop offset="5%" stopColor="#F4C542" stopOpacity={0.18}/>
-                                      <stop offset="95%" stopColor="#F4C542" stopOpacity={0}/>
-                                    </linearGradient>
-                                  </defs>
-                                  <XAxis dataKey="date" tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false} interval={Math.floor(currentHistory.length / 5)}/>
-                                  <YAxis tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false} domain={["auto","auto"]} width={50} tickFormatter={v => `${sym}${v}`}/>
-                                  <Tooltip contentStyle={{ background: "#0f1117", border: "1px solid #2a2d35", borderRadius: 4, fontSize: 11, color: "#E8E6DF" }} formatter={v => [`${sym}${v}`, "Prezzo"]}/>
-                                  <ReferenceLine y={displayStock.buyPrice} stroke="#E87040" strokeDasharray="4 3" strokeWidth={1} label={{ value: "Acquisto", fill: "#E87040", fontSize: 8, position: "insideTopRight" }}/>
-                                  <Area type="monotone" dataKey="price" stroke="#F4C542" strokeWidth={1.5} fill="url(#sg)" dot={false}/>
-                                </AreaChart>
-                              </ResponsiveContainer>
-                            )}
-                          </ProGate>
-                        </div>
-
-                        {/* AI */}
-                        <div className="card" style={{ marginBottom: 12 }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                            <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em" }}>🤖 Analisi AI</div>
-                            <ProGate feat="ai" h={32}>
-                              <button onClick={() => handleAI(displayStock)} disabled={aiLoading[displayStock.id]}
-                                style={{ background: "none", border: "1px solid #2a2d35", color: "#888", fontFamily: "inherit", fontSize: 10, padding: "5px 12px", borderRadius: 3, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, transition: "all 0.15s" }}
-                                onMouseEnter={e => e.currentTarget.style.borderColor = "#F4C542"}
-                                onMouseLeave={e => e.currentTarget.style.borderColor = "#2a2d35"}>
-                                {aiLoading[displayStock.id] ? <><Spinner size={9}/> Analisi…</> : "Analizza ora"}
-                              </button>
-                            </ProGate>
-                          </div>
-                          {aiText[displayStock.id]
-                            ? <div style={{ fontSize: 12, color: "#aaa", lineHeight: 1.8 }}>{aiText[displayStock.id]}</div>
-                            : <div style={{ fontSize: 11, color: "#2a2d35" }}>Clicca "Analizza ora" per un'analisi AI contestuale del titolo.</div>}
-                        </div>
-
-                        {/* Notes */}
-                        <div className="card">
-                          <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8 }}>📝 Note personali</div>
-                          <textarea rows={3} value={notes[displayStock.id] || ""} onChange={e => setNotes(n => ({ ...n, [displayStock.id]: e.target.value }))}
-                            placeholder={`Motivo acquisto, target price, strategia per ${displayStock.ticker}…`} style={{ resize: "vertical", lineHeight: 1.7, fontSize: 12 }}/>
-                          {notes[displayStock.id] && <div style={{ fontSize: 8, color: "#2a2d35", marginTop: 4, textAlign: "right" }}>Salvato · {notes[displayStock.id].length} car.</div>}
-                        </div>
-                      </>
-                    );
-                  })() : <div style={{ color: "#2a2d35", textAlign: "center", marginTop: 80 }}>Aggiungi un'azione per iniziare.</div>}
+                        ) : null)}
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 
