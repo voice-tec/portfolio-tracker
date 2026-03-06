@@ -332,7 +332,100 @@ const DEFAULT_STOCKS = [
   { id: 3, ticker: "NVDA",  qty: 8,  buyPrice: 495.0, currentPrice: 875.20, sector: "Tech",     priceReal: false, buyDate: "10/06/24" },
 ];
 
-// ─── STOCK DETAIL MODAL ───────────────────────────────────────────────────────
+// ─── WATCHLIST TAB ────────────────────────────────────────────────────────────
+function WatchlistTab({ eurRate, fmt, fmtPct }) {
+  const [watchlist, setWatchlist] = useState(() => ls("pt_watchlist", []));
+  const [form, setForm] = useState({ ticker: "", note: "" });
+  const [prices, setPrices] = useState({});
+  const [loading, setLoading] = useState({});
+  const [err, setErr] = useState("");
+
+  const saveWatchlist = (items) => { setWatchlist(items); lsSet("pt_watchlist", items); };
+
+  useEffect(() => {
+    watchlist.forEach(item => {
+      if (prices[item.ticker]) return;
+      setLoading(l => ({ ...l, [item.ticker]: true }));
+      fetchRealPrice(item.ticker).then(p => {
+        setPrices(prev => ({ ...prev, [item.ticker]: p }));
+        setLoading(l => ({ ...l, [item.ticker]: false }));
+      });
+    });
+  }, [watchlist.length]);
+
+  function addToWatchlist() {
+    const t = form.ticker.trim().toUpperCase();
+    if (!t) return setErr("Inserisci un ticker.");
+    if (watchlist.find(w => w.ticker === t)) return setErr("Già in watchlist.");
+    setErr("");
+    const item = { ticker: t, note: form.note, addedAt: new Date().toLocaleDateString("it-IT"), id: Date.now() };
+    saveWatchlist([...watchlist, item]);
+    setForm({ ticker: "", note: "" });
+  }
+
+  return (
+    <div className="fade-up">
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300 }}>Watchlist</div>
+        <div style={{ fontSize: 11, color: "#444", marginTop: 2 }}>Titoli da monitorare senza averli in portafoglio</div>
+      </div>
+
+      {/* Add form */}
+      <div className="card" style={{ marginBottom: 20, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <div style={{ flex: "0 0 120px" }}>
+          <div style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 5 }}>Ticker</div>
+          <input value={form.ticker} onChange={e => setForm(f => ({ ...f, ticker: e.target.value.toUpperCase() }))}
+            placeholder="AAPL" onKeyDown={e => e.key === "Enter" && addToWatchlist()} style={{ textTransform: "uppercase" }}/>
+        </div>
+        <div style={{ flex: 1, minWidth: 160 }}>
+          <div style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 5 }}>Nota (opzionale)</div>
+          <input value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="Perché mi interessa…"/>
+        </div>
+        <button className="add-btn" onClick={addToWatchlist}>+ Aggiungi</button>
+        {err && <span style={{ fontSize: 11, color: "#E87040" }}>{err}</span>}
+      </div>
+
+      {/* List */}
+      {watchlist.length === 0 ? (
+        <div style={{ textAlign: "center", marginTop: 60, color: "#444", fontSize: 12 }}>Nessun titolo in watchlist — aggiungine uno sopra.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {watchlist.map(item => {
+            const price = prices[item.ticker];
+            const isLoading = loading[item.ticker];
+            return (
+              <div key={item.id} className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px" }}>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+                    <span style={{ fontFamily: "'Fraunces', serif", fontSize: 18, fontWeight: 300 }}>{item.ticker}</span>
+                    <span style={{ fontSize: 9, color: "#333" }}>aggiunto {item.addedAt}</span>
+                  </div>
+                  {item.note && <div style={{ fontSize: 11, color: "#555", marginTop: 2 }}>{item.note}</div>}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                  <div style={{ textAlign: "right" }}>
+                    {isLoading ? <Spinner /> : price ? (
+                      <>
+                        <div style={{ fontFamily: "'Fraunces', serif", fontSize: 16 }}>${fmt(price)}</div>
+                        <div style={{ fontSize: 10, color: "#444" }}>€{fmt(price * eurRate)}</div>
+                      </>
+                    ) : <div style={{ fontSize: 11, color: "#444" }}>N/D</div>}
+                  </div>
+                  <button onClick={() => saveWatchlist(watchlist.filter(w => w.id !== item.id))}
+                    style={{ background: "none", border: "none", color: "#333", cursor: "pointer", fontSize: 14, transition: "color 0.15s" }}
+                    onMouseEnter={e => e.target.style.color = "#E87040"}
+                    onMouseLeave={e => e.target.style.color = "#333"}>✕</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 function StockModal({ stock, onClose, notes, setNotes, alerts, setAlerts, handleRemove, sym, rate, fmt, fmtPct, handleAI, aiLoading, aiText, plan }) {
   const [chartPeriod, setChartPeriod] = useState(30);
   const [history, setHistory] = useState(stock.history || []);
@@ -435,6 +528,37 @@ function StockModal({ stock, onClose, notes, setNotes, alerts, setAlerts, handle
           {aiText[stock.id]
             ? <div style={{ fontSize: 12, color: "#aaa", lineHeight: 1.8 }}>{aiText[stock.id]}</div>
             : <div style={{ fontSize: 11, color: "#2a2d35" }}>Clicca "Analizza ora" per un'analisi AI contestuale.</div>}
+        </div>
+
+        {/* Target & Stop */}
+        <div style={{ background: "#0f1117", border: "1px solid #1a1d26", borderRadius: 6, padding: "14px 16px", marginBottom: 14 }}>
+          <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 12 }}>🎯 Target Price & Stop Loss</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 9, color: "#5EC98A", marginBottom: 5 }}>Target Price (USD)</div>
+              <input type="number" step="0.01" value={stock.targetPrice || ""} onChange={e => {
+                const v = parseFloat(e.target.value) || null;
+                stock.targetPrice = v;
+              }} placeholder="Es. 200.00" style={{ fontSize: 12, padding: "7px 10px" }}
+              onBlur={e => {
+                const v = parseFloat(e.target.value) || null;
+                // bubble up via a custom event pattern — we just store locally for now
+              }}/>
+              {stock.targetPrice && stock.currentPrice >= stock.targetPrice && (
+                <div style={{ fontSize: 9, color: "#5EC98A", marginTop: 4 }}>✓ Target raggiunto!</div>
+              )}
+            </div>
+            <div>
+              <div style={{ fontSize: 9, color: "#E87040", marginBottom: 5 }}>Stop Loss (USD)</div>
+              <input type="number" step="0.01" value={stock.stopLoss || ""} onChange={e => {
+                const v = parseFloat(e.target.value) || null;
+                stock.stopLoss = v;
+              }} placeholder="Es. 150.00" style={{ fontSize: 12, padding: "7px 10px" }}/>
+              {stock.stopLoss && stock.currentPrice <= stock.stopLoss && (
+                <div style={{ fontSize: 9, color: "#E87040", marginTop: 4 }}>⚠️ Stop Loss raggiunto!</div>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Notes */}
@@ -659,10 +783,20 @@ export default function App() {
   }, []);
   const [plan, setPlanRaw] = useState(() => ls("pt_plan", "free"));
   const [showUpgrade, setShowUpgrade] = useState(false);
-  const [currency, setCurrency] = useState(() => ls("pt_currency", "USD"));
+  const currency = "USD";
+  const sym = "$";
+  const rate = 1;
+  const [eurRate, setEurRate] = useState(0.92); // live EUR/USD rate
+
+  // Fetch live EUR rate on mount
+  useEffect(() => {
+    fetch("https://api.exchangerate-api.com/v4/latest/USD")
+      .then(r => r.json())
+      .then(d => { if (d.rates?.EUR) setEurRate(parseFloat(d.rates.EUR.toFixed(4))); })
+      .catch(() => {}); // fallback to 0.92
+  }, []);
+
   const setPlan = (p) => { setPlanRaw(p); lsSet("pt_plan", p); };
-  const sym = CURRENCIES[currency]?.symbol || "$";
-  const rate = CURRENCIES[currency]?.rate || 1;
 
   const [stocks, setStocksRaw] = useState([]);
   const [notes, setNotesRaw] = useState({});
@@ -953,7 +1087,7 @@ export default function App() {
   }
 
   const planCtx = { plan, setPlan, setShowUpgrade };
-  const currCtx = { currency, setCurrency, sym, rate };
+  const currCtx = { currency, sym, rate, eurRate };
 
   if (userLoading) return (
     <div style={{ minHeight: "100vh", background: "#0D0F14", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'DM Mono', monospace" }}>
@@ -1033,16 +1167,13 @@ export default function App() {
               {plan === "pro" && <span style={{ fontSize: 8, background: "#F4C542", color: "#0D0F14", padding: "2px 6px", borderRadius: 2, fontWeight: 700, letterSpacing: "0.1em" }}>PRO</span>}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 0, overflowX: "auto", flex: 1, justifyContent: "center" }} className="desktop-tabs">
-              {["overview","storico","settori","confronto","alert","simulazioni"].map(t => (
+              {["overview","titoli","settori","confronto","watchlist","alert","simulazioni"].map(t => (
                 <button key={t} className={`tab-btn ${activeTab === t ? "active" : ""}`} onClick={() => setActiveTab(t)}>{t}</button>
               ))}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }}>
-              <select value={currency} onChange={e => { setCurrency(e.target.value); lsSet("pt_currency", e.target.value); }} style={{ width: "auto", padding: "5px 8px", fontSize: 11, color: "#888" }}>
-                {Object.keys(CURRENCIES).map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
               {plan === "free" && <button className="action-btn" onClick={() => setShowUpgrade(true)} style={{ color: "#F4C542", borderColor: "#F4C542" }}>✦ Pro</button>}
-              <button className="action-btn" onClick={() => setShowImport(v => !v)}>↑ Import CSV</button>
+              <button className="action-btn" onClick={() => setShowImport(v => !v)}>↑ CSV</button>
               <button className="action-btn" onClick={() => setShowForm(v => !v)}>{showForm ? "✕" : "+ Aggiungi"}</button>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 {plan === "pro" && (
@@ -1128,14 +1259,15 @@ export default function App() {
                       {/* Portfolio KPIs */}
                       <div className="kpi-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 20 }}>
                         {[
-                          { l: "Valore Totale",   v: `${sym}${fmt(totalValue)}`,                                                   c: "#E8E6DF" },
-                          { l: "Investito",        v: `${sym}${fmt(totalInvested)}`,                                                c: "#888" },
-                          { l: "P&L Totale",       v: `${totalPnL>=0?"+":""}${sym}${fmt(Math.abs(totalPnL))}`,                     c: totalPnL>=0?"#5EC98A":"#E87040" },
-                          { l: "Performance",      v: fmtPct(totalPct),                                                            c: totalPct>=0?"#5EC98A":"#E87040" },
+                          { l: "Valore Totale",   v: `$${fmt(totalValue)}`,                                      sub: `€${fmt(totalValue * eurRate)}`,         c: "#E8E6DF" },
+                          { l: "Investito",        v: `$${fmt(totalInvested)}`,                                   sub: `€${fmt(totalInvested * eurRate)}`,       c: "#888" },
+                          { l: "P&L Totale",       v: `${totalPnL>=0?"+":""}$${fmt(Math.abs(totalPnL))}`,        sub: `${totalPnL>=0?"+":""}€${fmt(Math.abs(totalPnL * eurRate))}`, c: totalPnL>=0?"#5EC98A":"#E87040" },
+                          { l: "Performance",      v: fmtPct(totalPct),                                          sub: null,                                      c: totalPct>=0?"#5EC98A":"#E87040" },
                         ].map(k => (
                           <div key={k.l} className="card">
                             <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 7 }}>{k.l}</div>
                             <div style={{ fontFamily: "'Fraunces', serif", fontSize: 18, fontWeight: 300, color: k.c }}>{k.v}</div>
+                            {k.sub && <div style={{ fontSize: 10, color: "#333", marginTop: 3 }}>{k.sub}</div>}
                           </div>
                         ))}
                       </div>
@@ -1165,30 +1297,40 @@ export default function App() {
                       <div className="card" style={{ marginBottom: 16 }}>
                         <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 14 }}>Posizioni</div>
                         <div style={{ overflowX: "auto" }}>
-                          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, minWidth: 500 }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, minWidth: 600 }}>
                             <thead>
                               <tr style={{ borderBottom: "1px solid #1a1d26" }}>
-                                {["Ticker","Q.tà","P.Acquisto","P.Attuale","Valore","P&L","P&L%"].map(h => (
+                                {["Ticker","Q.tà","Acquisto","Attuale (USD)","Attuale (EUR)","Valore","P&L","P&L%","Target","Stop"].map(h => (
                                   <th key={h} style={{ textAlign: "left", padding: "0 8px 8px 0", fontSize: 8, color: "#444", letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 400 }}>{h}</th>
                                 ))}
                               </tr>
                             </thead>
                             <tbody>
                               {stocks.map(s => {
-                                const pnl = (s.currentPrice - s.buyPrice) * s.qty * rate;
+                                const pnl = (s.currentPrice - s.buyPrice) * s.qty;
                                 const pct = (s.currentPrice - s.buyPrice) / s.buyPrice * 100;
+                                const tp = s.targetPrice;
+                                const sl = s.stopLoss;
                                 return (
                                   <tr key={s.id} style={{ borderBottom: "1px solid #0f1117", cursor: "pointer" }} onClick={() => setSelectedId(s.id)}>
                                     <td style={{ padding: "10px 8px 10px 0" }}>
                                       <span style={{ fontWeight: 500 }}>{s.ticker}</span>
                                       {s.priceReal && <span style={{ fontSize: 7, background: "#1a2a1a", color: "#5EC98A", padding: "1px 5px", borderRadius: 2, marginLeft: 6 }}>LIVE</span>}
+                                      {alerts[s.id] && <span style={{ fontSize: 9, marginLeft: 4 }}>🔔</span>}
                                     </td>
                                     <td style={{ padding: "10px 8px 10px 0", color: "#888" }}>{s.qty}</td>
-                                    <td style={{ padding: "10px 8px 10px 0", color: "#888" }}>{sym}{fmt(s.buyPrice*rate)}</td>
-                                    <td style={{ padding: "10px 8px 10px 0" }}>{sym}{fmt(s.currentPrice*rate)}</td>
-                                    <td style={{ padding: "10px 8px 10px 0" }}>{sym}{fmt(s.qty*s.currentPrice*rate)}</td>
-                                    <td style={{ padding: "10px 8px 10px 0", color: pnl>=0?"#5EC98A":"#E87040" }}>{pnl>=0?"+":""}{sym}{fmt(Math.abs(pnl))}</td>
+                                    <td style={{ padding: "10px 8px 10px 0", color: "#888" }}>${fmt(s.buyPrice)}</td>
+                                    <td style={{ padding: "10px 8px 10px 0" }}>${fmt(s.currentPrice)}</td>
+                                    <td style={{ padding: "10px 8px 10px 0", color: "#555" }}>€{fmt(s.currentPrice * eurRate)}</td>
+                                    <td style={{ padding: "10px 8px 10px 0" }}>${fmt(s.qty * s.currentPrice)}</td>
+                                    <td style={{ padding: "10px 8px 10px 0", color: pnl>=0?"#5EC98A":"#E87040" }}>{pnl>=0?"+":""}${fmt(Math.abs(pnl))}</td>
                                     <td style={{ padding: "10px 8px 10px 0", color: pct>=0?"#5EC98A":"#E87040", fontWeight: 500 }}>{fmtPct(pct)}</td>
+                                    <td style={{ padding: "10px 8px 10px 0", color: tp ? (s.currentPrice >= tp ? "#5EC98A" : "#444") : "#2a2d35", fontSize: 11 }}>
+                                      {tp ? `$${fmt(tp)}` : "—"}
+                                    </td>
+                                    <td style={{ padding: "10px 8px 10px 0", color: sl ? (s.currentPrice <= sl ? "#E87040" : "#444") : "#2a2d35", fontSize: 11 }}>
+                                      {sl ? `$${fmt(sl)}` : "—"}
+                                    </td>
                                   </tr>
                                 );
                               })}
@@ -1219,59 +1361,51 @@ export default function App() {
               )}
 
               {/* STORICO */}
-              {activeTab === "storico" && (
+              {/* TITOLI */}
+              {activeTab === "titoli" && (
                 <div className="fade-up">
                   <div style={{ marginBottom: 20 }}>
-                    <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300 }}>Storico Portafoglio</div>
-                    <div style={{ fontSize: 11, color: "#444", marginTop: 2 }}>Andamento totale — ultimi 30 giorni</div>
+                    <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300 }}>I tuoi Titoli</div>
+                    <div style={{ fontSize: 11, color: "#444", marginTop: 2 }}>Clicca per vedere dettaglio, grafico e analisi AI</div>
                   </div>
-                  <ProGate feat="history" h={220}>
-                    <div className="card" style={{ marginBottom: 18 }}>
-                      <ResponsiveContainer width="100%" height={220}>
-                        <AreaChart data={portfolioHistory}>
-                          <defs>
-                            <linearGradient id="pg" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#5B8DEF" stopOpacity={0.2}/>
-                              <stop offset="95%" stopColor="#5B8DEF" stopOpacity={0}/>
-                            </linearGradient>
-                          </defs>
-                          <XAxis dataKey="date" tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false} interval={4}/>
-                          <YAxis tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false} domain={["auto","auto"]} width={60} tickFormatter={v => `${sym}${(v*rate/1000).toFixed(1)}k`}/>
-                          <Tooltip contentStyle={{ background: "#0f1117", border: "1px solid #2a2d35", borderRadius: 4, fontSize: 11, color: "#E8E6DF" }} formatter={v => [`${sym}${fmt(v*rate,0)}`, "Portafoglio"]}/>
-                          <Area type="monotone" dataKey="valore" stroke="#5B8DEF" strokeWidth={2} fill="url(#pg)" dot={false}/>
-                        </AreaChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </ProGate>
-                  <div style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 10 }}>Posizioni</div>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                    <thead>
-                      <tr style={{ borderBottom: "1px solid #1a1d26" }}>
-                        {["Ticker","Settore","Q.tà","P.Acquisto","P.Attuale","Valore","P&L","P&L%","Data"].map(h => (
-                          <th key={h} style={{ textAlign: "left", padding: "0 8px 8px 0", fontSize: 8, color: "#444", letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 400 }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
+                  {stocks.length === 0 ? (
+                    <div style={{ textAlign: "center", marginTop: 60, color: "#444" }}>Nessun titolo nel portafoglio.</div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                       {stocks.map(s => {
-                        const pnl = (s.currentPrice - s.buyPrice) * s.qty * rate;
+                        const pnl = (s.currentPrice - s.buyPrice) * s.qty;
                         const pct = (s.currentPrice - s.buyPrice) / s.buyPrice * 100;
+                        const isUp = pct >= 0;
                         return (
-                          <tr key={s.id} style={{ borderBottom: "1px solid #0f1117" }}>
-                            <td style={{ padding: "10px 8px 10px 0", fontWeight: 500 }}>{s.ticker}</td>
-                            <td style={{ padding: "10px 8px 10px 0", color: "#555", fontSize: 11 }}>{s.sector}</td>
-                            <td style={{ padding: "10px 8px 10px 0", color: "#888" }}>{s.qty}</td>
-                            <td style={{ padding: "10px 8px 10px 0", color: "#888" }}>{sym}{fmt(s.buyPrice*rate)}</td>
-                            <td style={{ padding: "10px 8px 10px 0" }}>{sym}{fmt(s.currentPrice*rate)}</td>
-                            <td style={{ padding: "10px 8px 10px 0" }}>{sym}{fmt(s.qty*s.currentPrice*rate)}</td>
-                            <td style={{ padding: "10px 8px 10px 0", color: pnl >= 0 ? "#5EC98A" : "#E87040" }}>{pnl>=0?"+":""}{sym}{fmt(Math.abs(pnl))}</td>
-                            <td style={{ padding: "10px 8px 10px 0", color: pct >= 0 ? "#5EC98A" : "#E87040" }}>{fmtPct(pct)}</td>
-                            <td style={{ padding: "10px 8px 10px 0", color: "#555", fontSize: 10 }}>{s.buyDate}</td>
-                          </tr>
+                          <div key={s.id} className="card" style={{ cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", transition: "border-color 0.15s" }}
+                            onClick={() => setSelectedId(s.id)}
+                            onMouseEnter={e => e.currentTarget.style.borderColor = "#F4C542"}
+                            onMouseLeave={e => e.currentTarget.style.borderColor = "#1a1d26"}>
+                            <div>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+                                <span style={{ fontFamily: "'Fraunces', serif", fontSize: 18, fontWeight: 300 }}>{s.ticker}</span>
+                                <span style={{ fontSize: 9, background: "#1a1d26", color: "#555", padding: "2px 7px", borderRadius: 2 }}>{s.sector}</span>
+                                {s.priceReal && <span style={{ fontSize: 7, background: "#1a2a1a", color: "#5EC98A", padding: "1px 5px", borderRadius: 2 }}>LIVE</span>}
+                                {alerts[s.id] && <span style={{ fontSize: 9 }}>🔔</span>}
+                              </div>
+                              <div style={{ fontSize: 10, color: "#333" }}>{s.qty} az. · acquisto ${fmt(s.buyPrice)} · {s.buyDate}</div>
+                              {(s.targetPrice || s.stopLoss) && (
+                                <div style={{ display: "flex", gap: 12, marginTop: 5 }}>
+                                  {s.targetPrice && <span style={{ fontSize: 9, color: s.currentPrice >= s.targetPrice ? "#5EC98A" : "#555" }}>🎯 Target ${fmt(s.targetPrice)}</span>}
+                                  {s.stopLoss && <span style={{ fontSize: 9, color: s.currentPrice <= s.stopLoss ? "#E87040" : "#555" }}>🛑 Stop ${fmt(s.stopLoss)}</span>}
+                                </div>
+                              )}
+                            </div>
+                            <div style={{ textAlign: "right" }}>
+                              <div style={{ fontSize: 16, fontFamily: "'Fraunces', serif" }}>${fmt(s.currentPrice)}</div>
+                              <div style={{ fontSize: 10, color: "#444" }}>€{fmt(s.currentPrice * eurRate)}</div>
+                              <div style={{ fontSize: 12, color: isUp ? "#5EC98A" : "#E87040", fontWeight: 500, marginTop: 2 }}>{isUp?"+":""}${fmt(Math.abs(pnl))} · {fmtPct(pct)}</div>
+                            </div>
+                          </div>
                         );
                       })}
-                    </tbody>
-                  </table>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1282,50 +1416,88 @@ export default function App() {
                     <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300 }}>Diversificazione</div>
                     <div style={{ fontSize: 11, color: "#444", marginTop: 2 }}>Distribuzione del capitale per settore</div>
                   </div>
-                  <div style={{ display: "flex", gap: 28, alignItems: "flex-start", flexWrap: "wrap", marginBottom: 28 }}>
-                    <PieChart width={220} height={220}>
-                      <Pie data={sectorData} cx={105} cy={105} innerRadius={62} outerRadius={100} paddingAngle={3} dataKey="value" strokeWidth={0}>
-                        {sectorData.map((_,i) => <Cell key={i} fill={SECTOR_COLORS[i%SECTOR_COLORS.length]}/>)}
-                      </Pie>
-                      <Tooltip contentStyle={{ background: "#0f1117", border: "1px solid #2a2d35", borderRadius: 4, fontSize: 11, color: "#E8E6DF" }} formatter={v => [`${sym}${fmt(v)}`, ""]}/>
-                    </PieChart>
-                    <div style={{ flex: 1, minWidth: 180 }}>
-                      {sectorData.map((s, i) => {
-                        const pct = ((s.value / totalValue) * 100).toFixed(1);
-                        return (
-                          <div key={s.name} style={{ marginBottom: 13 }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                                <div style={{ width: 7, height: 7, borderRadius: "50%", background: SECTOR_COLORS[i%SECTOR_COLORS.length] }}/>
-                                <span style={{ fontSize: 13 }}>{s.name}</span>
+                  {stocks.length === 0 ? (
+                    <div style={{ textAlign: "center", marginTop: 60, color: "#444" }}>Aggiungi titoli per vedere la diversificazione.</div>
+                  ) : (
+                    <>
+                      <div style={{ display: "flex", gap: 28, alignItems: "flex-start", flexWrap: "wrap", marginBottom: 28 }}>
+                        <PieChart width={220} height={220}>
+                          <Pie data={sectorData} cx={105} cy={105} innerRadius={62} outerRadius={100} paddingAngle={3} dataKey="value" strokeWidth={0}>
+                            {sectorData.map((_,i) => <Cell key={i} fill={SECTOR_COLORS[i%SECTOR_COLORS.length]}/>)}
+                          </Pie>
+                          <Tooltip contentStyle={{ background: "#0f1117", border: "1px solid #2a2d35", borderRadius: 4, fontSize: 11, color: "#E8E6DF" }} formatter={v => [`$${fmt(v)}`, ""]}/>
+                        </PieChart>
+                        <div style={{ flex: 1, minWidth: 180 }}>
+                          {sectorData.map((s, i) => {
+                            const pct = totalValue > 0 ? ((s.value / totalValue) * 100).toFixed(1) : 0;
+                            const sectorStocks = stocks.filter(st => st.sector === s.name);
+                            const sectorPnl = sectorStocks.reduce((acc, st) => acc + (st.currentPrice - st.buyPrice) * st.qty, 0);
+                            return (
+                              <div key={s.name} style={{ marginBottom: 14 }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                                    <div style={{ width: 7, height: 7, borderRadius: "50%", background: SECTOR_COLORS[i%SECTOR_COLORS.length] }}/>
+                                    <span style={{ fontSize: 13 }}>{s.name}</span>
+                                    <span style={{ fontSize: 9, color: "#444" }}>{sectorStocks.length} titoli</span>
+                                  </div>
+                                  <div style={{ textAlign: "right" }}>
+                                    <div style={{ fontSize: 11, color: "#888" }}>${fmt(s.value,0)} <span style={{ color: "#555" }}>{pct}%</span></div>
+                                    <div style={{ fontSize: 9, color: sectorPnl >= 0 ? "#5EC98A" : "#E87040" }}>{sectorPnl>=0?"+":""}${fmt(Math.abs(sectorPnl))}</div>
+                                  </div>
+                                </div>
+                                <div style={{ background: "#1a1d26", borderRadius: 2, height: 3, overflow: "hidden" }}>
+                                  <div style={{ width: `${pct}%`, height: "100%", background: SECTOR_COLORS[i%SECTOR_COLORS.length], borderRadius: 2, transition: "width 0.6s ease" }}/>
+                                </div>
                               </div>
-                              <div style={{ fontSize: 11, color: "#888" }}>{sym}{fmt(s.value,0)} <span style={{ color: "#555" }}>{pct}%</span></div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Concentrazione risk */}
+                      <div className="card" style={{ marginBottom: 16 }}>
+                        <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 12 }}>Concentrazione per titolo</div>
+                        {[...stocks].sort((a,b) => b.qty*b.currentPrice - a.qty*a.currentPrice).map(s => {
+                          const weight = totalValue > 0 ? (s.qty * s.currentPrice / totalValue * 100) : 0;
+                          return (
+                            <div key={s.id} style={{ marginBottom: 10 }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                                <span style={{ fontSize: 12, fontWeight: 500 }}>{s.ticker}</span>
+                                <span style={{ fontSize: 11, color: "#888" }}>${fmt(s.qty*s.currentPrice,0)} · {weight.toFixed(1)}%</span>
+                              </div>
+                              <div style={{ background: "#1a1d26", borderRadius: 2, height: 2 }}>
+                                <div style={{ width: `${weight}%`, height: "100%", background: weight > 30 ? "#E87040" : "#F4C542", borderRadius: 2 }}/>
+                              </div>
                             </div>
-                            <div style={{ background: "#1a1d26", borderRadius: 2, height: 3, overflow: "hidden" }}>
-                              <div style={{ width: `${pct}%`, height: "100%", background: SECTOR_COLORS[i%SECTOR_COLORS.length], borderRadius: 2, transition: "width 0.6s ease" }}/>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 12 }}>Benchmark vs S&P 500 (simulato)</div>
-                  <ProGate feat="benchmark" h={170}>
-                    <div className="card">
-                      <ResponsiveContainer width="100%" height={170}>
-                        <LineChart data={benchmarkHistory}>
-                          <XAxis dataKey="date" tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false} interval={6}/>
-                          <YAxis tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false} domain={["auto","auto"]} width={56} tickFormatter={v => `${sym}${(v*rate/1000).toFixed(1)}k`}/>
-                          <Tooltip contentStyle={{ background: "#0f1117", border: "1px solid #2a2d35", borderRadius: 4, fontSize: 11, color: "#E8E6DF" }}/>
-                          <Legend wrapperStyle={{ fontSize: 10, color: "#555" }}/>
-                          <Line type="monotone" dataKey="valore" name="Il tuo portafoglio" stroke="#F4C542" strokeWidth={1.5} dot={false}/>
-                          <Line type="monotone" dataKey="benchmark" name="S&P 500 (sim.)" stroke="#5B8DEF" strokeWidth={1.5} dot={false} strokeDasharray="4 3"/>
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </ProGate>
+                          );
+                        })}
+                        {stocks.some(s => s.qty*s.currentPrice/totalValue > 0.3) && (
+                          <div style={{ marginTop: 10, fontSize: 10, color: "#E87040" }}>⚠️ Un titolo supera il 30% del portafoglio — considera di diversificare.</div>
+                        )}
+                      </div>
+
+                      <div style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 12 }}>Benchmark vs S&P 500 (simulato)</div>
+                      <ProGate feat="benchmark" h={170}>
+                        <div className="card">
+                          <ResponsiveContainer width="100%" height={170}>
+                            <LineChart data={benchmarkHistory}>
+                              <XAxis dataKey="date" tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false} interval={6}/>
+                              <YAxis tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false} domain={["auto","auto"]} width={56} tickFormatter={v => `$${(v/1000).toFixed(1)}k`}/>
+                              <Tooltip contentStyle={{ background: "#0f1117", border: "1px solid #2a2d35", borderRadius: 4, fontSize: 11, color: "#E8E6DF" }}/>
+                              <Legend wrapperStyle={{ fontSize: 10, color: "#555" }}/>
+                              <Line type="monotone" dataKey="valore" name="Il tuo portafoglio" stroke="#F4C542" strokeWidth={1.5} dot={false}/>
+                              <Line type="monotone" dataKey="benchmark" name="S&P 500 (sim.)" stroke="#5B8DEF" strokeWidth={1.5} dot={false} strokeDasharray="4 3"/>
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </ProGate>
+                    </>
+                  )}
                 </div>
               )}
+
+              {/* WATCHLIST */}
+              {activeTab === "watchlist" && <WatchlistTab eurRate={eurRate} fmt={fmt} fmtPct={fmtPct} />}
 
               {/* CONFRONTO */}
               {activeTab === "confronto" && (
@@ -1471,7 +1643,7 @@ export default function App() {
               handleRemove={handleRemove}
               sym={sym} rate={rate} fmt={fmt} fmtPct={fmtPct}
               handleAI={handleAI} aiLoading={aiLoading} aiText={aiText}
-              plan={plan}
+              plan={plan} eurRate={eurRate}
             />
           )}
 
@@ -1490,10 +1662,10 @@ export default function App() {
           {/* Mobile bottom navigation */}
           <div className="mobile-nav" style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "#0a0c10", borderTop: "1px solid #161820", zIndex: 999, justifyContent: "space-around", alignItems: "center", padding: "8px 0", paddingBottom: "env(safe-area-inset-bottom)" }}>
             {[
-              { id: "overview",    icon: "◈", label: "Titoli" },
-              { id: "storico",     icon: "📈", label: "Storico" },
+              { id: "overview",    icon: "◈", label: "Overview" },
+              { id: "titoli",      icon: "📋", label: "Titoli" },
               { id: "settori",     icon: "◉", label: "Settori" },
-              { id: "confronto",   icon: "⇄", label: "Confronto" },
+              { id: "watchlist",   icon: "👁", label: "Watch" },
               { id: "alert",       icon: "🔔", label: "Alert" },
               { id: "simulazioni", icon: "⚡", label: "Stress" },
             ].map(t => (
