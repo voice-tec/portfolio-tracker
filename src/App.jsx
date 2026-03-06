@@ -536,6 +536,8 @@ export default function App() {
     win.document.close();
     setTimeout(() => win.print(), 500);
   }
+
+  async function handleAI(stock) {
     if (aiLoading[stock.id]) return;
     setAiLoading(l => ({ ...l, [stock.id]: true }));
     const text = await fetchAIAnalysis(stock, notes[stock.id], sym);
