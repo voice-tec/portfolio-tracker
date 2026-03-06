@@ -90,11 +90,11 @@ async function fetchAIAnalysis(stock, note, sym) {
 
 // ─── SCENARIOS ────────────────────────────────────────────────────────────────
 const SCENARIOS = [
-  { id: "covid",      label: "🦠 Covid Crash",        from: "2020-02-19", to: "2020-03-23",  spx: -34, real: true,  color: "#E87040", desc: "Il mercato perde il 34% in 33 giorni" },
-  { id: "postcovid",  label: "🚀 Post-Covid Rally",    from: "2020-03-23", to: "2021-12-31",  spx: +114, real: true, color: "#5EC98A", desc: "La ripresa più rapida della storia" },
-  { id: "bull2017",   label: "📈 Bull Run 2017",       from: "2017-01-01", to: "2017-12-31",  spx: +19,  real: true, color: "#5B8DEF", desc: "Un anno eccezionale per i mercati" },
-  { id: "gfc",        label: "💥 Financial Crisis",    from: "2007-10-01", to: "2009-03-09",  spx: -57, real: false, color: "#BF6EEA", desc: "La peggior crisi dal 1929 (-57% S&P500)" },
-  { id: "dotcom",     label: "🫧 Dot-com Bubble",      from: "2000-03-10", to: "2002-10-09",  spx: -49, real: false, color: "#F06292", desc: "Il crollo delle aziende tech (-49% S&P500)" },
+  { id: "covid",      label: "🦠 Covid Crash",        from: "2020-02-19", to: "2020-03-23",  spx: -34,  real: false, color: "#E87040", desc: "Il mercato perde il 34% in 33 giorni" },
+  { id: "postcovid",  label: "🚀 Post-Covid Rally",    from: "2020-03-23", to: "2021-12-31",  spx: +114, real: false, color: "#5EC98A", desc: "La ripresa più rapida della storia" },
+  { id: "bull2017",   label: "📈 Bull Run 2017",       from: "2017-01-01", to: "2017-12-31",  spx: +19,  real: false, color: "#5B8DEF", desc: "Un anno eccezionale per i mercati" },
+  { id: "gfc",        label: "💥 Financial Crisis",    from: "2007-10-01", to: "2009-03-09",  spx: -57,  real: false, color: "#BF6EEA", desc: "La peggior crisi dal 1929 (-57% S&P500)" },
+  { id: "dotcom",     label: "🫧 Dot-com Bubble",      from: "2000-03-10", to: "2002-10-09",  spx: -49,  real: false, color: "#F06292", desc: "Il crollo delle aziende tech (-49% S&P500)" },
 ];
 
 async function fetchScenarioData(symbol, scenario) {
