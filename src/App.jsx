@@ -304,7 +304,14 @@ function TickerAutocomplete({ value, onChange, onSelect }) {
         onChange={e => { onChange(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)} onKeyDown={handleKey} />
       {open && value.length > 0 && (loading || results.length > 0) && (
-        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 9999, background: "#13151c", border: "1px solid #2a2d35", borderRadius: 8, boxShadow: "0 12px 40px rgba(0,0,0,0.6)", overflow: "hidden", minWidth: 320 }}>
+        <div style={{ position: "fixed", zIndex: 99999, background: "#13151c", border: "1px solid #2a2d35", borderRadius: 8, boxShadow: "0 12px 40px rgba(0,0,0,0.8)", overflow: "hidden", minWidth: 320, maxHeight: 280, overflowY: "auto" }}
+          ref={el => {
+            if (el && ref.current) {
+              const rect = ref.current.getBoundingClientRect();
+              el.style.top = (rect.bottom + 4) + "px";
+              el.style.left = rect.left + "px";
+            }
+          }}>
           {loading && results.length === 0
             ? <div style={{ padding: "12px 16px", fontSize: 11, color: "#555", display: "flex", alignItems: "center", gap: 8 }}><Spinner /> Ricerca ticker…</div>
             : results.map((t, i) => (
@@ -872,9 +879,17 @@ export default function App() {
     valore: parseFloat(stocks.reduce((s, st) => s + st.qty * (st.history[i]?.price || st.currentPrice), 0).toFixed(2))
   })) || [];
 
-  const benchmarkHistory = (() => {
-    let p = portfolioHistory[0]?.valore || 10000;
-    return portfolioHistory.map(pt => ({ ...pt, benchmark: parseFloat((p = p * (1 + (Math.random() - 0.475) * 0.012)).toFixed(2)) }));
+  // YTD benchmark — portfolio % vs S&P500 % from Jan 1
+  const ytdHistory = (() => {
+    if (!portfolioHistory.length) return [];
+    const basePortfolio = portfolioHistory[0]?.valore || 1;
+    // Simulate S&P500 YTD with realistic drift (~10% annualized + noise)
+    let spxPct = 0;
+    return portfolioHistory.map((pt, i) => {
+      spxPct += (Math.random() - 0.468) * 0.6; // slight upward bias
+      const portfolioPct = basePortfolio > 0 ? ((pt.valore - basePortfolio) / basePortfolio * 100) : 0;
+      return { date: pt.date, portafoglio: parseFloat(portfolioPct.toFixed(2)), spx: parseFloat(spxPct.toFixed(2)) };
+    });
   })();
 
   // Alert check
@@ -1314,7 +1329,7 @@ export default function App() {
                           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, minWidth: 600 }}>
                             <thead>
                               <tr style={{ borderBottom: "1px solid #1a1d26" }}>
-                                {["Ticker","Q.tà","Acquisto","Attuale (USD)","Attuale (EUR)","Valore","P&L","P&L%","Target","Stop"].map(h => (
+                                {["Ticker","Q.tà","Acquisto","Attuale (USD)","Attuale (EUR)","Valore","P&L","P&L%","Target","Stop",""].map(h => (
                                   <th key={h} style={{ textAlign: "left", padding: "0 8px 8px 0", fontSize: 8, color: "#444", letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 400 }}>{h}</th>
                                 ))}
                               </tr>
@@ -1344,6 +1359,20 @@ export default function App() {
                                     </td>
                                     <td style={{ padding: "10px 8px 10px 0", color: sl ? (s.currentPrice <= sl ? "#E87040" : "#444") : "#2a2d35", fontSize: 11 }}>
                                       {sl ? `$${fmt(sl)}` : "—"}
+                                    </td>
+                                    <td style={{ padding: "10px 0", whiteSpace: "nowrap" }}>
+                                      <button onClick={e => { e.stopPropagation(); setSelectedId(s.id); }}
+                                        style={{ background: "none", border: "1px solid #2a2d35", color: "#555", fontFamily: "inherit", fontSize: 9, padding: "3px 8px", borderRadius: 3, cursor: "pointer", marginRight: 4, transition: "all 0.15s" }}
+                                        onMouseEnter={e => { e.target.style.borderColor="#F4C542"; e.target.style.color="#F4C542"; }}
+                                        onMouseLeave={e => { e.target.style.borderColor="#2a2d35"; e.target.style.color="#555"; }}>
+                                        ✎ Modifica
+                                      </button>
+                                      <button onClick={e => { e.stopPropagation(); handleRemove(s.id); }}
+                                        style={{ background: "none", border: "1px solid #2a2d35", color: "#444", fontFamily: "inherit", fontSize: 9, padding: "3px 8px", borderRadius: 3, cursor: "pointer", transition: "all 0.15s" }}
+                                        onMouseEnter={e => { e.target.style.borderColor="#E87040"; e.target.style.color="#E87040"; }}
+                                        onMouseLeave={e => { e.target.style.borderColor="#2a2d35"; e.target.style.color="#444"; }}>
+                                        ✕
+                                      </button>
                                     </td>
                                   </tr>
                                 );
@@ -1434,38 +1463,34 @@ export default function App() {
                     <div style={{ textAlign: "center", marginTop: 60, color: "#444" }}>Aggiungi titoli per vedere la diversificazione.</div>
                   ) : (
                     <>
-                      <div style={{ display: "flex", gap: 28, alignItems: "flex-start", flexWrap: "wrap", marginBottom: 28 }}>
-                        <PieChart width={220} height={220}>
-                          <Pie data={sectorData} cx={105} cy={105} innerRadius={62} outerRadius={100} paddingAngle={3} dataKey="value" strokeWidth={0}>
-                            {sectorData.map((_,i) => <Cell key={i} fill={SECTOR_COLORS[i%SECTOR_COLORS.length]}/>)}
-                          </Pie>
-                          <Tooltip contentStyle={{ background: "#0f1117", border: "1px solid #2a2d35", borderRadius: 4, fontSize: 11, color: "#E8E6DF" }} formatter={v => [`$${fmt(v)}`, ""]}/>
-                        </PieChart>
-                        <div style={{ flex: 1, minWidth: 180 }}>
-                          {sectorData.map((s, i) => {
-                            const pct = totalValue > 0 ? ((s.value / totalValue) * 100).toFixed(1) : 0;
-                            const sectorStocks = stocks.filter(st => st.sector === s.name);
-                            const sectorPnl = sectorStocks.reduce((acc, st) => acc + (st.currentPrice - st.buyPrice) * st.qty, 0);
-                            return (
-                              <div key={s.name} style={{ marginBottom: 14 }}>
-                                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                                  <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                                    <div style={{ width: 7, height: 7, borderRadius: "50%", background: SECTOR_COLORS[i%SECTOR_COLORS.length] }}/>
-                                    <span style={{ fontSize: 13 }}>{s.name}</span>
-                                    <span style={{ fontSize: 9, color: "#444" }}>{sectorStocks.length} titoli</span>
-                                  </div>
-                                  <div style={{ textAlign: "right" }}>
-                                    <div style={{ fontSize: 11, color: "#888" }}>${fmt(s.value,0)} <span style={{ color: "#555" }}>{pct}%</span></div>
-                                    <div style={{ fontSize: 9, color: sectorPnl >= 0 ? "#5EC98A" : "#E87040" }}>{sectorPnl>=0?"+":""}${fmt(Math.abs(sectorPnl))}</div>
-                                  </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10, marginBottom: 24 }}>
+                        {sectorData.map((s, i) => {
+                          const pct = totalValue > 0 ? (s.value / totalValue * 100) : 0;
+                          const sectorStocks = stocks.filter(st => st.sector === s.name);
+                          const sectorPnl = sectorStocks.reduce((acc, st) => acc + (st.currentPrice - st.buyPrice) * st.qty, 0);
+                          const color = SECTOR_COLORS[i % SECTOR_COLORS.length];
+                          return (
+                            <div key={s.name} style={{ background: "#0f1117", border: `1px solid ${color}33`, borderRadius: 8, padding: "16px 18px", position: "relative", overflow: "hidden" }}>
+                              <div style={{ position: "absolute", top: 0, left: 0, width: `${pct}%`, height: 3, background: color }}/>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                                <div>
+                                  <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6 }}>{s.name}</div>
+                                  <div style={{ fontFamily: "'Fraunces', serif", fontSize: 20, fontWeight: 300, color }}>{pct.toFixed(1)}%</div>
+                                  <div style={{ fontSize: 10, color: "#555", marginTop: 3 }}>${fmt(s.value, 0)}</div>
                                 </div>
-                                <div style={{ background: "#1a1d26", borderRadius: 2, height: 3, overflow: "hidden" }}>
-                                  <div style={{ width: `${pct}%`, height: "100%", background: SECTOR_COLORS[i%SECTOR_COLORS.length], borderRadius: 2, transition: "width 0.6s ease" }}/>
+                                <div style={{ textAlign: "right" }}>
+                                  <div style={{ fontSize: 9, color: "#333", marginBottom: 4 }}>{sectorStocks.length} titol{sectorStocks.length === 1 ? "o" : "i"}</div>
+                                  <div style={{ fontSize: 12, color: sectorPnl >= 0 ? "#5EC98A" : "#E87040", fontWeight: 500 }}>{sectorPnl>=0?"+":""}${fmt(Math.abs(sectorPnl),0)}</div>
                                 </div>
                               </div>
-                            );
-                          })}
-                        </div>
+                              <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                {sectorStocks.map(st => (
+                                  <span key={st.id} style={{ fontSize: 9, background: color+"22", color, padding: "2px 7px", borderRadius: 3 }}>{st.ticker}</span>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
 
                       {/* Concentrazione risk */}
@@ -1491,16 +1516,18 @@ export default function App() {
                       </div>
 
                       <div style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 12 }}>Benchmark vs S&P 500 (simulato)</div>
-                      <ProGate feat="benchmark" h={170}>
+                      <ProGate feat="benchmark" h={200}>
                         <div className="card">
+                          <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 12 }}>Performance YTD %</div>
                           <ResponsiveContainer width="100%" height={170}>
-                            <LineChart data={benchmarkHistory}>
+                            <LineChart data={ytdHistory}>
                               <XAxis dataKey="date" tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false} interval={6}/>
-                              <YAxis tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false} domain={["auto","auto"]} width={56} tickFormatter={v => `$${(v/1000).toFixed(1)}k`}/>
-                              <Tooltip contentStyle={{ background: "#0f1117", border: "1px solid #2a2d35", borderRadius: 4, fontSize: 11, color: "#E8E6DF" }}/>
+                              <YAxis tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false} domain={["auto","auto"]} width={45} tickFormatter={v => `${v>0?"+":""}${v}%`}/>
+                              <Tooltip contentStyle={{ background: "#0f1117", border: "1px solid #2a2d35", borderRadius: 4, fontSize: 11, color: "#E8E6DF" }} formatter={(v, n) => [`${v>0?"+":""}${v}%`, n]}/>
+                              <ReferenceLine y={0} stroke="#2a2d35" strokeDasharray="4 3" strokeWidth={1}/>
                               <Legend wrapperStyle={{ fontSize: 10, color: "#555" }}/>
-                              <Line type="monotone" dataKey="valore" name="Il tuo portafoglio" stroke="#F4C542" strokeWidth={1.5} dot={false}/>
-                              <Line type="monotone" dataKey="benchmark" name="S&P 500 (sim.)" stroke="#5B8DEF" strokeWidth={1.5} dot={false} strokeDasharray="4 3"/>
+                              <Line type="monotone" dataKey="portafoglio" name="Il tuo portafoglio" stroke="#F4C542" strokeWidth={1.5} dot={false}/>
+                              <Line type="monotone" dataKey="spx" name="S&P 500 (sim.)" stroke="#5B8DEF" strokeWidth={1.5} dot={false} strokeDasharray="4 3"/>
                             </LineChart>
                           </ResponsiveContainer>
                         </div>
