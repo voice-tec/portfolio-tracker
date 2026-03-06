@@ -264,7 +264,9 @@ function TickerAutocomplete({ value, onChange, onSelect }) {
   const [hi, setHi] = useState(0);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [dropPos, setDropPos] = useState({ top: 0, left: 0, width: 320 });
   const ref = useRef(null);
+  const inputRef = useRef(null);
   const cache = useRef({});
   const timer = useRef(null);
 
@@ -283,6 +285,13 @@ function TickerAutocomplete({ value, onChange, onSelect }) {
     return () => clearTimeout(timer.current);
   }, [value, open]);
 
+  useEffect(() => {
+    if (open && inputRef.current) {
+      const rect = inputRef.current.getBoundingClientRect();
+      setDropPos({ top: rect.bottom + window.scrollY + 4, left: rect.left + window.scrollX, width: Math.max(rect.width, 320) });
+    }
+  }, [open, results]);
+
   useEffect(() => { setHi(0); }, [results]);
   useEffect(() => {
     const fn = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
@@ -300,18 +309,11 @@ function TickerAutocomplete({ value, onChange, onSelect }) {
   return (
     <div ref={ref} style={{ position: "relative", flex: 1, minWidth: 130 }}>
       <div style={{ fontSize: 10, color: "#555", marginBottom: 5, letterSpacing: "0.12em", textTransform: "uppercase" }}>Ticker</div>
-      <input placeholder="AAPL, ENI, PLAB…" value={value} autoComplete="off"
+      <input ref={inputRef} placeholder="AAPL, ENI, PLAB…" value={value} autoComplete="off"
         onChange={e => { onChange(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)} onKeyDown={handleKey} />
       {open && value.length > 0 && (loading || results.length > 0) && (
-        <div style={{ position: "fixed", zIndex: 99999, background: "#13151c", border: "1px solid #2a2d35", borderRadius: 8, boxShadow: "0 12px 40px rgba(0,0,0,0.8)", overflow: "hidden", minWidth: 320, maxHeight: 280, overflowY: "auto" }}
-          ref={el => {
-            if (el && ref.current) {
-              const rect = ref.current.getBoundingClientRect();
-              el.style.top = (rect.bottom + 4) + "px";
-              el.style.left = rect.left + "px";
-            }
-          }}>
+        <div style={{ position: "fixed", top: dropPos.top, left: dropPos.left, width: dropPos.width, zIndex: 99999, background: "#13151c", border: "1px solid #2a2d35", borderRadius: 8, boxShadow: "0 12px 40px rgba(0,0,0,0.9)", overflow: "hidden", maxHeight: 280, overflowY: "auto" }}>
           {loading && results.length === 0
             ? <div style={{ padding: "12px 16px", fontSize: 11, color: "#555", display: "flex", alignItems: "center", gap: 8 }}><Spinner /> Ricerca ticker…</div>
             : results.map((t, i) => (
@@ -441,6 +443,64 @@ function WatchlistTab({ eurRate, fmt, fmtPct }) {
 }
 
 
+// ─── EDIT MODAL ───────────────────────────────────────────────────────────────
+function EditModal({ stock, onClose, onSave }) {
+  const [qty, setQty] = useState(String(stock.qty));
+  const [buyPrice, setBuyPrice] = useState(String(stock.buyPrice));
+  const [targetPrice, setTargetPrice] = useState(String(stock.targetPrice || ""));
+  const [stopLoss, setStopLoss] = useState(String(stock.stopLoss || ""));
+  const [sector, setSector] = useState(stock.sector || "Altro");
+
+  useEffect(() => {
+    const fn = e => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", fn);
+    return () => window.removeEventListener("keydown", fn);
+  }, []);
+
+  function handleSave() {
+    onSave({ ...stock, qty: parseFloat(qty)||stock.qty, buyPrice: parseFloat(buyPrice)||stock.buyPrice, targetPrice: parseFloat(targetPrice)||null, stopLoss: parseFloat(stopLoss)||null, sector });
+    onClose();
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 9100, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: "#0D0F14", border: "1px solid #1a1d26", borderRadius: 12, width: "100%", maxWidth: 400, padding: "28px 28px 24px", animation: "fadeUp 0.2s ease" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 22 }}>
+          <div>
+            <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300 }}>{stock.ticker}</div>
+            <div style={{ fontSize: 10, color: "#444", marginTop: 2 }}>Modifica posizione</div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "1px solid #2a2d35", color: "#555", fontFamily: "inherit", fontSize: 16, padding: "4px 10px", borderRadius: 4, cursor: "pointer" }}>✕</button>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {[
+            { label: "Quantità", value: qty, set: setQty, placeholder: "10" },
+            { label: "Prezzo di acquisto (USD)", value: buyPrice, set: setBuyPrice, placeholder: "175.00", step: "0.01" },
+            { label: "🎯 Target Price (USD)", value: targetPrice, set: setTargetPrice, placeholder: "Es. 220.00 — lascia vuoto per rimuovere", step: "0.01" },
+            { label: "🛑 Stop Loss (USD)", value: stopLoss, set: setStopLoss, placeholder: "Es. 150.00 — lascia vuoto per rimuovere", step: "0.01" },
+          ].map(f => (
+            <div key={f.label}>
+              <div style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6 }}>{f.label}</div>
+              <input type="number" step={f.step||"1"} placeholder={f.placeholder} value={f.value} onChange={e => f.set(e.target.value)} style={{ fontSize: 13 }}/>
+            </div>
+          ))}
+          <div>
+            <div style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6 }}>Settore</div>
+            <select value={sector} onChange={e => setSector(e.target.value)}>
+              {SECTORS.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 10, marginTop: 22 }}>
+          <button className="add-btn" onClick={handleSave} style={{ flex: 1, justifyContent: "center" }}>✓ Salva modifiche</button>
+          <button className="action-btn" onClick={onClose}>Annulla</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── STOCK DETAIL MODAL ───────────────────────────────────────────────────────
 function StockModal({ stock, onClose, notes, setNotes, alerts, setAlerts, handleRemove, sym, rate, fmt, fmtPct, handleAI, aiLoading, aiText, plan }) {
   const [chartPeriod, setChartPeriod] = useState(30);
   const [history, setHistory] = useState(stock.history || []);
@@ -845,7 +905,8 @@ export default function App() {
   const setAlerts = fn => setAlertsRaw(prev => typeof fn === "function" ? fn(prev) : fn);
 
   const [activeTab, setActiveTab] = useState("overview");
-  const [selectedId, setSelectedId] = useState(stocks[0]?.id || null);
+  const [selectedId, setSelectedId] = useState(null);
+  const [editId, setEditId] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [chartPeriod, setChartPeriod] = useState(30); // 30, 90, 180, 365
   const [periodHistory, setPeriodHistory] = useState({});
@@ -948,6 +1009,13 @@ export default function App() {
     if (stock?.dbId && user) deleteStock(stock.dbId).catch(() => {});
     setStocks(prev => prev.filter(s => s.id !== id));
     if (selectedId === id) setSelectedId(stocks.find(s => s.id !== id)?.id || null);
+  }
+
+  function handleEdit(updated) {
+    setStocks(prev => prev.map(s => s.id === updated.id ? { ...s, ...updated } : s));
+    if (updated.dbId && user) {
+      saveStock(user.id, { ticker: updated.ticker, qty: updated.qty, buy_price: updated.buyPrice, current_price: updated.currentPrice, sector: updated.sector, buy_date: updated.buyDate, price_real: updated.priceReal, target_price: updated.targetPrice || null, stop_loss: updated.stopLoss || null }, updated.dbId).catch(() => {});
+    }
   }
 
   function exportCSV() {
@@ -1361,7 +1429,7 @@ export default function App() {
                                       {sl ? `$${fmt(sl)}` : "—"}
                                     </td>
                                     <td style={{ padding: "10px 0", whiteSpace: "nowrap" }}>
-                                      <button onClick={e => { e.stopPropagation(); setSelectedId(s.id); }}
+                                      <button onClick={e => { e.stopPropagation(); setEditId(s.id); }}
                                         style={{ background: "none", border: "1px solid #2a2d35", color: "#555", fontFamily: "inherit", fontSize: 9, padding: "3px 8px", borderRadius: 3, cursor: "pointer", marginRight: 4, transition: "all 0.15s" }}
                                         onMouseEnter={e => { e.target.style.borderColor="#F4C542"; e.target.style.color="#F4C542"; }}
                                         onMouseLeave={e => { e.target.style.borderColor="#2a2d35"; e.target.style.color="#555"; }}>
@@ -1674,6 +1742,15 @@ export default function App() {
             </div>
           </div>
         </div>
+          {/* Edit modal */}
+          {editId && stocks.find(s => s.id === editId) && (
+            <EditModal
+              stock={stocks.find(s => s.id === editId)}
+              onClose={() => setEditId(null)}
+              onSave={handleEdit}
+            />
+          )}
+
           {/* Stock detail modal */}
           {selectedId && stocks.find(s => s.id === selectedId) && (
             <StockModal
