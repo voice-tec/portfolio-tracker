@@ -1224,13 +1224,14 @@ export default function App() {
       // 🔄 Refresh prezzi live in background solo se mercati aperti
       if (mapped.length > 0 && marketOpen !== false) {
         mapped.forEach(stock => {
-          fetchRealPrice(stock.ticker).then(livePrice => {
-            if (!livePrice) return;
+          fetchRealPrice(stock.ticker, true).then(result => {
+            if (!result) return;
+            const livePrice = result.price;
+            const ms = result.marketState || "CLOSED";
             setStocksRaw(prev => prev.map(s => s.id === stock.id
-              ? { ...s, currentPrice: livePrice, priceReal: true, marketState: result.marketState || "CLOSED" }
+              ? { ...s, currentPrice: livePrice, priceReal: true, marketState: ms }
               : s
             ));
-            // Salva il prezzo aggiornato su Supabase
             if (stock.dbId) {
               saveStock(user.id, {
                 ...stock,
