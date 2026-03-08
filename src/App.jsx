@@ -435,11 +435,7 @@ function WatchlistTab({ eurRate, fmt, fmtPct }) {
 
       {/* Add form */}
       <div className="card" style={{ marginBottom: 20, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
-        <div style={{ flex: "0 0 110px" }}>
-          <div style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 5 }}>Ticker</div>
-          <input value={form.ticker} onChange={e => setForm(f => ({ ...f, ticker: e.target.value.toUpperCase() }))}
-            placeholder="AAPL" onKeyDown={e => e.key === "Enter" && addToWatchlist()} style={{ textTransform: "uppercase" }}/>
-        </div>
+        <TickerAutocomplete value={form.ticker} onChange={v => setForm(f => ({ ...f, ticker: v }))} onSelect={t => setForm(f => ({ ...f, ticker: t.ticker, sector: t.sector || "Altro" }))} />
         <div style={{ flex: "0 0 140px" }}>
           <div style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 5 }}>Settore</div>
           <select value={form.sector} onChange={e => setForm(f => ({ ...f, sector: e.target.value }))}>
@@ -1017,10 +1013,7 @@ function WhatIfTab({ fmt, fmtPct, eurRate }) {
       {/* Form */}
       <div className="card" style={{ marginBottom: 20 }}>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
-          <div style={{ flex: "0 0 100px" }}>
-            <div style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 5 }}>Ticker</div>
-            <input value={ticker} onChange={e => setTicker(e.target.value.toUpperCase())} placeholder="AAPL" style={{ textTransform: "uppercase" }}/>
-          </div>
+          <TickerAutocomplete value={ticker} onChange={v => setTicker(v)} onSelect={t => setTicker(t.ticker)} />
           <div style={{ flex: "0 0 140px" }}>
             <div style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 5 }}>Data acquisto</div>
             <input type="date" value={date} onChange={e => setDate(e.target.value)} max={new Date().toISOString().split("T")[0]} style={{ colorScheme: "dark" }}/>
