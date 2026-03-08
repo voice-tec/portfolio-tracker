@@ -946,52 +946,35 @@ function WhatIfTab({ fmt, fmtPct, eurRate }) {
       const buyDate = new Date(date);
       const today = new Date();
       const daysDiff = Math.round((today - buyDate) / (1000 * 60 * 60 * 24));
-      const daysToFetch = Math.min(Math.max(daysDiff + 30, 60), 365);
 
-      // Try real historical data
-      let buyPrice = null;
-      let chartData = [];
-
-      const histRes = await fetch(`${API_BASE}/api/history?symbol=${t}&days=${daysToFetch}`);
+      // Fetch dati storici reali da Yahoo Finance (illimitati)
+      const histRes = await fetch(`${API_BASE}/api/history?symbol=${t}&from=${date}`);
       const histData = await histRes.json();
       const candles = histData.candles || [];
 
-      if (candles.length) {
-        // API returns {date, price} — find closest to buyDate by index
-        // Candles are sorted oldest to newest
-        const totalCandles = candles.length;
-        const buyIdx = Math.max(0, Math.round((1 - Math.min(daysDiff, daysToFetch) / daysToFetch) * totalCandles));
-        buyPrice = candles[buyIdx]?.price || candles[0]?.price;
-
-        // Chart: all candles from buyIdx onward
-        chartData = candles.slice(buyIdx).map(c => ({
-          date: c.date,
-          valore: parseFloat(((amt / buyPrice) * c.price).toFixed(2)),
-        }));
-        if (chartData.length) chartData[chartData.length - 1].valore = parseFloat(((amt / buyPrice) * currentPrice).toFixed(2));
+      if (!candles.length) {
+        setErr("Dati storici non disponibili per questa data e questo titolo.");
+        setLoading(false);
+        return;
       }
 
-      // Fallback: if no candles, estimate buy price from % change
-      if (!buyPrice) {
-        // Assume market grew ~10%/year annualized as rough baseline
-        const yearsAgo = daysDiff / 365;
-        buyPrice = currentPrice / Math.pow(1.10, yearsAgo);
-        // Build simulated chart
-        chartData = Array.from({ length: 60 }, (_, i) => {
-          const progress = i / 59;
-          const val = (amt / buyPrice) * (buyPrice + (currentPrice - buyPrice) * progress);
-          const d = new Date(buyDate);
-          d.setDate(d.getDate() + Math.floor(progress * daysDiff));
-          return { date: d.toLocaleDateString("it-IT", { day: "2-digit", month: "short" }), valore: parseFloat(val.toFixed(2)) };
-        });
-      }
+      // Prima candle = prezzo alla data di acquisto
+      const buyPrice = candles[0].price;
+
+      // Grafico: tutte le candle dalla data di acquisto
+      const chartData = candles.map(c => ({
+        date: c.date,
+        valore: parseFloat(((amt / buyPrice) * c.price).toFixed(2)),
+      }));
+      // Assicura che l'ultima candle sia il prezzo attuale
+      if (chartData.length) chartData[chartData.length - 1].valore = parseFloat(((amt / buyPrice) * currentPrice).toFixed(2));
 
       const shares = amt / buyPrice;
       const currentValue = shares * currentPrice;
       const pnl = currentValue - amt;
       const pct = (pnl / amt) * 100;
 
-      setResult({ ticker: t, amount: amt, shares: parseFloat(shares.toFixed(4)), buyPrice, currentPrice, currentValue, pnl, pct, chartData, date, real: candles.length > 0 });
+      setResult({ ticker: t, amount: amt, shares: parseFloat(shares.toFixed(4)), buyPrice, currentPrice, currentValue, pnl, pct, chartData, date, real: true });
     } catch (e) {
       setErr("Errore nel calcolo. Riprova.");
     }
@@ -1051,10 +1034,10 @@ function WhatIfTab({ fmt, fmtPct, eurRate }) {
           <div className="card" style={{ marginBottom: 16, textAlign: "center", padding: "28px 20px", border: `1px solid ${result.pct >= 0 ? "#5EC98A33" : "#E8704033"}` }}>
             <div style={{ fontSize: 10, color: "#444", textTransform: "uppercase", letterSpacing: "0.15em", marginBottom: 8 }}>
               ${fmt(result.amount)} in {result.ticker} il {new Date(result.date).toLocaleDateString("it-IT")}
-              {result.real
-                ? <span style={{ marginLeft: 8, fontSize: 8, background: "#5EC98A22", color: "#5EC98A", padding: "2px 6px", borderRadius: 3 }}>● DATI REALI</span>
-                : <span style={{ marginLeft: 8, fontSize: 8, background: "#F4C54222", color: "#F4C542", padding: "2px 6px", borderRadius: 3 }}>~ STIMATO</span>
-              }
+
+
+
+
             </div>
             <div style={{ fontFamily: "'Fraunces', serif", fontSize: 44, fontWeight: 300, color: result.pct >= 0 ? "#5EC98A" : "#E87040", lineHeight: 1 }}>
               ${fmt(result.currentValue)}
