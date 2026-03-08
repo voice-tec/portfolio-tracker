@@ -1168,7 +1168,7 @@ export default function App() {
       setDataLoading(false);
 
       // 🔄 Refresh prezzi live in background solo se mercati aperti
-      if (mapped.length > 0 && isMarketOpen()) {
+      if (mapped.length > 0 && marketOpen !== false) {
         mapped.forEach(stock => {
           fetchRealPrice(stock.ticker).then(livePrice => {
             if (!livePrice) return;
@@ -1204,22 +1204,22 @@ export default function App() {
   const [editId, setEditId] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [marketOpen, setMarketOpen] = useState(null); // null = checking
 
-  // Controlla se i mercati sono aperti (ora italiana)
-  function isMarketOpen() {
-    const now = new Date();
-    const day = now.getDay(); // 0=dom, 6=sab
-    if (day === 0 || day === 6) return false;
-    // Ora italiana (UTC+1 inverno, UTC+2 estate)
-    const offset = now.getTimezoneOffset();
-    const italyOffset = offset <= -120 ? 2 : 1;
-    const italyHour = now.getUTCHours() + italyOffset;
-    const italyMin = now.getUTCMinutes();
-    const italyTime = italyHour + italyMin / 60;
-    // NYSE 15:30-22:00 IT oppure Borsa Milano 09:00-17:30 IT
-    return (italyTime >= 9 && italyTime < 17.5) || (italyTime >= 15.5 && italyTime < 22);
-  }
-  const marketOpen = isMarketOpen();
+  // Controlla status mercati via API Finnhub
+  useEffect(() => {
+    fetch(`${API_BASE}/api/market-status`)
+      .then(r => r.json())
+      .then(d => setMarketOpen(d.isOpen))
+      .catch(() => {
+        const now = new Date();
+        const day = now.getDay();
+        if (day === 0 || day === 6) { setMarketOpen(false); return; }
+        const h = now.getUTCHours() + 1;
+        const t = h + now.getUTCMinutes() / 60;
+        setMarketOpen((t >= 9 && t < 17.5) || (t >= 15.5 && t < 22));
+      });
+  }, []);
 
   function refreshPrices() {
     if (refreshing || stocks.length === 0) return;
@@ -1635,11 +1635,14 @@ export default function App() {
                 <button onClick={exportCSV} className="action-btn hide-mobile" style={{ fontSize: 9, padding: "4px 10px" }}>↓ CSV</button>
                 <button onClick={exportPDF} className="action-btn hide-mobile" style={{ fontSize: 9, padding: "4px 10px" }}>↓ PDF</button>
               </>}
-              <button onClick={refreshPrices} disabled={refreshing || !marketOpen} title={marketOpen ? "Aggiorna prezzi live" : "Mercati chiusi"}
+              <button onClick={refreshPrices} disabled={refreshing || !marketOpen} title={marketOpen === null ? "Verifica mercati..." : marketOpen ? "Mercati aperti — clicca per aggiornare" : "Mercati chiusi"}
                 className="action-btn"
-                style={{ display: "flex", alignItems: "center", gap: 5, opacity: (!marketOpen || refreshing) ? 0.45 : 1, fontSize: 11 }}>
-                {refreshing ? <Spinner size={10}/> : <span style={{ fontSize: 14 }}>↻</span>}
-                <span className="hide-mobile">{marketOpen ? "Live" : "Chiusi"}</span>
+                style={{ display: "flex", alignItems: "center", gap: 5, opacity: (!marketOpen || refreshing) ? 0.5 : 1, fontSize: 11 }}>
+                {refreshing
+                  ? <Spinner size={10}/>
+                  : <span style={{ width: 7, height: 7, borderRadius: "50%", background: marketOpen === null ? "#888" : marketOpen ? "#4CAF50" : "#E87040", display: "inline-block", flexShrink: 0 }}/>
+                }
+                <span className="hide-mobile">{marketOpen === null ? "..." : marketOpen ? "Live" : "Chiusi"}</span>
               </button>
               <button className="add-btn" onClick={() => setShowForm(v => !v)} style={{ fontSize: 11, padding: "6px 12px" }}>{showForm ? "✕" : "+ Aggiungi"}</button>
               {/* Mobile: user avatar button */}
