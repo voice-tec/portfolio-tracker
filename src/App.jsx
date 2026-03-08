@@ -998,10 +998,24 @@ function ForecastTab({ stocks, fmt, fmtPct, sym, rate }) {
   const [data, setData] = useState({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const allLoadedRef = useRef(false);
 
+  // Carica tutti i titoli in background al mount per card aggregata stabile
+  useEffect(() => {
+    if (allLoadedRef.current || stocks.length === 0) return;
+    allLoadedRef.current = true;
+    stocks.forEach(stock => {
+      fetch(`${API_BASE}/api/forecast?symbol=${encodeURIComponent(stock.ticker)}&price=${stock.currentPrice}`)
+        .then(r => r.json())
+        .then(d => { if (!d.error) setData(prev => ({ ...prev, [stock.ticker]: d })); })
+        .catch(() => {});
+    });
+  }, []);
+
+  // Spinner visibile solo per il titolo selezionato se non ancora caricato
   useEffect(() => {
     if (!selected) return;
-    if (data[selected.ticker]) return;
+    if (data[selected.ticker]) { setLoading(false); return; }
     setLoading(true);
     setError(null);
     fetch(`${API_BASE}/api/forecast?symbol=${encodeURIComponent(selected.ticker)}&price=${selected.currentPrice}`)
