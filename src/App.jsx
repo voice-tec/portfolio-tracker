@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, createContext, useContext } from "react";
 import { createPortal } from "react-dom";
-import { PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area, ReferenceLine, LineChart, Line, Legend } from "recharts";
+import { PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area, ReferenceLine, LineChart, Line, Legend, BarChart, Bar } from "recharts";
 import { supabase, signIn, signUp, signOut, getSession, loadStocks, saveStock, deleteStock, loadNotes, saveNote, loadAlerts, saveAlert, deleteAlert } from "./utils/supabase";
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
@@ -1022,6 +1022,37 @@ function DividendiTab({ stocks, fmt, fmtPct, sym, rate }) {
   const totalInvested = stocks.reduce((sum, s) => sum + s.qty * s.buyPrice, 0);
   const portfolioYield = totalInvested > 0 ? (totalAnnualIncome / totalInvested) * 100 : 0;
 
+  // Proiezione 12 mesi
+  const freqDaysMap = { "Mensile": 30, "Trimestrale": 91, "Semestrale": 182, "Annuale": 365 };
+  const projection12m = [];
+  const now12 = new Date();
+  const end12m = new Date(); end12m.setFullYear(end12m.getFullYear() + 1);
+  stocksWithDiv.forEach(s => {
+    if (!s.div.frequency) return;
+    const freqDays = freqDaysMap[s.div.frequency] || 91;
+    const lastHistTs = s.div.history?.slice(-1)[0]?.dateTs;
+    let nextTs = lastHistTs ? new Date(lastHistTs * 1000) : new Date();
+    while (nextTs <= now12) nextTs = new Date(nextTs.getTime() + freqDays * 86400000);
+    while (nextTs <= end12m) {
+      projection12m.push({
+        date: nextTs,
+        dateStr: nextTs.toLocaleDateString("it-IT", { day: "2-digit", month: "short", year: "numeric" }),
+        monthKey: nextTs.toLocaleDateString("it-IT", { month: "short", year: "2-digit" }),
+        ticker: s.ticker,
+        amount: (s.div.lastAmount || 0) * s.qty,
+      });
+      nextTs = new Date(nextTs.getTime() + freqDays * 86400000);
+    }
+  });
+  projection12m.sort((a, b) => a.date - b.date);
+  const byMonth = {};
+  projection12m.forEach(p => {
+    if (!byMonth[p.monthKey]) byMonth[p.monthKey] = { month: p.monthKey, total: 0, items: [] };
+    byMonth[p.monthKey].total = parseFloat((byMonth[p.monthKey].total + p.amount).toFixed(2));
+    byMonth[p.monthKey].items.push(p);
+  });
+  const monthlyChart = Object.values(byMonth);
+
   // Prossimi dividendi ordinati per data
   const upcoming = stocksWithDiv
     .filter(s => s.div.nextDate)
@@ -1111,6 +1142,32 @@ function DividendiTab({ stocks, fmt, fmtPct, sym, rate }) {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Proiezione 12 mesi */}
+      {monthlyChart.length > 0 && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 14 }}>📆 Proiezione dividendi — prossimi 12 mesi</div>
+          <ResponsiveContainer width="100%" height={180}>
+            <BarChart data={monthlyChart} barSize={28}>
+              <XAxis dataKey="month" tick={{ fill: "#444", fontSize: 9 }} axisLine={false} tickLine={false}/>
+              <YAxis tick={{ fill: "#444", fontSize: 9 }} axisLine={false} tickLine={false} width={45} tickFormatter={v => `$${v}`}/>
+              <Tooltip contentStyle={{ background: "#0f1117", border: "1px solid #2a2d35", borderRadius: 4, fontSize: 11, color: "#E8E6DF" }}
+                formatter={v => [`$${v.toFixed(2)}`, "Dividendo stimato"]}/>
+              <Bar dataKey="total" fill="#F4C542" radius={[3,3,0,0]}/>
+            </BarChart>
+          </ResponsiveContainer>
+          <div style={{ marginTop: 12, display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {projection12m.slice(0, 8).map((p, i) => (
+              <div key={i} style={{ background: "#0f1117", border: "1px solid #1a1d26", borderRadius: 4, padding: "6px 10px", fontSize: 10 }}>
+                <span style={{ color: "#F4C542", fontWeight: 500 }}>{p.ticker}</span>
+                <span style={{ color: "#555", marginLeft: 6 }}>{p.dateStr}</span>
+                <span style={{ color: "#5EC98A", marginLeft: 6 }}>+${p.amount.toFixed(2)}</span>
+              </div>
+            ))}
+            {projection12m.length > 8 && <div style={{ fontSize: 10, color: "#444", padding: "6px 4px" }}>+{projection12m.length - 8} altri</div>}
           </div>
         </div>
       )}
@@ -2382,13 +2439,13 @@ export default function App() {
           {/* Mobile bottom navigation */}
           <div className="mobile-nav" style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "#0a0c10", borderTop: "1px solid #161820", zIndex: 999, justifyContent: "space-around", alignItems: "center", padding: "6px 0", paddingBottom: "env(safe-area-inset-bottom)" }}>
             {[
-              { id: "overview",    icon: "◈",  label: "Overview" },
-              { id: "titoli",      icon: "📋", label: "Titoli" },
-              { id: "settori",     icon: "◉",  label: "Settori" },
-              { id: "watchlist",   icon: "👁", label: "Watch" },
-              { id: "whatif",      icon: "🔁", label: "E se?" },
-              { id: "alert",       icon: "🔔", label: "Alert" },
-              { id: "dividendi",   icon: "💰", label: "Divid." },
+              { id: "overview",      icon: "◈",  label: "Overview" },
+              { id: "titoli",        icon: "📋", label: "Titoli" },
+              { id: "settori",       icon: "◉",  label: "Settori" },
+              { id: "simulazioni",   icon: "⚡", label: "Stress" },
+              { id: "whatif",        icon: "🔁", label: "E se?" },
+              { id: "dividendi",     icon: "💰", label: "Divid." },
+              { id: "alert",         icon: "🔔", label: "Alert" },
             ].map(t => (
               <button key={t.id} onClick={() => setActiveTab(t.id)}
                 style={{ background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "4px 8px", color: activeTab === t.id ? "#F4C542" : "#444", fontFamily: "inherit", transition: "color 0.15s" }}>
