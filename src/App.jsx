@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, createContext, useContext } from "react";
+import { useState, useEffect, useRef, useCallback, createContext, useContext, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area, ReferenceLine, LineChart, Line, Legend, BarChart, Bar } from "recharts";
 import { supabase, signIn, signUp, signOut, getSession, loadStocks, saveStock, deleteStock, loadNotes, saveNote, loadAlerts, saveAlert, deleteAlert } from "./utils/supabase";
@@ -992,6 +992,236 @@ function SimulazioniTab({ stocks, sym, rate, fmt, fmtPct }) {
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 // ─── WHAT IF TAB ──────────────────────────────────────────────────────────────
 // ─── DIVIDENDI TAB ────────────────────────────────────────────────────────────
+// ─── FORECAST TAB ─────────────────────────────────────────────────────────────
+function ForecastTab({ stocks, fmt, fmtPct, sym, rate }) {
+  const [selected, setSelected] = useState(null);
+  const [data, setData] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!selected) return;
+    if (data[selected.ticker]) return;
+    setLoading(true);
+    setError(null);
+    fetch(`${API_BASE}/api/forecast?symbol=${encodeURIComponent(selected.ticker)}&price=${selected.currentPrice}`)
+      .then(r => r.json())
+      .then(d => {
+        if (d.error) { setError(d.error); setLoading(false); return; }
+        setData(prev => ({ ...prev, [selected.ticker]: d }));
+        setLoading(false);
+      })
+      .catch(() => { setError("Errore nel caricamento dati"); setLoading(false); });
+  }, [selected?.ticker]);
+
+  const portfolioForecast = useMemo(() => {
+    const totalValue = stocks.reduce((s, st) => s + st.qty * st.currentPrice, 0);
+    if (totalValue === 0) return null;
+    let baseSum = 0, pessSum = 0, optSum = 0, covered = 0;
+    stocks.forEach(st => {
+      const d = data[st.ticker];
+      if (!d) return;
+      const w = (st.qty * st.currentPrice) / totalValue;
+      baseSum += d.projection.base * w;
+      pessSum += d.projection.pessimistic * w;
+      optSum += d.projection.optimistic * w;
+      covered++;
+    });
+    if (covered === 0) return null;
+    return {
+      base: parseFloat(baseSum.toFixed(2)),
+      pessimistic: parseFloat(pessSum.toFixed(2)),
+      optimistic: parseFloat(optSum.toFixed(2)),
+      baseValue: parseFloat((totalValue * (1 + baseSum / 100)).toFixed(2)),
+      pessValue: parseFloat((totalValue * (1 + pessSum / 100)).toFixed(2)),
+      optValue: parseFloat((totalValue * (1 + optSum / 100)).toFixed(2)),
+      totalValue: parseFloat(totalValue.toFixed(2)),
+      covered, total: stocks.length,
+    };
+  }, [data, stocks]);
+
+  const d = selected ? data[selected.ticker] : null;
+  const pct = v => v > 0 ? `+${v}%` : `${v}%`;
+  const col = v => v > 0 ? "#5EC98A" : v < 0 ? "#E87040" : "#888";
+
+  return (
+    <div className="fade-up">
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300 }}>{"🔮 Previsioni 12 mesi"}</div>
+        <div style={{ fontSize: 11, color: "#444", marginTop: 2 }}>Analisi storica + proiezione statistica basata su dati reali</div>
+      </div>
+
+      {portfolioForecast && (
+        <div className="card" style={{ marginBottom: 20, border: "1px solid #2a2d35" }}>
+          <div style={{ fontSize: 8, color: "#F4C542", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 14 }}>
+            {"◈ Proiezione portafoglio aggregata ("}{portfolioForecast.covered}/{portfolioForecast.total}{" titoli analizzati)"}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
+            {[
+              { l: "Pessimistico", pct: portfolioForecast.pessimistic, val: portfolioForecast.pessValue, c: "#E87040" },
+              { l: "Base",         pct: portfolioForecast.base,        val: portfolioForecast.baseValue, c: "#F4C542" },
+              { l: "Ottimistico",  pct: portfolioForecast.optimistic,  val: portfolioForecast.optValue,  c: "#5EC98A" },
+            ].map(s => (
+              <div key={s.l} style={{ textAlign: "center", padding: "12px 8px", background: "#0f1117", borderRadius: 6 }}>
+                <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>{s.l}</div>
+                <div style={{ fontFamily: "'Fraunces', serif", fontSize: 24, fontWeight: 300, color: s.c }}>{pct(s.pct)}</div>
+                <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>{sym}{fmt(s.val * rate)}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: 10, fontSize: 9, color: "#333", textAlign: "center" }}>
+            {"⚠️ Stime statistiche basate su dati storici. Non costituisce consulenza finanziaria."}
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 20 }}>
+        {stocks.map(s => (
+          <button key={s.id} onClick={() => setSelected(s)}
+            style={{ padding: "8px 14px", borderRadius: 6,
+              border: `1px solid ${selected?.id === s.id ? "#F4C542" : "#1a1d26"}`,
+              background: selected?.id === s.id ? "#1a1a0a" : "#0f1117",
+              color: selected?.id === s.id ? "#F4C542" : "#888",
+              cursor: "pointer", fontSize: 12, fontFamily: "inherit", transition: "all 0.15s" }}>
+            {s.ticker}
+            {data[s.ticker] && (
+              <span style={{ marginLeft: 6, color: col(data[s.ticker].projection.base), fontSize: 10 }}>
+                {pct(data[s.ticker].projection.base)}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {!selected && !loading && (
+        <div style={{ textAlign: "center", marginTop: 40, color: "#444", fontSize: 13 }}>
+          {"↑ Seleziona un titolo per vedere l'analisi dettagliata"}
+        </div>
+      )}
+
+      {loading && (
+        <div style={{ textAlign: "center", marginTop: 40 }}>
+          <Spinner size={20}/>
+          <div style={{ color: "#444", fontSize: 12, marginTop: 10 }}>Analisi dati storici in corso…</div>
+        </div>
+      )}
+
+      {error && <div style={{ color: "#E87040", textAlign: "center", marginTop: 30, fontSize: 13 }}>{"⚠️ "}{error}</div>}
+
+      {d && !loading && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+          <div className="card">
+            <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6 }}>
+              {"📈 Proiezione prezzo 12 mesi — "}{selected.ticker}
+            </div>
+            <div style={{ fontSize: 10, color: "#555", marginBottom: 14 }}>
+              {"Trend annualizzato 3 anni: "}
+              <span style={{ color: col(d.annualizedReturn) }}>{pct(d.annualizedReturn)}</span>
+              {" · Volatilità annua: "}
+              <span style={{ color: "#888" }}>{d.annualVol}%</span>
+            </div>
+            <ResponsiveContainer width="100%" height={200}>
+              <AreaChart data={d.projectionChart}>
+                <defs>
+                  <linearGradient id="optGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#5EC98A" stopOpacity={0.15}/>
+                    <stop offset="95%" stopColor="#5EC98A" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="month" tick={{ fill: "#444", fontSize: 9 }} axisLine={false} tickLine={false}/>
+                <YAxis tick={{ fill: "#444", fontSize: 9 }} axisLine={false} tickLine={false} width={55}
+                  tickFormatter={v => `$${v}`} domain={["auto","auto"]}/>
+                <Tooltip contentStyle={{ background: "#0f1117", border: "1px solid #2a2d35", borderRadius: 4, fontSize: 11 }}
+                  formatter={(v, n) => [`$${v}`, n === "base" ? "Base" : n === "optimistic" ? "Ottimistico" : "Pessimistico"]}/>
+                <Area type="monotone" dataKey="optimistic" stroke="#5EC98A" strokeWidth={1} strokeDasharray="4 2" fill="url(#optGrad)" dot={false}/>
+                <Area type="monotone" dataKey="base" stroke="#F4C542" strokeWidth={2} fill="none" dot={false}/>
+                <Area type="monotone" dataKey="pessimistic" stroke="#E87040" strokeWidth={1} strokeDasharray="4 2" fill="none" dot={false}/>
+                <ReferenceLine y={d.currentPrice} stroke="#333" strokeDasharray="3 3"/>
+              </AreaChart>
+            </ResponsiveContainer>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginTop: 14 }}>
+              {[
+                { l: "Pessimistico", v: d.projection.pessimisticPriceTarget, p: d.projection.pessimistic, c: "#E87040" },
+                { l: "Base",         v: d.projection.basePriceTarget,        p: d.projection.base,        c: "#F4C542" },
+                { l: "Ottimistico",  v: d.projection.optimisticPriceTarget,  p: d.projection.optimistic,  c: "#5EC98A" },
+              ].map(s => (
+                <div key={s.l} style={{ textAlign: "center", background: "#0f1117", borderRadius: 6, padding: "10px 6px" }}>
+                  <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>{s.l}</div>
+                  <div style={{ fontFamily: "'Fraunces', serif", fontSize: 18, color: s.c }}>${s.v}</div>
+                  <div style={{ fontSize: 10, color: s.c, marginTop: 2 }}>{pct(s.p)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="card">
+            <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 14 }}>
+              {"🔍 Analisi storica — ultime volte che "}{selected.ticker}{" era a questo prezzo (±7%)"}
+            </div>
+            {d.occurrences === 0 ? (
+              <div style={{ color: "#555", fontSize: 12 }}>Nessun caso storico trovato a questo livello di prezzo.</div>
+            ) : (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 16 }}>
+                  {[
+                    { l: "Casi trovati",     v: d.occurrences,              c: "#888" },
+                    { l: "Win Rate",         v: `${d.winRate}%`,            c: d.winRate >= 50 ? "#5EC98A" : "#E87040" },
+                    { l: "Rendimento Medio", v: pct(d.avgOutcome),          c: col(d.avgOutcome) },
+                    { l: "Range",            v: `${d.maxLoss}% / +${d.maxGain}%`, c: "#888" },
+                  ].map(k => (
+                    <div key={k.l} style={{ textAlign: "center", background: "#0f1117", borderRadius: 6, padding: "10px 6px" }}>
+                      <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>{k.l}</div>
+                      <div style={{ fontFamily: "'Fraunces', serif", fontSize: 16, color: k.c }}>{k.v}</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ fontSize: 10, color: "#444", marginBottom: 10 }}>Ultimi casi storici:</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {d.historicalOutcomes.slice().reverse().map((o, i) => (
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+                      padding: "8px 12px", background: i % 2 === 0 ? "#0f1117" : "transparent", borderRadius: 4 }}>
+                      <span style={{ fontSize: 11, color: "#555" }}>{o.date}</span>
+                      <span style={{ fontSize: 11, color: "#888" }}>${o.entryPrice} → ${o.exitPrice}</span>
+                      <span style={{ fontSize: 12, fontWeight: 500, color: col(o.pct) }}>{pct(o.pct)}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="card">
+            <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 14 }}>
+              {"📅 Stagionalità storica — rendimento medio per mese"}
+            </div>
+            <ResponsiveContainer width="100%" height={140}>
+              <BarChart data={d.seasonality} barSize={22}>
+                <XAxis dataKey="month" tick={{ fill: "#444", fontSize: 9 }} axisLine={false} tickLine={false}/>
+                <YAxis tick={{ fill: "#444", fontSize: 9 }} axisLine={false} tickLine={false} width={35}
+                  tickFormatter={v => `${v}%`}/>
+                <Tooltip contentStyle={{ background: "#0f1117", border: "1px solid #2a2d35", borderRadius: 4, fontSize: 11 }}
+                  formatter={v => [`${v}%`, "Rendimento medio"]}/>
+                <ReferenceLine y={0} stroke="#333"/>
+                <Bar dataKey="avgReturn" radius={[3,3,0,0]}>
+                  {d.seasonality.map((entry, index) => (
+                    <Cell key={index} fill={entry.avgReturn >= 0 ? "#5EC98A" : "#E87040"}/>
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+        </div>
+      )}
+
+      <div style={{ marginTop: 20, fontSize: 9, color: "#2a2d35", textAlign: "center" }}>
+        {"⚠️ Tutte le proiezioni sono stime statistiche basate su performance storiche. I rendimenti passati non garantiscono risultati futuri. Non costituisce consulenza finanziaria."}
+      </div>
+    </div>
+  );
+}
+
 function DividendiTab({ stocks, fmt, fmtPct, sym, rate }) {
   const [divData, setDivData] = useState({});
   const [loading, setLoading] = useState({});
@@ -1897,9 +2127,9 @@ export default function App() {
             </div>
             {/* Desktop tabs */}
             <div style={{ display: "flex", alignItems: "center", gap: 0, overflowX: "auto", flex: 1, justifyContent: "center" }} className="desktop-tabs">
-              {["overview","titoli","settori","watchlist","confronto","alert","simulazioni","whatif","dividendi"].map(t => (
+              {["overview","titoli","settori","watchlist","confronto","alert","simulazioni","whatif","dividendi","previsioni"].map(t => (
                 <button key={t} className={`tab-btn ${activeTab === t ? "active" : ""}`} onClick={() => setActiveTab(t)}>
-                  {t === "whatif" ? "e se?" : t === "dividendi" ? "💰 dividendi" : t}
+                  {t === "whatif" ? "e se?" : t === "dividendi" ? "💰 dividendi" : t === "previsioni" ? "🔮 previsioni" : t}
                 </button>
               ))}
             </div>
@@ -2397,6 +2627,9 @@ export default function App() {
               {activeTab === "dividendi" && (
                 <DividendiTab stocks={stocks} fmt={fmt} fmtPct={fmtPct} sym={sym} rate={rate} />
               )}
+              {activeTab === "previsioni" && (
+                <ForecastTab stocks={stocks} fmt={fmt} fmtPct={fmtPct} sym={sym} rate={rate} />
+              )}
 
             </div>
           </div>
@@ -2445,6 +2678,7 @@ export default function App() {
               { id: "simulazioni",   icon: "⚡", label: "Stress" },
               { id: "whatif",        icon: "🔁", label: "E se?" },
               { id: "dividendi",     icon: "💰", label: "Divid." },
+              { id: "previsioni",    icon: "🔮", label: "Prev." },
               { id: "alert",         icon: "🔔", label: "Alert" },
             ].map(t => (
               <button key={t.id} onClick={() => setActiveTab(t.id)}
