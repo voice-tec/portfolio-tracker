@@ -549,6 +549,62 @@ function EditModal({ stock, onClose, onSave }) {
 }
 
 // ─── STOCK DETAIL MODAL ───────────────────────────────────────────────────────
+// ─── TRADINGVIEW WIDGET ───────────────────────────────────────────────────────
+function TradingViewWidget({ ticker }) {
+  const [show, setShow] = useState(false);
+  const containerId = `tv_${ticker}`;
+
+  // Converti ticker italiano: ENI.MI → MIL:ENI
+  function toTVSymbol(t) {
+    if (t.endsWith(".MI")) return `MIL:${t.replace(".MI", "")}`;
+    if (t.endsWith(".L"))  return `LSE:${t.replace(".L", "")}`;
+    if (t.endsWith(".PA")) return `EURONEXT:${t.replace(".PA", "")}`;
+    if (t.endsWith(".DE")) return `XETR:${t.replace(".DE", "")}`;
+    return t; // US ticker — nessun prefisso necessario
+  }
+
+  useEffect(() => {
+    if (!show) return;
+    const existing = document.getElementById(containerId);
+    if (existing) existing.innerHTML = "";
+
+    const script = document.createElement("script");
+    script.src = "https://s3.tradingview.com/tv.js";
+    script.async = true;
+    script.onload = () => {
+      if (window.TradingView) {
+        new window.TradingView.widget({
+          container_id: containerId,
+          symbol: toTVSymbol(ticker),
+          interval: "D",
+          theme: "dark",
+          style: "1",
+          locale: "it",
+          toolbar_bg: "#0D0F14",
+          enable_publishing: false,
+          hide_top_toolbar: false,
+          hide_legend: false,
+          save_image: false,
+          height: 420,
+          width: "100%",
+        });
+      }
+    };
+    document.head.appendChild(script);
+    return () => { try { document.head.removeChild(script); } catch(_) {} };
+  }, [show, ticker]);
+
+  return (
+    <div style={{ background: "#0f1117", border: "1px solid #1a1d26", borderRadius: 6, marginBottom: 14, overflow: "hidden" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", cursor: "pointer" }} onClick={() => setShow(v => !v)}>
+        <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em" }}>📈 Grafico TradingView</div>
+        <span style={{ fontSize: 10, color: "#555" }}>{show ? "▲ Chiudi" : "▼ Apri"}</span>
+      </div>
+      {show && <div id={containerId} style={{ width: "100%", height: 420 }} />}
+    </div>
+  );
+}
+
 function StockModal({ stock, onClose, notes, setNotes, alerts, setAlerts, handleRemove, sym, rate, fmt, fmtPct, handleAI, aiLoading, aiText, plan }) {
   const [chartPeriod, setChartPeriod] = useState(30);
   const [history, setHistory] = useState(stock.history || []);
@@ -644,6 +700,9 @@ function StockModal({ stock, onClose, notes, setNotes, alerts, setAlerts, handle
             </ResponsiveContainer>
           )}
         </div>
+
+        {/* TradingView Widget */}
+        <TradingViewWidget ticker={stock.ticker} />
 
         {/* AI */}
         <div style={{ background: "#0f1117", border: "1px solid #1a1d26", borderRadius: 6, padding: "14px 16px", marginBottom: 14 }}>
