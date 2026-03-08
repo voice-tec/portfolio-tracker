@@ -588,7 +588,7 @@ function StockModal({ stock, onClose, notes, setNotes, alerts, setAlerts, handle
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <span style={{ fontFamily: "'Fraunces', serif", fontSize: 28, fontWeight: 300 }}>{stock.ticker}</span>
               <span style={{ fontSize: 9, padding: "2px 8px", borderRadius: 2, background: "#1a1d26", color: "#666", letterSpacing: "0.08em", textTransform: "uppercase" }}>{stock.sector}</span>
-              {stock.priceReal && <span style={{ fontSize: 8, background: "#1a2a1a", color: "#5EC98A", padding: "2px 7px", borderRadius: 2 }}>LIVE</span>}
+              {stock.priceReal && <span style={{ fontSize: 8, background: marketOpen ? "#1a2a1a" : "#2a1a1a", color: marketOpen ? "#5EC98A" : "#E87040", padding: "2px 7px", borderRadius: 2 }}>{marketOpen ? "LIVE" : "CHIUSO"}</span>}
             </div>
             <div style={{ fontSize: 10, color: "#2a2d35", marginTop: 3 }}>Acquistato il {stock.buyDate} · {stock.qty} azioni</div>
           </div>
@@ -1788,7 +1788,7 @@ export default function App() {
                                   <tr key={s.id} style={{ borderBottom: "1px solid #0f1117", cursor: "pointer" }} onClick={() => setSelectedId(s.id)}>
                                     <td style={{ padding: "10px 8px 10px 0" }}>
                                       <span style={{ fontWeight: 500 }}>{s.ticker}</span>
-                                      {s.priceReal && <span style={{ fontSize: 7, background: "#1a2a1a", color: "#5EC98A", padding: "1px 5px", borderRadius: 2, marginLeft: 6 }}>LIVE</span>}
+                                      {s.priceReal && <span style={{ fontSize: 7, background: marketOpen ? "#1a2a1a" : "#2a1a1a", color: marketOpen ? "#5EC98A" : "#E87040", padding: "1px 5px", borderRadius: 2, marginLeft: 6 }}>{marketOpen ? "LIVE" : "CHIUSO"}</span>}
                                       {alerts[s.id] && <span style={{ fontSize: 9, marginLeft: 4 }}>🔔</span>}
                                     </td>
                                     <td style={{ padding: "10px 8px 10px 0", color: "#888" }}>{s.qty}</td>
@@ -1872,7 +1872,7 @@ export default function App() {
                               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
                                 <span style={{ fontFamily: "'Fraunces', serif", fontSize: 18, fontWeight: 300 }}>{s.ticker}</span>
                                 <span style={{ fontSize: 9, background: "#1a1d26", color: "#555", padding: "2px 7px", borderRadius: 2 }}>{s.sector}</span>
-                                {s.priceReal && <span style={{ fontSize: 7, background: "#1a2a1a", color: "#5EC98A", padding: "1px 5px", borderRadius: 2 }}>LIVE</span>}
+                                {s.priceReal && <span style={{ fontSize: 7, background: marketOpen ? "#1a2a1a" : "#2a1a1a", color: marketOpen ? "#5EC98A" : "#E87040", padding: "1px 5px", borderRadius: 2 }}>{marketOpen ? "LIVE" : "CHIUSO"}</span>}
                                 {alerts[s.id] && <span style={{ fontSize: 9 }}>🔔</span>}
                               </div>
                               <div style={{ fontSize: 10, color: "#333" }}>{s.qty} az. · acquisto ${fmt(s.buyPrice)} · {s.buyDate}</div>
