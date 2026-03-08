@@ -549,6 +549,18 @@ function EditModal({ stock, onClose, onSave }) {
 }
 
 // ─── STOCK DETAIL MODAL ───────────────────────────────────────────────────────
+// ─── MARKET BADGE ─────────────────────────────────────────────────────────────
+function MarketBadge({ state = "CLOSED", size = 8, ml = 0 }) {
+  const cfg = {
+    PRE:     { label: "PRE",   bg: "#1a1f2a", color: "#7EB8F7" },
+    REGULAR: { label: "LIVE",  bg: "#1a2a1a", color: "#5EC98A" },
+    POST:    { label: "AFTER", bg: "#2a1f0a", color: "#F4C542" },
+    CLOSED:  { label: "CHIUS", bg: "#2a1a1a", color: "#E87040" },
+  };
+  const c = cfg[state] || cfg.CLOSED;
+  return <span style={{ fontSize: size, background: c.bg, color: c.color, padding: "2px 6px", borderRadius: 2, marginLeft: ml }}>{c.label}</span>;
+}
+
 // ─── TRADINGVIEW WIDGET ───────────────────────────────────────────────────────
 function TradingViewWidget({ ticker }) {
   const [show, setShow] = useState(false);
@@ -644,7 +656,7 @@ function StockModal({ stock, onClose, notes, setNotes, alerts, setAlerts, handle
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <span style={{ fontFamily: "'Fraunces', serif", fontSize: 28, fontWeight: 300 }}>{stock.ticker}</span>
               <span style={{ fontSize: 9, padding: "2px 8px", borderRadius: 2, background: "#1a1d26", color: "#666", letterSpacing: "0.08em", textTransform: "uppercase" }}>{stock.sector}</span>
-              {stock.priceReal && <MarketBadge ticker={stock.ticker} size={8}/>}
+              {stock.priceReal && <MarketBadge state={stock.marketState || "CLOSED"} size={8}/>}
             </div>
             <div style={{ fontSize: 10, color: "#2a2d35", marginTop: 3 }}>Acquistato il {stock.buyDate} · {stock.qty} azioni</div>
           </div>
@@ -1215,7 +1227,7 @@ export default function App() {
           fetchRealPrice(stock.ticker).then(livePrice => {
             if (!livePrice) return;
             setStocksRaw(prev => prev.map(s => s.id === stock.id
-              ? { ...s, currentPrice: livePrice, priceReal: true }
+              ? { ...s, currentPrice: livePrice, priceReal: true, marketState: result.marketState || "CLOSED" }
               : s
             ));
             // Salva il prezzo aggiornato su Supabase
@@ -1274,7 +1286,7 @@ export default function App() {
           const livePrice = result.price;
           const ms = result.marketState || "CLOSED";
           setStocksRaw(prev => prev.map(s => s.id === stock.id
-            ? { ...s, currentPrice: livePrice, priceReal: true }
+            ? { ...s, currentPrice: livePrice, priceReal: true, marketState: ms }
             : s
           ));
           setStockStates(prev => ({ ...prev, [stock.ticker]: ms }));
@@ -1287,17 +1299,7 @@ export default function App() {
   }
 
   // Helper badge stato mercato per un ticker
-  function MarketBadge({ ticker, size = 8, ml = 0 }) {
-    const state = stockStates[ticker] || (marketOpen ? "REGULAR" : "CLOSED");
-    const cfg = {
-      PRE:     { label: "PRE",   bg: "#1a1f2a", color: "#7EB8F7" },
-      REGULAR: { label: "LIVE",  bg: "#1a2a1a", color: "#5EC98A" },
-      POST:    { label: "AFTER", bg: "#2a1f0a", color: "#F4C542" },
-      CLOSED:  { label: "CHIUS", bg: "#2a1a1a", color: "#E87040" },
-    };
-    const c = cfg[state] || cfg.CLOSED;
-    return <span style={{ fontSize: size, background: c.bg, color: c.color, padding: "2px 6px", borderRadius: 2, marginLeft: ml }}>{c.label}</span>;
-  }
+
   const [chartPeriod, setChartPeriod] = useState(30); // 30, 90, 180, 365
   const [periodHistory, setPeriodHistory] = useState({});
   const [periodLoading, setPeriodLoading] = useState(false);
@@ -1847,7 +1849,7 @@ export default function App() {
                                   <tr key={s.id} style={{ borderBottom: "1px solid #0f1117", cursor: "pointer" }} onClick={() => setSelectedId(s.id)}>
                                     <td style={{ padding: "10px 8px 10px 0" }}>
                                       <span style={{ fontWeight: 500 }}>{s.ticker}</span>
-                                      {s.priceReal && <MarketBadge ticker={s.ticker} size={7} ml={6}/>}
+                                      {s.priceReal && <MarketBadge state={s.marketState || "CLOSED"} size={7} ml={6}/>}
                                       {alerts[s.id] && <span style={{ fontSize: 9, marginLeft: 4 }}>🔔</span>}
                                     </td>
                                     <td style={{ padding: "10px 8px 10px 0", color: "#888" }}>{s.qty}</td>
@@ -1931,7 +1933,7 @@ export default function App() {
                               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
                                 <span style={{ fontFamily: "'Fraunces', serif", fontSize: 18, fontWeight: 300 }}>{s.ticker}</span>
                                 <span style={{ fontSize: 9, background: "#1a1d26", color: "#555", padding: "2px 7px", borderRadius: 2 }}>{s.sector}</span>
-                                {s.priceReal && <MarketBadge ticker={s.ticker} size={7}/>}
+                                {s.priceReal && <MarketBadge state={s.marketState || "CLOSED"} size={7}/>}
                                 {alerts[s.id] && <span style={{ fontSize: 9 }}>🔔</span>}
                               </div>
                               <div style={{ fontSize: 10, color: "#333" }}>{s.qty} az. · acquisto ${fmt(s.buyPrice)} · {s.buyDate}</div>
