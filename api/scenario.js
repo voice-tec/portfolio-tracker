@@ -1,11 +1,12 @@
 // api/scenario.js — Vercel Serverless Function
 // GET /api/scenario?symbol=AAPL&from=2020-02-19&to=2020-03-23
-// Returns daily candles for a specific date range from Finnhub.
+// Usa Yahoo Finance per dati storici illimitati (Finnhub free è limitato a 1 anno)
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", process.env.ALLOWED_ORIGIN || "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Cache-Control", "public, max-age=86400"); // cache 24h — dati storici non cambiano
 
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
@@ -13,43 +14,84 @@ export default async function handler(req, res) {
   const { symbol, from, to } = req.query;
   if (!symbol || !from || !to) return res.status(400).json({ error: "Missing symbol, from, or to" });
 
-  const apiKey = process.env.FINNHUB_API_KEY;
-  if (!apiKey) return res.status(500).json({ error: "FINNHUB_API_KEY not configured" });
-
   const fromTs = Math.floor(new Date(from).getTime() / 1000);
-  const toTs   = Math.floor(new Date(to).getTime() / 1000);
+  const toTs   = Math.floor(new Date(to).getTime() / 1000) + 86400;
 
   try {
-    const url = `https://finnhub.io/api/v1/stock/candle?symbol=${encodeURIComponent(symbol.toUpperCase())}&resolution=W&from=${fromTs}&to=${toTs}&token=${apiKey}`;
-    const response = await fetch(url);
+    // Yahoo Finance v8 — dati storici illimitati, gratuiti
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol.toUpperCase())}?interval=1wk&period1=${fromTs}&period2=${toTs}`;
+    const response = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json" }
+    });
 
-    if (!response.ok) return res.status(response.status).json({ error: `Finnhub error: ${response.statusText}` });
+    if (!response.ok) return res.status(response.status).json({ error: "Yahoo Finance error" });
 
     const data = await response.json();
+    const result = data?.chart?.result?.[0];
 
-    if (data.s === "no_data" || !data.t || data.t.length === 0) {
+    if (!result || !result.timestamp || result.timestamp.length === 0) {
       return res.status(404).json({ error: `No data for ${symbol} in this period` });
     }
 
-    const candles = data.t.map((ts, i) => ({
-      date:  new Date(ts * 1000).toLocaleDateString("it-IT", { day: "2-digit", month: "short", year: "2-digit" }),
-      price: parseFloat(data.c[i].toFixed(2)),
-      open:  parseFloat(data.o[i].toFixed(2)),
-      high:  parseFloat(data.h[i].toFixed(2)),
-      low:   parseFloat(data.l[i].toFixed(2)),
-    }));
+    const timestamps = result.timestamp;
+    const closes = result.indicators?.quote?.[0]?.close;
 
-    // Normalize to percentage change from first candle
+    if (!closes || closes.length === 0) {
+      return res.status(404).json({ error: "No price data available" });
+    }
+
+    // Build candles, skip null values
+    const candles = timestamps
+      .map((ts, i) => ({ ts, price: closes[i] }))
+      .filter(c => c.price != null)
+      .map(c => ({
+        date: new Date(c.ts * 1000).toLocaleDateString("it-IT", { day: "2-digit", month: "short", year: "2-digit" }),
+        price: parseFloat(c.price.toFixed(2)),
+      }));
+
+    if (candles.length === 0) return res.status(404).json({ error: "No valid candles" });
+
+    // Normalize to % change from first candle
     const base = candles[0].price;
     const normalized = candles.map(c => ({
       ...c,
       pct: parseFloat(((c.price - base) / base * 100).toFixed(2)),
     }));
 
-    return res.status(200).json({ symbol: symbol.toUpperCase(), candles: normalized, base });
+    // Also fetch SPY (S&P500 ETF) for the same period as benchmark
+    let spyCandles = null;
+    try {
+      const spyUrl = `https://query1.finance.yahoo.com/v8/finance/chart/SPY?interval=1wk&period1=${fromTs}&period2=${toTs}`;
+      const spyRes = await fetch(spyUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
+      if (spyRes.ok) {
+        const spyData = await spyRes.json();
+        const spyResult = spyData?.chart?.result?.[0];
+        if (spyResult?.timestamp) {
+          const spyCloses = spyResult.indicators?.quote?.[0]?.close;
+          const spyBase = spyCloses?.find(c => c != null);
+          if (spyBase) {
+            spyCandles = spyResult.timestamp
+              .map((ts, i) => ({ ts, price: spyCloses[i] }))
+              .filter(c => c.price != null)
+              .map(c => ({
+                date: new Date(c.ts * 1000).toLocaleDateString("it-IT", { day: "2-digit", month: "short", year: "2-digit" }),
+                pct: parseFloat(((c.price - spyBase) / spyBase * 100).toFixed(2)),
+              }));
+          }
+        }
+      }
+    } catch (_) {}
+
+    return res.status(200).json({
+      symbol: symbol.toUpperCase(),
+      candles: normalized,
+      spy: spyCandles,
+      base,
+      source: "yahoo",
+    });
 
   } catch (err) {
-    console.error("Finnhub scenario error:", err);
+    console.error("Scenario fetch error:", err);
     return res.status(500).json({ error: "Failed to fetch scenario data" });
   }
 }

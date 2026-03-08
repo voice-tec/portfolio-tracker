@@ -113,20 +113,19 @@ async function fetchAIAnalysis(stock, note, sym, currency) {
 
 // ─── SCENARIOS ────────────────────────────────────────────────────────────────
 const SCENARIOS = [
-  { id: "covid",      label: "🦠 Covid Crash",        from: "2020-02-19", to: "2020-03-23",  spx: -34,  real: false, color: "#E87040", desc: "Il mercato perde il 34% in 33 giorni" },
-  { id: "postcovid",  label: "🚀 Post-Covid Rally",    from: "2020-03-23", to: "2021-12-31",  spx: +114, real: false, color: "#5EC98A", desc: "La ripresa più rapida della storia" },
-  { id: "bull2017",   label: "📈 Bull Run 2017",       from: "2017-01-01", to: "2017-12-31",  spx: +19,  real: false, color: "#5B8DEF", desc: "Un anno eccezionale per i mercati" },
-  { id: "gfc",        label: "💥 Financial Crisis",    from: "2007-10-01", to: "2009-03-09",  spx: -57,  real: false, color: "#BF6EEA", desc: "La peggior crisi dal 1929 (-57% S&P500)" },
-  { id: "dotcom",     label: "🫧 Dot-com Bubble",      from: "2000-03-10", to: "2002-10-09",  spx: -49,  real: false, color: "#F06292", desc: "Il crollo delle aziende tech (-49% S&P500)" },
+  { id: "covid",      label: "🦠 Covid Crash",        from: "2020-02-19", to: "2020-03-23",  spx: -34,  real: true, color: "#E87040", desc: "Il mercato perde il 34% in 33 giorni" },
+  { id: "postcovid",  label: "🚀 Post-Covid Rally",    from: "2020-03-23", to: "2021-12-31",  spx: +114, real: true, color: "#5EC98A", desc: "La ripresa più rapida della storia" },
+  { id: "bull2017",   label: "📈 Bull Run 2017",       from: "2017-01-01", to: "2017-12-31",  spx: +19,  real: true, color: "#5B8DEF", desc: "Un anno eccezionale per i mercati" },
+  { id: "gfc",        label: "💥 Financial Crisis",    from: "2007-10-01", to: "2009-03-09",  spx: -57,  real: true, color: "#BF6EEA", desc: "La peggior crisi dal 1929 (-57% S&P500)" },
+  { id: "dotcom",     label: "🫧 Dot-com Bubble",      from: "2000-03-10", to: "2002-10-09",  spx: -49,  real: true, color: "#F06292", desc: "Il crollo delle aziende tech (-49% S&P500)" },
 ];
 
 async function fetchScenarioData(symbol, scenario) {
-  if (!scenario.real) return null; // use simulation for old scenarios
   try {
     const res = await fetch(`${API_BASE}/api/scenario?symbol=${encodeURIComponent(symbol)}&from=${scenario.from}&to=${scenario.to}`);
     if (!res.ok) return null;
     const data = await res.json();
-    return data.candles || null;
+    return data; // returns { candles, spy, source }
   } catch { return null; }
 }
 
@@ -747,55 +746,46 @@ function SimulazioniTab({ stocks, sym, rate, fmt, fmtPct }) {
     if (scenarioData[key]) return;
     setLoading(true);
 
-    if (!selectedScenario.real) {
-      // Simulate for old scenarios
-      const days = Math.round((new Date(selectedScenario.to) - new Date(selectedScenario.from)) / 86400000 / 7);
-      const chartData = simulateScenario(selectedScenario, days);
-      // Per-stock simulation based on sector beta
-      const stockResults = stocks.map(s => {
-        const beta = s.sector === "Tech" ? 1.4 : s.sector === "Energy" ? 0.9 : 1.0;
-        const pct = selectedScenario.spx / 100 * beta * (0.85 + Math.random() * 0.3);
-        const pnl = s.qty * s.currentPrice * rate * pct;
-        return { ...s, scenarioPct: pct * 100, scenarioPnl: pnl };
-      });
-      setScenarioData(d => ({ ...d, [key]: { chartData, stockResults } }));
-      setLoading(false);
-    } else {
-      // Fetch real data for each stock
-      Promise.all(stocks.map(s => fetchScenarioData(s.ticker, selectedScenario))).then(results => {
-        // Build combined portfolio chart
-        const maxLen = Math.max(...results.map(r => r?.length || 0));
-        const chartData = Array.from({ length: maxLen }, (_, i) => {
-          const point = { date: results.find(r => r)?.[i]?.date || "" };
-          let totalPct = 0, totalWeight = 0;
-          results.forEach((r, j) => {
-            if (r && r[i]) {
-              const weight = stocks[j].qty * stocks[j].currentPrice / totalValue;
-              totalPct += r[i].pct * weight;
-              totalWeight += weight;
-            }
-          });
-          point.pct = totalWeight > 0 ? parseFloat((totalPct / totalWeight).toFixed(2)) : 0;
-          return point;
-        });
+    // Fetch dati reali da Yahoo Finance per tutti gli scenari
+    Promise.all(stocks.map(s => fetchScenarioData(s.ticker, selectedScenario))).then(results => {
+      // Prendi SPY dal primo risultato disponibile
+      const spyData = results.find(r => r?.spy)?.spy || null;
 
-        const stockResults = stocks.map((s, i) => {
-          const r = results[i];
-          if (!r || r.length === 0) {
-            // Fallback to simulation if no data
-            const beta = 1.0;
-            const pct = selectedScenario.spx / 100 * beta;
-            return { ...s, scenarioPct: pct * 100, scenarioPnl: s.qty * s.currentPrice * rate * pct, noData: true };
+      // Build combined portfolio chart (weighted average)
+      const candles = results.map(r => r?.candles || null);
+      const maxLen = Math.max(...candles.map(r => r?.length || 0));
+      const chartData = Array.from({ length: maxLen }, (_, i) => {
+        const point = { date: candles.find(r => r)?.[i]?.date || "" };
+        let totalPct = 0, totalWeight = 0;
+        candles.forEach((r, j) => {
+          if (r && r[i]) {
+            const weight = stocks[j].qty * stocks[j].currentPrice / totalValue;
+            totalPct += r[i].pct * weight;
+            totalWeight += weight;
           }
-          const pct = r[r.length - 1].pct;
-          const pnl = s.qty * s.currentPrice * rate * pct / 100;
-          return { ...s, scenarioPct: pct, scenarioPnl: pnl, noData: false };
         });
-
-        setScenarioData(d => ({ ...d, [key]: { chartData, stockResults } }));
-        setLoading(false);
+        point.pct = totalWeight > 0 ? parseFloat((totalPct / totalWeight).toFixed(2)) : 0;
+        // Aggiungi SPY come benchmark
+        if (spyData && spyData[i]) point.spy = spyData[i].pct;
+        return point;
       });
-    }
+
+      const stockResults = stocks.map((s, i) => {
+        const r = candles[i];
+        if (!r || r.length === 0) {
+          // Fallback beta-adjusted se titolo non esisteva in quel periodo
+          const beta = s.sector === "Tech" ? 1.4 : s.sector === "Energy" ? 0.8 : s.sector === "Finanza" ? 1.2 : 1.0;
+          const pct = selectedScenario.spx / 100 * beta;
+          return { ...s, scenarioPct: pct * 100, scenarioPnl: s.qty * s.currentPrice * rate * pct, noData: true };
+        }
+        const pct = r[r.length - 1].pct;
+        const pnl = s.qty * s.currentPrice * rate * pct / 100;
+        return { ...s, scenarioPct: pct, scenarioPnl: pnl, noData: false };
+      });
+
+      setScenarioData(d => ({ ...d, [key]: { chartData, stockResults, hasSpy: !!spyData } }));
+      setLoading(false);
+    }).catch(() => setLoading(false));
   }, [selectedScenario.id, stocks.length]);
 
   const data = scenarioData[selectedScenario.id];
@@ -831,7 +821,7 @@ function SimulazioniTab({ stocks, sym, rate, fmt, fmtPct }) {
             {selectedScenario.spx >= 0 ? "+" : ""}{selectedScenario.spx}%
           </div>
         </div>
-        {!selectedScenario.real && <div style={{ fontSize: 9, background: "#1a1d26", color: "#555", padding: "3px 8px", borderRadius: 3 }}>Simulato</div>}
+        <div style={{ fontSize: 9, background: "#1a2a1a", color: "#5EC98A", padding: "3px 8px", borderRadius: 3 }}>● Dati reali</div>
       </div>
 
       {loading ? (
@@ -856,10 +846,20 @@ function SimulazioniTab({ stocks, sym, rate, fmt, fmtPct }) {
 
           {/* Chart */}
           <div className="card" style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 12 }}>
-              Andamento portafoglio — {selectedScenario.label}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em" }}>
+                Andamento portafoglio — {selectedScenario.label}
+              </div>
+              <div style={{ display: "flex", gap: 14, fontSize: 10 }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                  <span style={{ width: 12, height: 2, background: selectedScenario.color, display: "inline-block" }}/> Il tuo portafoglio
+                </span>
+                {data.hasSpy && <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                  <span style={{ width: 12, height: 2, background: "#555", display: "inline-block" }}/> S&P 500 (SPY)
+                </span>}
+              </div>
             </div>
-            <ResponsiveContainer width="100%" height={180}>
+            <ResponsiveContainer width="100%" height={200}>
               <AreaChart data={data.chartData}>
                 <defs>
                   <linearGradient id="scg" x1="0" y1="0" x2="0" y2="1">
@@ -869,9 +869,11 @@ function SimulazioniTab({ stocks, sym, rate, fmt, fmtPct }) {
                 </defs>
                 <XAxis dataKey="date" tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false} interval={Math.floor((data.chartData.length || 1) / 5)}/>
                 <YAxis tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false} domain={["auto","auto"]} width={45} tickFormatter={v => `${v > 0 ? "+" : ""}${v}%`}/>
-                <Tooltip contentStyle={{ background: "#0f1117", border: "1px solid #2a2d35", borderRadius: 4, fontSize: 11, color: "#E8E6DF" }} formatter={v => [`${v > 0 ? "+" : ""}${v}%`, "Portafoglio"]}/>
+                <Tooltip contentStyle={{ background: "#0f1117", border: "1px solid #2a2d35", borderRadius: 4, fontSize: 11, color: "#E8E6DF" }}
+                  formatter={(v, name) => [`${v > 0 ? "+" : ""}${v}%`, name === "spy" ? "S&P 500" : "Portafoglio"]}/>
                 <ReferenceLine y={0} stroke="#2a2d35" strokeDasharray="4 3" strokeWidth={1}/>
-                <Area type="monotone" dataKey="pct" stroke={selectedScenario.color} strokeWidth={1.5} fill="url(#scg)" dot={false}/>
+                <Area type="monotone" dataKey="pct" stroke={selectedScenario.color} strokeWidth={2} fill="url(#scg)" dot={false} name="pct"/>
+                {data.hasSpy && <Area type="monotone" dataKey="spy" stroke="#444" strokeWidth={1} fill="none" dot={false} strokeDasharray="4 3" name="spy"/>}
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -907,7 +909,7 @@ function SimulazioniTab({ stocks, sym, rate, fmt, fmtPct }) {
               </tbody>
             </table>
             <div style={{ marginTop: 14, padding: "10px 10px", background: "#0a0c10", borderRadius: 4, fontSize: 10, color: "#333" }}>
-              ⚠️ Simulazione basata su dati storici reali{!selectedScenario.real ? " interpolati" : ""}. Le performance passate non garantiscono risultati futuri. Non costituisce consulenza finanziaria ai sensi MiFID II.
+              📊 Dati storici reali da Yahoo Finance. I titoli non presenti in quel periodo usano una stima beta-adjusted. Le performance passate non garantiscono risultati futuri. Non costituisce consulenza finanziaria ai sensi MiFID II.
             </div>
           </div>
         </>
