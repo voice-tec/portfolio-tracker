@@ -1167,8 +1167,8 @@ export default function App() {
       setAlertsRaw(dbAlerts);
       setDataLoading(false);
 
-      // 🔄 Refresh prezzi live in background per tutti i titoli
-      if (mapped.length > 0) {
+      // 🔄 Refresh prezzi live in background solo se mercati aperti
+      if (mapped.length > 0 && isMarketOpen()) {
         mapped.forEach(stock => {
           fetchRealPrice(stock.ticker).then(livePrice => {
             if (!livePrice) return;
@@ -1204,6 +1204,22 @@ export default function App() {
   const [editId, setEditId] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Controlla se i mercati sono aperti (ora italiana)
+  function isMarketOpen() {
+    const now = new Date();
+    const day = now.getDay(); // 0=dom, 6=sab
+    if (day === 0 || day === 6) return false;
+    // Ora italiana (UTC+1 inverno, UTC+2 estate)
+    const offset = now.getTimezoneOffset();
+    const italyOffset = offset <= -120 ? 2 : 1;
+    const italyHour = now.getUTCHours() + italyOffset;
+    const italyMin = now.getUTCMinutes();
+    const italyTime = italyHour + italyMin / 60;
+    // NYSE 15:30-22:00 IT oppure Borsa Milano 09:00-17:30 IT
+    return (italyTime >= 9 && italyTime < 17.5) || (italyTime >= 15.5 && italyTime < 22);
+  }
+  const marketOpen = isMarketOpen();
 
   function refreshPrices() {
     if (refreshing || stocks.length === 0) return;
@@ -1619,11 +1635,11 @@ export default function App() {
                 <button onClick={exportCSV} className="action-btn hide-mobile" style={{ fontSize: 9, padding: "4px 10px" }}>↓ CSV</button>
                 <button onClick={exportPDF} className="action-btn hide-mobile" style={{ fontSize: 9, padding: "4px 10px" }}>↓ PDF</button>
               </>}
-              <button onClick={refreshPrices} disabled={refreshing} title="Aggiorna prezzi"
-                style={{ background: "none", border: "1px solid #2a2d35", borderRadius: 4, cursor: refreshing ? "default" : "pointer", padding: "5px 9px", display: "flex", alignItems: "center", transition: "border-color 0.15s" }}
-                onMouseEnter={e => !refreshing && (e.currentTarget.style.borderColor = "#F4C542")}
-                onMouseLeave={e => e.currentTarget.style.borderColor = "#2a2d35"}>
-                {refreshing ? <Spinner size={10}/> : <span style={{ fontSize: 12, display: "inline-block", transition: "transform 0.3s" }}>↻</span>}
+              <button onClick={refreshPrices} disabled={refreshing || !marketOpen} title={marketOpen ? "Aggiorna prezzi live" : "Mercati chiusi"}
+                className="action-btn"
+                style={{ display: "flex", alignItems: "center", gap: 5, opacity: (!marketOpen || refreshing) ? 0.45 : 1, fontSize: 11 }}>
+                {refreshing ? <Spinner size={10}/> : <span style={{ fontSize: 14 }}>↻</span>}
+                <span className="hide-mobile">{marketOpen ? "Live" : "Chiusi"}</span>
               </button>
               <button className="add-btn" onClick={() => setShowForm(v => !v)} style={{ fontSize: 11, padding: "6px 12px" }}>{showForm ? "✕" : "+ Aggiungi"}</button>
               {/* Mobile: user avatar button */}
