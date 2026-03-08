@@ -42,17 +42,22 @@ const API_BASE  = IS_VERCEL ? "" : "https://portfolio-tracker-i97337xz6-voice-te
 const priceCache = {};
 const CACHE_TTL = 60_000; // 60 seconds
 
-async function fetchRealPrice(ticker) {
+async function fetchRealPrice(ticker, full = false) {
   const key = ticker.toUpperCase();
   const cached = priceCache[key];
-  if (cached && Date.now() - cached.ts < CACHE_TTL) return cached.price;
+  if (cached && Date.now() - cached.ts < CACHE_TTL) return full ? cached : cached.price;
   try {
     const res = await fetch(`${API_BASE}/api/price?symbol=${encodeURIComponent(key)}`);
     if (!res.ok) return null;
     const data = await res.json();
     if (!data.price) return null;
-    priceCache[key] = { price: data.price, ts: Date.now() };
-    return data.price;
+    const marketState = data.marketState || "CLOSED";
+    let effectivePrice = data.price;
+    if (marketState === "PRE" && data.preMarket?.price) effectivePrice = data.preMarket.price;
+    else if (marketState === "POST" && data.afterHours?.price) effectivePrice = data.afterHours.price;
+    const result = { price: effectivePrice, regularPrice: data.price, marketState, preMarket: data.preMarket, afterHours: data.afterHours, ts: Date.now() };
+    priceCache[key] = result;
+    return full ? result : effectivePrice;
   } catch { return null; }
 }
 
@@ -588,7 +593,7 @@ function StockModal({ stock, onClose, notes, setNotes, alerts, setAlerts, handle
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <span style={{ fontFamily: "'Fraunces', serif", fontSize: 28, fontWeight: 300 }}>{stock.ticker}</span>
               <span style={{ fontSize: 9, padding: "2px 8px", borderRadius: 2, background: "#1a1d26", color: "#666", letterSpacing: "0.08em", textTransform: "uppercase" }}>{stock.sector}</span>
-              {stock.priceReal && <span style={{ fontSize: 8, background: marketOpen ? "#1a2a1a" : "#2a1a1a", color: marketOpen ? "#5EC98A" : "#E87040", padding: "2px 7px", borderRadius: 2 }}>{marketOpen ? "LIVE" : "CHIUSO"}</span>}
+              {stock.priceReal && <MarketBadge ticker={stock.ticker} size={8}/>}
             </div>
             <div style={{ fontSize: 10, color: "#2a2d35", marginTop: 3 }}>Acquistato il {stock.buyDate} · {stock.qty} azioni</div>
           </div>
@@ -1204,7 +1209,8 @@ export default function App() {
   const [editId, setEditId] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [marketOpen, setMarketOpen] = useState(null); // null = checking
+  const [marketOpen, setMarketOpen] = useState(null);
+  const [stockStates, setStockStates] = useState({}); // { AAPL: "PRE"|"REGULAR"|"POST"|"CLOSED" }
 
   // Controlla status mercati via API Finnhub
   useEffect(() => {
@@ -1226,18 +1232,34 @@ export default function App() {
     setRefreshing(true);
     let done = 0;
     stocks.forEach(stock => {
-      fetchRealPrice(stock.ticker).then(livePrice => {
-        if (livePrice) {
+      fetchRealPrice(stock.ticker, true).then(result => {
+        if (result) {
+          const livePrice = result.price;
+          const ms = result.marketState || "CLOSED";
           setStocksRaw(prev => prev.map(s => s.id === stock.id
             ? { ...s, currentPrice: livePrice, priceReal: true }
             : s
           ));
+          setStockStates(prev => ({ ...prev, [stock.ticker]: ms }));
           if (stock.dbId) saveStock(user.id, { ...stock, buyPrice: stock.buyPrice, currentPrice: livePrice, priceReal: true, dbId: stock.dbId }).catch(() => {});
         }
         done++;
         if (done === stocks.length) setRefreshing(false);
       });
     });
+  }
+
+  // Helper badge stato mercato per un ticker
+  function MarketBadge({ ticker, size = 8, ml = 0 }) {
+    const state = stockStates[ticker] || (marketOpen ? "REGULAR" : "CLOSED");
+    const cfg = {
+      PRE:     { label: "PRE",   bg: "#1a1f2a", color: "#7EB8F7" },
+      REGULAR: { label: "LIVE",  bg: "#1a2a1a", color: "#5EC98A" },
+      POST:    { label: "AFTER", bg: "#2a1f0a", color: "#F4C542" },
+      CLOSED:  { label: "CHIUS", bg: "#2a1a1a", color: "#E87040" },
+    };
+    const c = cfg[state] || cfg.CLOSED;
+    return <span style={{ fontSize: size, background: c.bg, color: c.color, padding: "2px 6px", borderRadius: 2, marginLeft: ml }}>{c.label}</span>;
   }
   const [chartPeriod, setChartPeriod] = useState(30); // 30, 90, 180, 365
   const [periodHistory, setPeriodHistory] = useState({});
@@ -1788,7 +1810,7 @@ export default function App() {
                                   <tr key={s.id} style={{ borderBottom: "1px solid #0f1117", cursor: "pointer" }} onClick={() => setSelectedId(s.id)}>
                                     <td style={{ padding: "10px 8px 10px 0" }}>
                                       <span style={{ fontWeight: 500 }}>{s.ticker}</span>
-                                      {s.priceReal && <span style={{ fontSize: 7, background: marketOpen ? "#1a2a1a" : "#2a1a1a", color: marketOpen ? "#5EC98A" : "#E87040", padding: "1px 5px", borderRadius: 2, marginLeft: 6 }}>{marketOpen ? "LIVE" : "CHIUSO"}</span>}
+                                      {s.priceReal && <MarketBadge ticker={s.ticker} size={7} ml={6}/>}
                                       {alerts[s.id] && <span style={{ fontSize: 9, marginLeft: 4 }}>🔔</span>}
                                     </td>
                                     <td style={{ padding: "10px 8px 10px 0", color: "#888" }}>{s.qty}</td>
@@ -1872,7 +1894,7 @@ export default function App() {
                               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
                                 <span style={{ fontFamily: "'Fraunces', serif", fontSize: 18, fontWeight: 300 }}>{s.ticker}</span>
                                 <span style={{ fontSize: 9, background: "#1a1d26", color: "#555", padding: "2px 7px", borderRadius: 2 }}>{s.sector}</span>
-                                {s.priceReal && <span style={{ fontSize: 7, background: marketOpen ? "#1a2a1a" : "#2a1a1a", color: marketOpen ? "#5EC98A" : "#E87040", padding: "1px 5px", borderRadius: 2 }}>{marketOpen ? "LIVE" : "CHIUSO"}</span>}
+                                {s.priceReal && <MarketBadge ticker={s.ticker} size={7}/>}
                                 {alerts[s.id] && <span style={{ fontSize: 9 }}>🔔</span>}
                               </div>
                               <div style={{ fontSize: 10, color: "#333" }}>{s.qty} az. · acquisto ${fmt(s.buyPrice)} · {s.buyDate}</div>
