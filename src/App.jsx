@@ -991,6 +991,163 @@ function SimulazioniTab({ stocks, sym, rate, fmt, fmtPct }) {
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 // ─── WHAT IF TAB ──────────────────────────────────────────────────────────────
+// ─── DIVIDENDI TAB ────────────────────────────────────────────────────────────
+function DividendiTab({ stocks, fmt, fmtPct, sym, rate }) {
+  const [divData, setDivData] = useState({});
+  const [loading, setLoading] = useState({});
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    if (loaded || stocks.length === 0) return;
+    setLoaded(true);
+    stocks.forEach(stock => {
+      setLoading(l => ({ ...l, [stock.ticker]: true }));
+      fetch(`${API_BASE}/api/dividends?symbol=${encodeURIComponent(stock.ticker)}`)
+        .then(r => r.json())
+        .then(d => {
+          setDivData(prev => ({ ...prev, [stock.ticker]: { ...d, qty: stock.qty } }));
+          setLoading(l => ({ ...l, [stock.ticker]: false }));
+        })
+        .catch(() => setLoading(l => ({ ...l, [stock.ticker]: false })));
+    });
+  }, [stocks.length]);
+
+  // Calcola totali
+  const stocksWithDiv = stocks
+    .filter(s => divData[s.ticker]?.annualDividend > 0)
+    .map(s => ({ ...s, div: divData[s.ticker] }));
+
+  const totalAnnualIncome = stocksWithDiv.reduce((sum, s) => sum + (s.div.annualDividend * s.qty), 0);
+  const totalMonthlyIncome = totalAnnualIncome / 12;
+  const totalInvested = stocks.reduce((sum, s) => sum + s.qty * s.buyPrice, 0);
+  const portfolioYield = totalInvested > 0 ? (totalAnnualIncome / totalInvested) * 100 : 0;
+
+  // Prossimi dividendi ordinati per data
+  const upcoming = stocksWithDiv
+    .filter(s => s.div.nextDate)
+    .sort((a, b) => new Date(a.div.nextDate) - new Date(b.div.nextDate));
+
+  // Storico aggregato tutti i titoli
+  const allHistory = stocksWithDiv.flatMap(s =>
+    (s.div.history || []).map(h => ({ ...h, ticker: s.ticker, totalAmount: h.amount * s.qty }))
+  ).sort((a, b) => b.dateTs - a.dateTs).slice(0, 30);
+
+  return (
+    <div className="fade-up">
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300 }}>💰 Dividendi & Cedole</div>
+        <div style={{ fontSize: 11, color: "#444", marginTop: 2 }}>Tracking completo dei dividendi del tuo portafoglio</div>
+      </div>
+
+      {/* KPI cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 20 }}>
+        {[
+          { l: "Reddito Annuale", v: `${sym}${fmt(totalAnnualIncome * rate)}`, sub: `€${fmt(totalAnnualIncome * rate)}`, c: "#5EC98A" },
+          { l: "Reddito Mensile", v: `${sym}${fmt(totalMonthlyIncome * rate)}`, sub: "media mensile stimata", c: "#F4C542" },
+          { l: "Yield Portafoglio", v: `${portfolioYield.toFixed(2)}%`, sub: "dividend yield medio", c: "#7EB8F7" },
+        ].map(k => (
+          <div key={k.l} className="card">
+            <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 7 }}>{k.l}</div>
+            <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300, color: k.c }}>{k.v}</div>
+            <div style={{ fontSize: 10, color: "#444", marginTop: 3 }}>{k.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Per titolo */}
+      <div className="card" style={{ marginBottom: 20 }}>
+        <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 14 }}>Dividendi per titolo</div>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+          <thead>
+            <tr style={{ borderBottom: "1px solid #1a1d26" }}>
+              {["Ticker", "Yield", "Div/Azione", "Frequenza", "Reddito Annuale", "Prossimo Stacco"].map(h => (
+                <th key={h} style={{ textAlign: "left", padding: "6px 10px", fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.08em" }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {stocks.map(s => {
+              const d = divData[s.ticker];
+              const isLoading = loading[s.ticker];
+              return (
+                <tr key={s.id} style={{ borderBottom: "1px solid #0f1117" }}>
+                  <td style={{ padding: "10px 10px", color: "#E8E6DF", fontWeight: 500 }}>{s.ticker}</td>
+                  <td style={{ padding: "10px 10px", color: d?.yieldPct > 0 ? "#5EC98A" : "#555" }}>
+                    {isLoading ? <Spinner size={9}/> : d?.yieldPct > 0 ? `${d.yieldPct.toFixed(2)}%` : "—"}
+                  </td>
+                  <td style={{ padding: "10px 10px", color: "#E8E6DF" }}>
+                    {isLoading ? "…" : d?.lastAmount > 0 ? `$${d.lastAmount.toFixed(4)}` : "—"}
+                  </td>
+                  <td style={{ padding: "10px 10px", color: "#888" }}>
+                    {isLoading ? "…" : d?.frequency || "—"}
+                  </td>
+                  <td style={{ padding: "10px 10px", color: "#5EC98A" }}>
+                    {isLoading ? "…" : d?.annualDividend > 0 ? `$${fmt(d.annualDividend * s.qty)}` : "—"}
+                  </td>
+                  <td style={{ padding: "10px 10px", color: "#F4C542" }}>
+                    {isLoading ? "…" : d?.nextDate || "—"}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Prossimi stacchi */}
+      {upcoming.length > 0 && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 14 }}>📅 Prossimi stacchi cedola</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {upcoming.map(s => (
+              <div key={s.ticker} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: "#0f1117", borderRadius: 6, border: "1px solid #1a1d26" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <span style={{ fontWeight: 500, fontSize: 14 }}>{s.ticker}</span>
+                  <span style={{ fontSize: 10, color: "#555" }}>{s.div.frequency}</span>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 13, color: "#F4C542" }}>{s.div.nextDate}</div>
+                  <div style={{ fontSize: 10, color: "#5EC98A" }}>+${fmt(s.div.lastAmount * s.qty)} stimati</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Storico ultimi dividendi */}
+      {allHistory.length > 0 && (
+        <div className="card">
+          <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 14 }}>📜 Storico dividendi ricevuti</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {allHistory.map((h, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderRadius: 4, background: i % 2 === 0 ? "#0f1117" : "transparent" }}>
+                <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                  <span style={{ fontSize: 11, fontWeight: 500, color: "#E8E6DF", minWidth: 50 }}>{h.ticker}</span>
+                  <span style={{ fontSize: 11, color: "#555" }}>{h.date}</span>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <span style={{ fontSize: 12, color: "#5EC98A" }}>+${fmt(h.totalAmount)}</span>
+                  <span style={{ fontSize: 9, color: "#444", marginLeft: 8 }}>${h.amount}/az.</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: 12, fontSize: 10, color: "#333" }}>
+            ⚠️ Storico basato su dati Yahoo Finance. Importi calcolati sulla quantità attuale in portafoglio.
+          </div>
+        </div>
+      )}
+
+      {stocksWithDiv.length === 0 && !Object.values(loading).some(Boolean) && (
+        <div style={{ textAlign: "center", marginTop: 60, color: "#444", fontSize: 13 }}>
+          Nessun dividendo trovato per i titoli in portafoglio.
+        </div>
+      )}
+    </div>
+  );
+}
+
 function WhatIfTab({ fmt, fmtPct, eurRate }) {
   const [ticker, setTicker] = useState("");
   const [amount, setAmount] = useState("");
@@ -1683,9 +1840,9 @@ export default function App() {
             </div>
             {/* Desktop tabs */}
             <div style={{ display: "flex", alignItems: "center", gap: 0, overflowX: "auto", flex: 1, justifyContent: "center" }} className="desktop-tabs">
-              {["overview","titoli","settori","watchlist","confronto","alert","simulazioni","whatif"].map(t => (
+              {["overview","titoli","settori","watchlist","confronto","alert","simulazioni","whatif","dividendi"].map(t => (
                 <button key={t} className={`tab-btn ${activeTab === t ? "active" : ""}`} onClick={() => setActiveTab(t)}>
-                  {t === "whatif" ? "e se?" : t}
+                  {t === "whatif" ? "e se?" : t === "dividendi" ? "💰 dividendi" : t}
                 </button>
               ))}
             </div>
@@ -2180,6 +2337,9 @@ export default function App() {
               {activeTab === "whatif" && (
                 <WhatIfTab fmt={fmt} fmtPct={fmtPct} eurRate={eurRate} />
               )}
+              {activeTab === "dividendi" && (
+                <DividendiTab stocks={stocks} fmt={fmt} fmtPct={fmtPct} sym={sym} rate={rate} />
+              )}
 
             </div>
           </div>
@@ -2228,6 +2388,7 @@ export default function App() {
               { id: "watchlist",   icon: "👁", label: "Watch" },
               { id: "whatif",      icon: "🔁", label: "E se?" },
               { id: "alert",       icon: "🔔", label: "Alert" },
+              { id: "dividendi",   icon: "💰", label: "Divid." },
             ].map(t => (
               <button key={t.id} onClick={() => setActiveTab(t.id)}
                 style={{ background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "4px 8px", color: activeTab === t.id ? "#F4C542" : "#444", fontFamily: "inherit", transition: "color 0.15s" }}>
