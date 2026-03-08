@@ -1018,7 +1018,7 @@ function WhatIfTab({ fmt, fmtPct, eurRate }) {
           </div>
           <div style={{ flex: "0 0 140px" }}>
             <div style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 5 }}>Data acquisto</div>
-            <input type="date" value={date} onChange={e => setDate(e.target.value)} max={new Date().toISOString().split("T")[0]}/>
+            <input type="date" value={date} onChange={e => setDate(e.target.value)} max={new Date().toISOString().split("T")[0]} style={{ colorScheme: "dark" }}/>
           </div>
           <div style={{ flex: "0 0 130px" }}>
             <div style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 5 }}>Importo investito ($)</div>
@@ -1158,12 +1158,37 @@ export default function App() {
         ticker: s.ticker, qty: s.qty, buyPrice: s.buy_price,
         currentPrice: s.current_price || s.buy_price,
         sector: s.sector, buyDate: s.buy_date, priceReal: s.price_real,
+        targetPrice: s.target_price || null,
+        stopLoss: s.stop_loss || null,
         history: simulateHistory(s.current_price || s.buy_price)
       }));
       setStocksRaw(mapped.length > 0 ? mapped : []);
       setNotesRaw(dbNotes);
       setAlertsRaw(dbAlerts);
       setDataLoading(false);
+
+      // 🔄 Refresh prezzi live in background per tutti i titoli
+      if (mapped.length > 0) {
+        mapped.forEach(stock => {
+          fetchRealPrice(stock.ticker).then(livePrice => {
+            if (!livePrice) return;
+            setStocksRaw(prev => prev.map(s => s.id === stock.id
+              ? { ...s, currentPrice: livePrice, priceReal: true }
+              : s
+            ));
+            // Salva il prezzo aggiornato su Supabase
+            if (stock.dbId) {
+              saveStock(user.id, {
+                ...stock,
+                buyPrice: stock.buyPrice,
+                currentPrice: livePrice,
+                priceReal: true,
+                dbId: stock.dbId,
+              }).catch(() => {});
+            }
+          });
+        });
+      }
     }).catch(() => {
       setStocksRaw([]);
       setDataLoading(false);
@@ -1178,6 +1203,26 @@ export default function App() {
   const [selectedId, setSelectedId] = useState(null);
   const [editId, setEditId] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  function refreshPrices() {
+    if (refreshing || stocks.length === 0) return;
+    setRefreshing(true);
+    let done = 0;
+    stocks.forEach(stock => {
+      fetchRealPrice(stock.ticker).then(livePrice => {
+        if (livePrice) {
+          setStocksRaw(prev => prev.map(s => s.id === stock.id
+            ? { ...s, currentPrice: livePrice, priceReal: true }
+            : s
+          ));
+          if (stock.dbId) saveStock(user.id, { ...stock, buyPrice: stock.buyPrice, currentPrice: livePrice, priceReal: true, dbId: stock.dbId }).catch(() => {});
+        }
+        done++;
+        if (done === stocks.length) setRefreshing(false);
+      });
+    });
+  }
   const [chartPeriod, setChartPeriod] = useState(30); // 30, 90, 180, 365
   const [periodHistory, setPeriodHistory] = useState({});
   const [periodLoading, setPeriodLoading] = useState(false);
@@ -1493,8 +1538,9 @@ export default function App() {
             *{box-sizing:border-box;margin:0;padding:0}
             ::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-track{background:#0D0F14} ::-webkit-scrollbar-thumb{background:#2a2d35;border-radius:2px}
             input,textarea,select{background:#13151c;border:1px solid #2a2d35;color:#E8E6DF;font-family:inherit;font-size:13px;padding:9px 12px;border-radius:4px;outline:none;width:100%}
-            input:focus,textarea:focus{border-color:#F4C542} input::placeholder,textarea::placeholder{color:#3a3d45}
-            select{cursor:pointer}
+            input:focus,textarea:focus,select:focus{border-color:#F4C542} input::placeholder,textarea::placeholder{color:#3a3d45}
+            select{cursor:pointer;-webkit-appearance:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23555'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px}
+            input[type="date"]{color-scheme:dark}
             .tab-btn{background:none;border:none;cursor:pointer;font-family:inherit;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;padding:8px 14px;color:#555;transition:color 0.2s;white-space:nowrap;border-bottom:1.5px solid transparent}
             .tab-btn:hover{color:#aaa} .tab-btn.active{color:#F4C542;border-bottom-color:#F4C542}
             .action-btn{background:none;border:1px solid #2a2d35;cursor:pointer;font-family:inherit;color:#aaa;font-size:11px;padding:6px 14px;border-radius:4px;transition:all 0.15s;letter-spacing:0.06em;white-space:nowrap}
@@ -1573,6 +1619,12 @@ export default function App() {
                 <button onClick={exportCSV} className="action-btn hide-mobile" style={{ fontSize: 9, padding: "4px 10px" }}>↓ CSV</button>
                 <button onClick={exportPDF} className="action-btn hide-mobile" style={{ fontSize: 9, padding: "4px 10px" }}>↓ PDF</button>
               </>}
+              <button onClick={refreshPrices} disabled={refreshing} title="Aggiorna prezzi"
+                style={{ background: "none", border: "1px solid #2a2d35", borderRadius: 4, cursor: refreshing ? "default" : "pointer", padding: "5px 9px", display: "flex", alignItems: "center", transition: "border-color 0.15s" }}
+                onMouseEnter={e => !refreshing && (e.currentTarget.style.borderColor = "#F4C542")}
+                onMouseLeave={e => e.currentTarget.style.borderColor = "#2a2d35"}>
+                {refreshing ? <Spinner size={10}/> : <span style={{ fontSize: 12, display: "inline-block", transition: "transform 0.3s" }}>↻</span>}
+              </button>
               <button className="add-btn" onClick={() => setShowForm(v => !v)} style={{ fontSize: 11, padding: "6px 12px" }}>{showForm ? "✕" : "+ Aggiungi"}</button>
               {/* Mobile: user avatar button */}
               <button onClick={() => signOut().then(() => setUser(null))}
