@@ -617,7 +617,7 @@ function TradingViewWidget({ ticker }) {
   );
 }
 
-function StockModal({ stock, onClose, notes, setNotes, alerts, setAlerts, handleRemove, sym, rate, fmt, fmtPct, handleAI, aiLoading, aiText, plan }) {
+function StockModal({ stock, onClose, notes, setNotes, alerts, setAlerts, handleRemove, sym, rate, fmt, fmtPct, handleAI, aiLoading, aiText, plan, onSaveTargets }) {
   const [chartPeriod, setChartPeriod] = useState(30);
   const [history, setHistory] = useState(stock.history || []);
   const [histLoading, setHistLoading] = useState(false);
@@ -736,25 +736,19 @@ function StockModal({ stock, onClose, notes, setNotes, alerts, setAlerts, handle
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>
               <div style={{ fontSize: 9, color: "#5EC98A", marginBottom: 5 }}>Target Price (USD)</div>
-              <input type="number" step="0.01" value={stock.targetPrice || ""} onChange={e => {
-                const v = parseFloat(e.target.value) || null;
-                stock.targetPrice = v;
-              }} placeholder="Es. 200.00" style={{ fontSize: 12, padding: "7px 10px" }}
-              onBlur={e => {
-                const v = parseFloat(e.target.value) || null;
-                // bubble up via a custom event pattern — we just store locally for now
-              }}/>
-              {stock.targetPrice && stock.currentPrice >= stock.targetPrice && (
+              <input type="number" step="0.01" value={localTarget} onChange={e => setLocalTarget(e.target.value)}
+                onBlur={() => onSaveTargets && onSaveTargets(stock.id, parseFloat(localTarget)||null, parseFloat(localStop)||null)}
+                placeholder="Es. 200.00" style={{ fontSize: 12, padding: "7px 10px" }}/>
+              {parseFloat(localTarget) > 0 && stock.currentPrice >= parseFloat(localTarget) && (
                 <div style={{ fontSize: 9, color: "#5EC98A", marginTop: 4 }}>✓ Target raggiunto!</div>
               )}
             </div>
             <div>
               <div style={{ fontSize: 9, color: "#E87040", marginBottom: 5 }}>Stop Loss (USD)</div>
-              <input type="number" step="0.01" value={stock.stopLoss || ""} onChange={e => {
-                const v = parseFloat(e.target.value) || null;
-                stock.stopLoss = v;
-              }} placeholder="Es. 150.00" style={{ fontSize: 12, padding: "7px 10px" }}/>
-              {stock.stopLoss && stock.currentPrice <= stock.stopLoss && (
+              <input type="number" step="0.01" value={localStop} onChange={e => setLocalStop(e.target.value)}
+                onBlur={() => onSaveTargets && onSaveTargets(stock.id, parseFloat(localTarget)||null, parseFloat(localStop)||null)}
+                placeholder="Es. 150.00" style={{ fontSize: 12, padding: "7px 10px" }}/>
+              {parseFloat(localStop) > 0 && stock.currentPrice <= parseFloat(localStop) && (
                 <div style={{ fontSize: 9, color: "#E87040", marginTop: 4 }}>⚠️ Stop Loss raggiunto!</div>
               )}
             </div>
@@ -1649,8 +1643,14 @@ export default function App() {
   useEffect(() => {
     fetch("https://api.exchangerate-api.com/v4/latest/USD")
       .then(r => r.json())
-      .then(d => { if (d.rates?.EUR) setEurRate(parseFloat(d.rates.EUR.toFixed(4))); })
-      .catch(() => {}); // fallback to 0.92
+      .then(d => {
+        if (d.rates?.EUR) {
+          const liveEur = parseFloat(d.rates.EUR.toFixed(4));
+          setEurRate(liveEur);
+          CURRENCIES.EUR.rate = liveEur; // aggiorna tasso live
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const setPlan = (p) => { setPlanRaw(p); lsSet("pt_plan", p); };
@@ -1849,8 +1849,14 @@ export default function App() {
     if (!p || p <= 0) return setFormErr("Prezzo non valido.");
     if (plan === "free" && stocks.length >= PLANS.free.maxStocks) { setShowUpgrade(true); return; }
     setFormErr(""); setAdding(true);
-    const realPrice = plan === "pro" ? await fetchRealPrice(t) : null;
-    const curPrice = realPrice || p * (1 + (Math.random() - 0.45) * 0.3);
+    // Valida sempre il ticker — se non esiste blocca l'aggiunta
+    const realPrice = await fetchRealPrice(t);
+    if (!realPrice) {
+      setFormErr(`Ticker "${t}" non trovato. Verifica il simbolo e riprova.`);
+      setAdding(false);
+      return;
+    }
+    const curPrice = realPrice;
     const history = simulateHistory(curPrice);
     if (realPrice) history[history.length - 1].price = realPrice;
     const ns = { ticker: t, qty: q, buyPrice: p, currentPrice: parseFloat(curPrice.toFixed(2)), history, sector: form.sector || "Altro", priceReal: !!realPrice, buyDate: new Date().toLocaleDateString("it-IT") };
@@ -1877,17 +1883,27 @@ export default function App() {
     setStocks(prev => prev.map(s => s.id === updated.id ? { ...s, ...updated } : s));
     if (updated.dbId && user) {
       saveStock(user.id, {
-        ticker: updated.ticker,
-        qty: updated.qty,
-        buyPrice: updated.buyPrice,
-        currentPrice: updated.currentPrice,
-        sector: updated.sector,
-        buyDate: updated.buyDate,
-        priceReal: updated.priceReal,
-        targetPrice: updated.targetPrice || null,
-        stopLoss: updated.stopLoss || null,
+        ticker: updated.ticker, qty: updated.qty, buyPrice: updated.buyPrice,
+        currentPrice: updated.currentPrice, sector: updated.sector,
+        buyDate: updated.buyDate, priceReal: updated.priceReal,
+        targetPrice: updated.targetPrice || null, stopLoss: updated.stopLoss || null,
         dbId: updated.dbId,
       }).catch(e => console.error("Errore salvataggio:", e));
+    }
+  }
+
+  function handleSaveTargets(stockId, targetPrice, stopLoss) {
+    const stock = stocks.find(s => s.id === stockId);
+    if (!stock) return;
+    setStocks(prev => prev.map(s => s.id === stockId ? { ...s, targetPrice: targetPrice || null, stopLoss: stopLoss || null } : s));
+    if (stock.dbId && user) {
+      saveStock(user.id, {
+        ticker: stock.ticker, qty: stock.qty, buyPrice: stock.buyPrice,
+        currentPrice: stock.currentPrice, sector: stock.sector,
+        buyDate: stock.buyDate, priceReal: stock.priceReal,
+        targetPrice: targetPrice || null, stopLoss: stopLoss || null,
+        dbId: stock.dbId,
+      }).catch(e => console.error("Errore salvataggio target/stop:", e));
     }
   }
 
@@ -2668,6 +2684,7 @@ export default function App() {
               sym={sym} rate={rate} fmt={fmt} fmtPct={fmtPct}
               handleAI={handleAI} aiLoading={aiLoading} aiText={aiText}
               plan={plan} eurRate={eurRate}
+              onSaveTargets={handleSaveTargets}
             />
           )}
 
