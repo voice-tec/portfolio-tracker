@@ -1884,15 +1884,26 @@ export default function App() {
   }
 
   function handleEdit(updated) {
-    setStocks(prev => prev.map(s => s.id === updated.id ? { ...s, ...updated } : s));
-    if (updated.dbId && user) {
+    // Prendi lo stock corrente per avere currentPrice e campi mancanti
+    const current = stocks.find(s => s.id === updated.id) || {};
+    const merged = { ...current, ...updated };
+    setStocks(prev => prev.map(s => s.id === updated.id ? merged : s));
+    if (merged.dbId && user) {
       saveStock(user.id, {
-        ticker: updated.ticker, qty: updated.qty, buyPrice: updated.buyPrice,
-        currentPrice: updated.currentPrice, sector: updated.sector,
-        buyDate: updated.buyDate, priceReal: updated.priceReal,
-        targetPrice: updated.targetPrice || null, stopLoss: updated.stopLoss || null,
-        dbId: updated.dbId,
-      }).catch(e => console.error("Errore salvataggio:", e));
+        ticker: merged.ticker,
+        qty: parseFloat(merged.qty) || current.qty,
+        buyPrice: parseFloat(merged.buyPrice) || current.buyPrice,
+        currentPrice: merged.currentPrice || current.currentPrice,
+        sector: merged.sector || current.sector || "Altro",
+        buyDate: merged.buyDate || current.buyDate,
+        priceReal: merged.priceReal || false,
+        targetPrice: parseFloat(merged.targetPrice) || null,
+        stopLoss: parseFloat(merged.stopLoss) || null,
+        dbId: merged.dbId,
+      }).then(() => console.log("✓ Salvato:", merged.ticker, "target:", merged.targetPrice, "stop:", merged.stopLoss))
+        .catch(e => console.error("✗ Errore salvataggio:", e));
+    } else {
+      console.warn("handleEdit: dbId mancante o user non loggato", merged.dbId, !!user);
     }
   }
 
