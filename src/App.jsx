@@ -1669,15 +1669,17 @@ export default function App() {
     if (!user) { setStocksRaw([]); setNotesRaw({}); setAlertsRaw({}); return; }
     setDataLoading(true);
     Promise.all([loadStocks(user.id), loadNotes(user.id), loadAlerts(user.id)]).then(([dbStocks, dbNotes, dbAlerts]) => {
+      console.log("DB raw stocks:", dbStocks.map(s => ({ ticker: s.ticker, target_price: s.target_price, stop_loss: s.stop_loss })));
       const mapped = dbStocks.map(s => ({
         id: s.id, dbId: s.id,
         ticker: s.ticker, qty: s.qty, buyPrice: s.buy_price,
         currentPrice: s.current_price || s.buy_price,
         sector: s.sector, buyDate: s.buy_date, priceReal: s.price_real,
-        targetPrice: s.target_price || null,
-        stopLoss: s.stop_loss || null,
+        targetPrice: s.target_price ?? null,
+        stopLoss: s.stop_loss ?? null,
         history: simulateHistory(s.current_price || s.buy_price)
       }));
+      console.log("Mapped stocks:", mapped.map(s => ({ ticker: s.ticker, targetPrice: s.targetPrice, stopLoss: s.stopLoss })));
       setStocksRaw(mapped.length > 0 ? mapped : []);
       setNotesRaw(dbNotes);
       setAlertsRaw(dbAlerts);
