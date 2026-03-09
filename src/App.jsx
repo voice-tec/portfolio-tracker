@@ -623,6 +623,8 @@ function StockModal({ stock, onClose, notes, setNotes, alerts, setAlerts, handle
   const [histLoading, setHistLoading] = useState(false);
   const [news, setNews] = useState([]);
   const [newsLoading, setNewsLoading] = useState(true);
+  const [localTarget, setLocalTarget] = useState(String(stock.targetPrice || ""));
+  const [localStop, setLocalStop] = useState(String(stock.stopLoss || ""));
   const pnlPct = (stock.currentPrice - stock.buyPrice) / stock.buyPrice * 100;
   const pnlAbs = (stock.currentPrice - stock.buyPrice) * stock.qty * rate;
   const isUp = pnlPct >= 0;
@@ -1659,6 +1661,8 @@ export default function App() {
   const [notes, setNotesRaw] = useState({});
   const [alerts, setAlertsRaw] = useState({});
   const [dataLoading, setDataLoading] = useState(false);
+  const [marketOpen, setMarketOpen] = useState(null);
+  const [stockStates, setStockStates] = useState({});
 
   // Load data from Supabase when user logs in
   useEffect(() => {
@@ -1679,8 +1683,8 @@ export default function App() {
       setAlertsRaw(dbAlerts);
       setDataLoading(false);
 
-      // 🔄 Refresh prezzi live in background solo se mercati aperti
-      if (mapped.length > 0 && marketOpen !== false) {
+      // 🔄 Refresh prezzi sempre al login — serve per marketState e badge corretti
+      if (mapped.length > 0) {
         mapped.forEach(stock => {
           fetchRealPrice(stock.ticker, true).then(result => {
             if (!result) return;
@@ -1690,7 +1694,8 @@ export default function App() {
               ? { ...s, currentPrice: livePrice, priceReal: true, marketState: ms }
               : s
             ));
-            if (stock.dbId) {
+            setStockStates(prev => ({ ...prev, [stock.ticker]: ms })); // ← aggiorna badge
+            if (stock.dbId && ms !== "CLOSED") {
               saveStock(user.id, {
                 ...stock,
                 buyPrice: stock.buyPrice,
@@ -1717,8 +1722,7 @@ export default function App() {
   const [editId, setEditId] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [marketOpen, setMarketOpen] = useState(null);
-  const [stockStates, setStockStates] = useState({}); // { AAPL: "PRE"|"REGULAR"|"POST"|"CLOSED" }
+
 
   // Controlla status mercati via API Finnhub
   useEffect(() => {
@@ -2674,7 +2678,7 @@ export default function App() {
           )}
 
           {/* Stock detail modal */}
-          {selectedId && stocks.find(s => s.id === selectedId) && (
+          {selectedId && stocks.find(s => s.id === selectedId) ? (
             <StockModal
               stock={stocks.find(s => s.id === selectedId)}
               onClose={() => setSelectedId(null)}
@@ -2686,7 +2690,7 @@ export default function App() {
               plan={plan} eurRate={eurRate}
               onSaveTargets={handleSaveTargets}
             />
-          )}
+          ) : null}
 
           {/* Mobile portfolio summary */}
           <div className="mobile-portfolio-header" style={{ padding: "12px 16px", borderBottom: "1px solid #161820", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
