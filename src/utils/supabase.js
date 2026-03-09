@@ -60,11 +60,7 @@ export async function saveStock(userId, stock) {
     .upsert({ ...row, id: stock.dbId || undefined }, { onConflict: 'id' })
     .select()
     .single()
-  if (error) {
-    console.error("saveStock error:", error, "row:", row);
-    throw error
-  }
-  console.log("saveStock success, returned:", data?.id, "target_price:", data?.target_price, "stop_loss:", data?.stop_loss);
+  if (error) throw error
   return data
 }
 

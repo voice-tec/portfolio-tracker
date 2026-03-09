@@ -1669,7 +1669,6 @@ export default function App() {
     if (!user) { setStocksRaw([]); setNotesRaw({}); setAlertsRaw({}); return; }
     setDataLoading(true);
     Promise.all([loadStocks(user.id), loadNotes(user.id), loadAlerts(user.id)]).then(([dbStocks, dbNotes, dbAlerts]) => {
-      console.log("DB raw stocks:", dbStocks.map(s => ({ ticker: s.ticker, target_price: s.target_price, stop_loss: s.stop_loss })));
       const mapped = dbStocks.map(s => ({
         id: s.id, dbId: s.id,
         ticker: s.ticker, qty: s.qty, buyPrice: s.buy_price,
@@ -1679,7 +1678,7 @@ export default function App() {
         stopLoss: s.stop_loss ?? null,
         history: simulateHistory(s.current_price || s.buy_price)
       }));
-      console.log("Mapped stocks:", mapped.map(s => ({ ticker: s.ticker, targetPrice: s.targetPrice, stopLoss: s.stopLoss })));
+
       setStocksRaw(mapped.length > 0 ? mapped : []);
       setNotesRaw(dbNotes);
       setAlertsRaw(dbAlerts);
@@ -1902,10 +1901,7 @@ export default function App() {
         targetPrice: parseFloat(merged.targetPrice) || null,
         stopLoss: parseFloat(merged.stopLoss) || null,
         dbId: merged.dbId,
-      }).then(() => console.log("✓ Salvato:", merged.ticker, "target:", merged.targetPrice, "stop:", merged.stopLoss))
-        .catch(e => console.error("✗ Errore salvataggio:", e));
-    } else {
-      console.warn("handleEdit: dbId mancante o user non loggato", merged.dbId, !!user);
+      }).catch(e => console.error("✗ Errore salvataggio:", e));
     }
   }
 
