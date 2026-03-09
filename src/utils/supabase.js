@@ -52,14 +52,19 @@ export async function saveStock(userId, stock) {
     sector:        stock.sector || 'Altro',
     buy_date:      stock.buyDate,
     price_real:    stock.priceReal || false,
+    target_price:  stock.targetPrice || null,
+    stop_loss:     stock.stopLoss || null,
   }
-  // Upsert by ticker+user (update if exists, insert if not)
   const { data, error } = await supabase
     .from('stocks')
     .upsert({ ...row, id: stock.dbId || undefined }, { onConflict: 'id' })
     .select()
     .single()
-  if (error) throw error
+  if (error) {
+    console.error("saveStock error:", error, "row:", row);
+    throw error
+  }
+  console.log("saveStock success, returned:", data?.id, "target_price:", data?.target_price, "stop_loss:", data?.stop_loss);
   return data
 }
 
