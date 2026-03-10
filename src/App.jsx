@@ -1562,7 +1562,7 @@ function ForecastTab({ stocks, fmt, fmtPct, sym, rate }) {
           {/* ── ANALYST RATINGS ── */}
           {(() => {
             const a = analystData[selected?.ticker]?.analyst;
-            if (!a || !a.targetMean) return null;
+            if (!a || (!a.targetMean && !a.recommendation && !a.buy && !a.hold && !a.sell)) return null;
             const rec = a.recommendation;
             const recColor = rec === "strongBuy" || rec === "buy" ? "#5EC98A" : rec === "hold" ? "#F4C542" : "#E87040";
             const recLabel = { strongBuy: "Acquisto Forte", buy: "Acquisto", hold: "Neutrale", sell: "Vendita", strongSell: "Vendita Forte" }[rec] || rec;
