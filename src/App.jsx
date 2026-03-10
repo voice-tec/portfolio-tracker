@@ -1515,45 +1515,83 @@ function ForecastTab({ stocks, fmt, fmtPct, sym, rate }) {
       {d && !loading && (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
+          {/* ── PROIEZIONE + ANALISTI ── */}
           <div className="card">
-            <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6 }}>
-              {"📈 Proiezione prezzo 12 mesi — "}{selected.ticker}
+            {/* Header con stats */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
+              <div>
+                <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>
+                  📈 Proiezione 12 mesi — {selected.ticker}
+                </div>
+                <div style={{ fontSize: 10, color: "#555" }}>
+                  Trend 3 anni: <span style={{ color: col(d.annualizedReturn) }}>{pct(d.annualizedReturn)}</span>
+                  {" · "}Vol: <span style={{ color: "#666" }}>{d.annualVol}%</span>
+                </div>
+              </div>
+              {/* Target analisti accanto */}
+              {(() => {
+                const a = analystData[selected?.ticker]?.analyst;
+                if (!a?.targetMean) return null;
+                const upside = selected.currentPrice ? (((a.targetMean - selected.currentPrice) / selected.currentPrice) * 100).toFixed(1) : null;
+                return (
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: 8, color: "#F4C542", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 3 }}>Target analisti</div>
+                    <div style={{ fontFamily: "'Fraunces', serif", fontSize: 20, color: "#F4C542" }}>${fmt(a.targetMean)}</div>
+                    {upside && <div style={{ fontSize: 10, color: upside > 0 ? "#5EC98A" : "#E87040" }}>{upside > 0 ? "+" : ""}{upside}% upside</div>}
+                  </div>
+                );
+              })()}
             </div>
-            <div style={{ fontSize: 10, color: "#555", marginBottom: 14 }}>
-              {"Trend annualizzato 3 anni: "}
-              <span style={{ color: col(d.annualizedReturn) }}>{pct(d.annualizedReturn)}</span>
-              {" · Volatilità annua: "}
-              <span style={{ color: "#888" }}>{d.annualVol}%</span>
-            </div>
-            <ResponsiveContainer width="100%" height={200}>
-              <AreaChart data={d.projectionChart}>
+
+            {/* Grafico con linea analisti */}
+            <ResponsiveContainer width="100%" height={220}>
+              <AreaChart data={(() => {
+                const a = analystData[selected?.ticker]?.analyst;
+                if (!a?.targetMean) return d.projectionChart;
+                // Aggiungi linea analisti al grafico: sale linearmente da prezzo attuale a target
+                return d.projectionChart.map((pt, i) => ({
+                  ...pt,
+                  analyst: parseFloat((d.currentPrice + (a.targetMean - d.currentPrice) * (i / (d.projectionChart.length - 1))).toFixed(2))
+                }));
+              })()}>
                 <defs>
-                  <linearGradient id="optGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#5EC98A" stopOpacity={0.15}/>
+                  <linearGradient id="optGrad2" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#5EC98A" stopOpacity={0.12}/>
                     <stop offset="95%" stopColor="#5EC98A" stopOpacity={0}/>
                   </linearGradient>
+                  <linearGradient id="pessGrad2" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#E87040" stopOpacity={0.08}/>
+                    <stop offset="95%" stopColor="#E87040" stopOpacity={0}/>
+                  </linearGradient>
                 </defs>
-                <XAxis dataKey="month" tick={{ fill: "#444", fontSize: 9 }} axisLine={false} tickLine={false}/>
-                <YAxis tick={{ fill: "#444", fontSize: 9 }} axisLine={false} tickLine={false} width={55}
+                <XAxis dataKey="month" tick={{ fill: "#333", fontSize: 9 }} axisLine={false} tickLine={false}/>
+                <YAxis tick={{ fill: "#333", fontSize: 9 }} axisLine={false} tickLine={false} width={55}
                   tickFormatter={v => `$${v}`} domain={["auto","auto"]}/>
-                <Tooltip contentStyle={{ background: "#0f1117", border: "1px solid #2a2d35", borderRadius: 4, fontSize: 11 }}
-                  formatter={(v, n) => [`$${v}`, n === "base" ? "Base" : n === "optimistic" ? "Ottimistico" : "Pessimistico"]}/>
-                <Area type="monotone" dataKey="optimistic" stroke="#5EC98A" strokeWidth={1} strokeDasharray="4 2" fill="url(#optGrad)" dot={false}/>
+                <Tooltip contentStyle={{ background: "#0f1117", border: "1px solid #2a2d35", borderRadius: 6, fontSize: 11, color: "#E8E6DF" }}
+                  formatter={(v, n) => [`$${v}`, n === "base" ? "Proiezione base" : n === "optimistic" ? "Ottimistico" : n === "pessimistic" ? "Pessimistico" : "Target analisti"]}/>
+                <Area type="monotone" dataKey="optimistic" stroke="#5EC98A" strokeWidth={1} strokeDasharray="3 3" fill="url(#optGrad2)" dot={false}/>
+                <Area type="monotone" dataKey="pessimistic" stroke="#E87040" strokeWidth={1} strokeDasharray="3 3" fill="url(#pessGrad2)" dot={false}/>
                 <Area type="monotone" dataKey="base" stroke="#F4C542" strokeWidth={2} fill="none" dot={false}/>
-                <Area type="monotone" dataKey="pessimistic" stroke="#E87040" strokeWidth={1} strokeDasharray="4 2" fill="none" dot={false}/>
-                <ReferenceLine y={d.currentPrice} stroke="#333" strokeDasharray="3 3"/>
+                {analystData[selected?.ticker]?.analyst?.targetMean && (
+                  <Area type="monotone" dataKey="analyst" stroke="#7EB8F7" strokeWidth={2} strokeDasharray="6 3" fill="none" dot={false}/>
+                )}
+                <ReferenceLine y={d.currentPrice} stroke="#2a2d35" strokeDasharray="3 3"/>
               </AreaChart>
             </ResponsiveContainer>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginTop: 14 }}>
+
+            {/* Legenda */}
+            <div style={{ display: "flex", gap: 16, marginTop: 10, flexWrap: "wrap" }}>
               {[
-                { l: "Pessimistico", v: d.projection.pessimisticPriceTarget, p: d.projection.pessimistic, c: "#E87040" },
-                { l: "Base",         v: d.projection.basePriceTarget,        p: d.projection.base,        c: "#F4C542" },
-                { l: "Ottimistico",  v: d.projection.optimisticPriceTarget,  p: d.projection.optimistic,  c: "#5EC98A" },
+                { color: "#5EC98A", label: "Ottimistico", v: `$${d.projection.optimisticPriceTarget}`, pct: pct(d.projection.optimistic) },
+                { color: "#F4C542", label: "Base",        v: `$${d.projection.basePriceTarget}`,       pct: pct(d.projection.base) },
+                { color: "#E87040", label: "Pessimistico",v: `$${d.projection.pessimisticPriceTarget}`, pct: pct(d.projection.pessimistic) },
+                ...(analystData[selected?.ticker]?.analyst?.targetMean ? [{ color: "#7EB8F7", label: "Analisti", v: `$${fmt(analystData[selected.ticker].analyst.targetMean)}`, pct: "" }] : []),
               ].map(s => (
-                <div key={s.l} style={{ textAlign: "center", background: "#0f1117", borderRadius: 6, padding: "10px 6px" }}>
-                  <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>{s.l}</div>
-                  <div style={{ fontFamily: "'Fraunces', serif", fontSize: 18, color: s.c }}>${s.v}</div>
-                  <div style={{ fontSize: 10, color: s.c, marginTop: 2 }}>{pct(s.p)}</div>
+                <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ width: 20, height: 2, background: s.color, borderRadius: 1 }}/>
+                  <span style={{ fontSize: 10, color: "#555" }}>{s.label}:</span>
+                  <span style={{ fontSize: 10, color: s.color, fontWeight: 500 }}>{s.v}</span>
+                  {s.pct && <span style={{ fontSize: 9, color: "#444" }}>({s.pct})</span>}
                 </div>
               ))}
             </div>
@@ -1649,35 +1687,56 @@ function ForecastTab({ stocks, fmt, fmtPct, sym, rate }) {
 
           <div className="card">
             <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 14 }}>
-              {"🔍 Analisi storica — ultime volte che "}{selected.ticker}{" era a questo prezzo (±7%)"}
+              🔍 Analisi storica — {selected.ticker} a questo prezzo (±7%)
             </div>
             {d.occurrences === 0 ? (
               <div style={{ color: "#555", fontSize: 12 }}>Nessun caso storico trovato a questo livello di prezzo.</div>
             ) : (
               <>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 16 }}>
+                {/* KPI row */}
+                <div style={{ display: "flex", gap: 0, marginBottom: 20 }}>
                   {[
-                    { l: "Casi trovati",     v: d.occurrences,              c: "#888" },
-                    { l: "Win Rate",         v: `${d.winRate}%`,            c: d.winRate >= 50 ? "#5EC98A" : "#E87040" },
-                    { l: "Rendimento Medio", v: pct(d.avgOutcome),          c: col(d.avgOutcome) },
-                    { l: "Range",            v: `${d.maxLoss}% / +${d.maxGain}%`, c: "#888" },
-                  ].map(k => (
-                    <div key={k.l} style={{ textAlign: "center", background: "#0f1117", borderRadius: 6, padding: "10px 6px" }}>
-                      <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>{k.l}</div>
-                      <div style={{ fontFamily: "'Fraunces', serif", fontSize: 16, color: k.c }}>{k.v}</div>
+                    { l: "Casi trovati",  v: d.occurrences,     c: "#888",    sub: "occorrenze storiche" },
+                    { l: "Win Rate",      v: `${d.winRate}%`,   c: d.winRate >= 50 ? "#5EC98A" : "#E87040", sub: "volte in positivo" },
+                    { l: "Rend. medio",   v: pct(d.avgOutcome), c: col(d.avgOutcome), sub: "dopo 12 mesi" },
+                    { l: "Miglior caso",  v: `+${d.maxGain}%`,  c: "#5EC98A", sub: "massimo storico" },
+                    { l: "Peggior caso",  v: `${d.maxLoss}%`,   c: "#E87040", sub: "minimo storico" },
+                  ].map((k, i) => (
+                    <div key={k.l} style={{ flex: 1, textAlign: "center", borderRight: i < 4 ? "1px solid #1a1d26" : "none", padding: "0 8px" }}>
+                      <div style={{ fontFamily: "'Fraunces', serif", fontSize: 20, color: k.c, fontWeight: 300 }}>{k.v}</div>
+                      <div style={{ fontSize: 8, color: "#333", marginTop: 3 }}>{k.l}</div>
+                      <div style={{ fontSize: 8, color: "#2a2d35", marginTop: 1 }}>{k.sub}</div>
                     </div>
                   ))}
                 </div>
-                <div style={{ fontSize: 10, color: "#444", marginBottom: 10 }}>Ultimi casi storici:</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {d.historicalOutcomes.slice().reverse().map((o, i) => (
-                    <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
-                      padding: "8px 12px", background: i % 2 === 0 ? "#0f1117" : "transparent", borderRadius: 4 }}>
-                      <span style={{ fontSize: 11, color: "#555" }}>{o.date}</span>
-                      <span style={{ fontSize: 11, color: "#888" }}>${o.entryPrice} → ${o.exitPrice}</span>
-                      <span style={{ fontSize: 12, fontWeight: 500, color: col(o.pct) }}>{pct(o.pct)}</span>
-                    </div>
-                  ))}
+
+                {/* Barre orizzontali casi storici */}
+                <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>
+                  Dettaglio casi storici
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                  {d.historicalOutcomes.slice().reverse().map((o, i) => {
+                    const isPos = o.pct >= 0;
+                    const maxAbs = Math.max(...d.historicalOutcomes.map(x => Math.abs(x.pct)));
+                    const barW = maxAbs > 0 ? Math.abs(o.pct) / maxAbs * 100 : 0;
+                    return (
+                      <div key={i} style={{ display: "grid", gridTemplateColumns: "60px 1fr 60px", gap: 8, alignItems: "center" }}>
+                        <span style={{ fontSize: 10, color: "#444", textAlign: "right" }}>{o.date}</span>
+                        <div style={{ position: "relative", height: 20, background: "#0f1117", borderRadius: 3, overflow: "hidden" }}>
+                          <div style={{
+                            position: "absolute", top: 0, bottom: 0,
+                            left: isPos ? "50%" : `calc(50% - ${barW/2}%)`,
+                            width: `${barW/2}%`,
+                            background: isPos ? "#5EC98A" : "#E87040",
+                            opacity: 0.7,
+                            borderRadius: isPos ? "0 2px 2px 0" : "2px 0 0 2px",
+                          }}/>
+                          <div style={{ position: "absolute", top: 0, bottom: 0, left: "50%", width: 1, background: "#2a2d35" }}/>
+                        </div>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: isPos ? "#5EC98A" : "#E87040" }}>{pct(o.pct)}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               </>
             )}
