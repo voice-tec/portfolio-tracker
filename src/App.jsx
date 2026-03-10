@@ -1677,56 +1677,81 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
         </div>
       </div>
 
-      {/* ── GRAFICO PORTAFOGLIO ── */}
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em" }}>Andamento portafoglio</div>
-          <div style={{ display: "flex", gap: 4 }}>
-            {["1M","3M","6M","1A","Inizio"].map(p => (
-              <button key={p} onClick={() => setChartPeriod(p)}
-                style={{ background: chartPeriod === p ? "#F4C542" : "none", color: chartPeriod === p ? "#0D0F14" : "#444",
-                  border: `1px solid ${chartPeriod === p ? "#F4C542" : "#2a2d35"}`, borderRadius: 3,
-                  fontSize: 9, padding: "3px 8px", cursor: "pointer", fontFamily: "inherit" }}>
-                {p}
-              </button>
-            ))}
-          </div>
-        </div>
-        {chartLoading && (
-          <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, color: "#333", fontSize: 11 }}>
-            <Spinner size={14}/> Caricamento storico reale…
-          </div>
-        )}
-        {!chartLoading && <ResponsiveContainer width="100%" height={200}>
-          <AreaChart data={chartData}>
-            <defs>
-              <linearGradient id="ovGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#F4C542" stopOpacity={0.2}/>
-                <stop offset="95%" stopColor="#F4C542" stopOpacity={0}/>
-              </linearGradient>
-            </defs>
-            <XAxis dataKey="date" tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false} interval="preserveStartEnd"/>
-            <YAxis tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false} domain={["auto","auto"]} width={60} tickFormatter={v => `$${(v/1000).toFixed(1)}k`}/>
-            <Tooltip contentStyle={{ background: "#0f1117", border: "1px solid #2a2d35", borderRadius: 4, fontSize: 11, color: "#E8E6DF" }}
-              formatter={v => [`$${fmt(v)}`, "Portafoglio"]}/>
-              <Area type="monotone" dataKey="valore" stroke="#F4C542" strokeWidth={2} fill="url(#ovGrad)"
-                dot={({ cx, cy, payload }) => {
-                  const marker = purchaseMarkers.find(m => m.date === payload.date);
-                  if (!marker) return <g key={payload.date}/>;
-                  return (
-                    <g key={payload.date}>
-                      <circle cx={cx} cy={cy} r={5} fill="#7EB8F7" stroke="#0D0F14" strokeWidth={2}/>
-                      <circle cx={cx} cy={cy} r={9} fill="none" stroke="#7EB8F7" strokeWidth={1} opacity={0.4}/>
-                    </g>
-                  );
-                }}
-              />
-              {purchaseMarkers.map(m => (
-                <ReferenceLine key={m.ticker + m.date} x={m.date} stroke="#7EB8F733" strokeDasharray="3 3" strokeWidth={1}/>
+      {/* ── GRAFICO PORTAFOGLIO stile GetQuin ── */}
+      {(() => {
+        const firstVal = chartData[0]?.valore;
+        const lastVal  = chartData[chartData.length - 1]?.valore;
+        const chartPct = firstVal && lastVal ? ((lastVal - firstVal) / firstVal * 100) : 0;
+        const chartPos = chartPct >= 0;
+        const lineColor = chartPos ? "#5EC98A" : "#E87040";
+        return (
+          <div style={{ marginBottom: 16, background: "#0D0F14", borderRadius: 8, padding: "20px 0 8px 0" }}>
+            {/* Periodo selector stile GetQuin */}
+            <div style={{ display: "flex", gap: 2, marginBottom: 16, paddingLeft: 20 }}>
+              {["1M","3M","6M","1A","Inizio"].map(p => (
+                <button key={p} onClick={() => setChartPeriod(p)}
+                  style={{ background: chartPeriod === p ? "#1a1d26" : "none",
+                    color: chartPeriod === p ? "#E8E6DF" : "#333",
+                    border: "none", borderRadius: 4,
+                    fontSize: 11, padding: "4px 10px", cursor: "pointer", fontFamily: "inherit",
+                    fontWeight: chartPeriod === p ? 500 : 400 }}>
+                  {p}
+                </button>
               ))}
-            </AreaChart>
-          </ResponsiveContainer>}
-      </div>
+              <span style={{ marginLeft: "auto", marginRight: 20, fontSize: 11, color: chartPos ? "#5EC98A" : "#E87040", alignSelf: "center" }}>
+                {chartPos ? "▲" : "▼"} {Math.abs(chartPct).toFixed(2)}%
+              </span>
+            </div>
+
+            {chartLoading ? (
+              <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, color: "#333", fontSize: 11 }}>
+                <Spinner size={14}/> Caricamento…
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={180}>
+                <AreaChart data={chartData} margin={{ top: 5, right: 0, bottom: 0, left: 0 }}>
+                  <defs>
+                    <linearGradient id="gqGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={lineColor} stopOpacity={0.15}/>
+                      <stop offset="100%" stopColor={lineColor} stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="date" tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false}
+                    interval="preserveStartEnd" tickMargin={8}/>
+                  <YAxis hide domain={["auto","auto"]}/>
+                  <Tooltip
+                    contentStyle={{ background: "#0f1117", border: "1px solid #1a1d26", borderRadius: 6, fontSize: 11, color: "#E8E6DF", padding: "6px 12px" }}
+                    formatter={v => [`$${fmt(v)}`, ""]}
+                    labelStyle={{ color: "#555", fontSize: 10 }}
+                    cursor={{ stroke: lineColor, strokeWidth: 1, strokeDasharray: "4 2" }}
+                  />
+                  <Area type="monotone" dataKey="valore" stroke={lineColor} strokeWidth={1.5}
+                    fill="url(#gqGrad)" dot={false}
+                    activeDot={{ r: 4, fill: lineColor, stroke: "#0D0F14", strokeWidth: 2 }}/>
+                  {purchaseMarkers.map(m => (
+                    <ReferenceLine key={m.ticker + m.date} x={m.date}
+                      stroke="#7EB8F744" strokeDasharray="3 3" strokeWidth={1}
+                      label={{ value: m.ticker, position: "top", fill: "#7EB8F7", fontSize: 8 }}/>
+                  ))}
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
+
+            {/* Legenda acquisti */}
+            {purchaseMarkers.length > 0 && (
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", padding: "8px 20px 0", borderTop: "1px solid #0f1117", marginTop: 8 }}>
+                {purchaseMarkers.map(m => (
+                  <div key={m.ticker + m.date} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, color: "#444" }}>
+                    <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#7EB8F7" }}/>
+                    <span style={{ color: "#7EB8F7" }}>{m.ticker}</span>
+                    <span>{m.qty} az. @ ${fmt(m.buyPrice)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ── ALLOCAZIONE (torta stile GetQuin) ── */}
       <AllocationCard stocks={stocks} totalValue={totalValue} eurRate={eurRate} fmt={fmt} fmtPct={fmtPct} />
