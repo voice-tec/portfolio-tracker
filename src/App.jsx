@@ -120,6 +120,160 @@ const SCENARIOS = [
   { id: "dotcom",     label: "🫧 Dot-com Bubble",      from: "2000-03-10", to: "2002-10-09",  spx: -49,  real: true, color: "#F06292", desc: "Il crollo delle aziende tech (-49% S&P500)" },
 ];
 
+// ─── MACRO SCENARIOS ──────────────────────────────────────────────────────────
+const MACRO_SCENARIOS = [
+  {
+    id: "high_inflation", label: "📈 Alta Inflazione", color: "#E87040",
+    desc: "Inflazione >5% come 2021-2022. Energia e commodities salgono, tech e bond scendono.",
+    impact: { "Tech": -0.25, "Finanza": +0.08, "Energia": +0.45, "Materiali": +0.30, "Salute": -0.05, "Consumer": -0.15, "Industriali": +0.10, "Utility": -0.12, "Real Estate": -0.20, "Telecom": -0.08, "ETF": -0.10 },
+    spxImpact: -0.12, duration: "12-18 mesi",
+    topPicks: [
+      { ticker: "XLE",   name: "Energy ETF",       reason: "Energia sale con l'inflazione",   perf: 42 },
+      { ticker: "GLD",   name: "Gold ETF",          reason: "Oro come hedge inflazione",       perf: 18 },
+      { ticker: "TIPS",  name: "Inflation Bonds",   reason: "Bond indicizzati all'inflazione", perf: 8  },
+      { ticker: "BRK.B", name: "Berkshire",          reason: "Aziende con pricing power",       perf: 14 },
+      { ticker: "CVX",   name: "Chevron",            reason: "Petrolio beneficia inflazione",   perf: 55 },
+    ],
+    worstPicks: [
+      { ticker: "QQQ", name: "Nasdaq ETF", reason: "Tech colpito da tassi alti", perf: -28 },
+      { ticker: "TLT", name: "Long Bonds", reason: "Bond lunghi crollano",       perf: -35 },
+    ],
+    chartData: [
+      { m: "M1",  energy: 4,  tech: -3,  gold: 2  },
+      { m: "M3",  energy: 12, tech: -8,  gold: 5  },
+      { m: "M6",  energy: 22, tech: -15, gold: 9  },
+      { m: "M9",  energy: 33, tech: -20, gold: 13 },
+      { m: "M12", energy: 42, tech: -25, gold: 18 },
+    ],
+    lineKeys: [{ k: "energy", l: "Energia", c: "#E87040" }, { k: "tech", l: "Tech", c: "#5B8DEF" }, { k: "gold", l: "Oro", c: "#F4C542" }],
+  },
+  {
+    id: "low_inflation", label: "📉 Bassa Inflazione", color: "#5B8DEF",
+    desc: "Inflazione <2% con crescita stabile. Tech e bond in rally.",
+    impact: { "Tech": +0.25, "Finanza": +0.05, "Energia": -0.10, "Materiali": -0.08, "Salute": +0.12, "Consumer": +0.15, "Industriali": +0.08, "Utility": +0.15, "Real Estate": +0.20, "Telecom": +0.10, "ETF": +0.12 },
+    spxImpact: +0.18, duration: "12-24 mesi",
+    topPicks: [
+      { ticker: "QQQ",  name: "Nasdaq ETF",      reason: "Tech cresce con tassi bassi",       perf: 28 },
+      { ticker: "TLT",  name: "Long Bonds",      reason: "Bond lunghi in rally",              perf: 22 },
+      { ticker: "VNQ",  name: "Real Estate ETF", reason: "REIT beneficiano da tassi bassi",   perf: 18 },
+      { ticker: "MSFT", name: "Microsoft",       reason: "Big tech, cash flow prevedibile",   perf: 32 },
+      { ticker: "AAPL", name: "Apple",           reason: "Valuation espande con tassi bassi", perf: 25 },
+    ],
+    worstPicks: [
+      { ticker: "XLE", name: "Energy ETF", reason: "Energia soffre con deflazione",      perf: -12 },
+      { ticker: "GLD", name: "Gold ETF",   reason: "Oro perde appeal senza inflazione",  perf: -8  },
+    ],
+    chartData: [
+      { m: "M1",  tech: 3,  bonds: 2,  realestate: 1  },
+      { m: "M3",  tech: 9,  bonds: 6,  realestate: 4  },
+      { m: "M6",  tech: 16, bonds: 12, realestate: 9  },
+      { m: "M9",  tech: 22, bonds: 17, realestate: 13 },
+      { m: "M12", tech: 28, bonds: 22, realestate: 18 },
+    ],
+    lineKeys: [{ k: "tech", l: "Tech", c: "#5B8DEF" }, { k: "bonds", l: "Bond", c: "#5EC98A" }, { k: "realestate", l: "Real Estate", c: "#BF6EEA" }],
+  },
+  {
+    id: "high_rates", label: "🏦 Tassi Alti", color: "#BF6EEA",
+    desc: "Fed Funds Rate >4% come 2022-2023. Banche e valore outperformano.",
+    impact: { "Tech": -0.30, "Finanza": +0.15, "Energia": +0.05, "Materiali": -0.05, "Salute": +0.05, "Consumer": -0.12, "Industriali": -0.08, "Utility": -0.20, "Real Estate": -0.25, "Telecom": -0.10, "ETF": -0.08 },
+    spxImpact: -0.15, duration: "12-24 mesi",
+    topPicks: [
+      { ticker: "XLF",  name: "Financial ETF", reason: "Banche guadagnano con tassi alti",  perf: 18 },
+      { ticker: "BRK.B",name: "Berkshire",      reason: "Float assicurativo rende di più",   perf: 20 },
+      { ticker: "JPM",  name: "JPMorgan",       reason: "Margini netti in espansione",       perf: 22 },
+      { ticker: "SHY",  name: "Short Bonds",    reason: "Bond corti rendono senza rischio",  perf: 5  },
+      { ticker: "BIL",  name: "T-Bill ETF",     reason: "Liquidità al 5%+ senza rischio",   perf: 5  },
+    ],
+    worstPicks: [
+      { ticker: "VNQ",  name: "Real Estate ETF", reason: "REIT crollano con tassi alti",    perf: -25 },
+      { ticker: "ARKK", name: "ARK Innovation",  reason: "Growth non profittevole affonda",  perf: -60 },
+    ],
+    chartData: [
+      { m: "M1",  banche: 2,  realestate: -3,  tech: -4  },
+      { m: "M3",  banche: 6,  realestate: -9,  tech: -12 },
+      { m: "M6",  banche: 10, realestate: -16, tech: -20 },
+      { m: "M9",  banche: 14, realestate: -21, tech: -26 },
+      { m: "M12", banche: 18, realestate: -25, tech: -30 },
+    ],
+    lineKeys: [{ k: "banche", l: "Banche", c: "#5EC98A" }, { k: "realestate", l: "Real Estate", c: "#E87040" }, { k: "tech", l: "Tech", c: "#5B8DEF" }],
+  },
+  {
+    id: "low_rates", label: "💸 Tassi Bassi", color: "#5EC98A",
+    desc: "Fed Funds Rate <1% come 2009-2015 e 2020-2021. Risk-on, growth e credito salgono.",
+    impact: { "Tech": +0.35, "Finanza": -0.05, "Energia": +0.10, "Materiali": +0.12, "Salute": +0.10, "Consumer": +0.20, "Industriali": +0.15, "Utility": +0.10, "Real Estate": +0.30, "Telecom": +0.12, "ETF": +0.18 },
+    spxImpact: +0.25, duration: "24-36 mesi",
+    topPicks: [
+      { ticker: "ARKK", name: "ARK Innovation",  reason: "Growth esplode con tassi zero",   perf: 150 },
+      { ticker: "VNQ",  name: "Real Estate ETF", reason: "REIT in forte rally",             perf: 35  },
+      { ticker: "HYG",  name: "High Yield Bonds",reason: "Credito ad alto rendimento sale", perf: 20  },
+      { ticker: "TSLA", name: "Tesla",            reason: "Growth stocks beneficiano",       perf: 200 },
+      { ticker: "SPY",  name: "S&P 500",          reason: "Mercato broad in rally",          perf: 80  },
+    ],
+    worstPicks: [
+      { ticker: "XLF", name: "Financial ETF", reason: "Banche soffre con margini compressi", perf: -5 },
+      { ticker: "BIL", name: "T-Bill ETF",    reason: "Cash non rende nulla",                perf: 0  },
+    ],
+    chartData: [
+      { m: "M1",  growth: 5,   realestate: 3,  spx: 3  },
+      { m: "M3",  growth: 18,  realestate: 9,  spx: 8  },
+      { m: "M6",  growth: 40,  realestate: 18, spx: 15 },
+      { m: "M9",  growth: 80,  realestate: 27, spx: 22 },
+      { m: "M12", growth: 120, realestate: 35, spx: 28 },
+    ],
+    lineKeys: [{ k: "growth", l: "Growth", c: "#26C6DA" }, { k: "realestate", l: "Real Estate", c: "#BF6EEA" }, { k: "spx", l: "S&P 500", c: "#888" }],
+  },
+  {
+    id: "recession", label: "📊 Recessione", color: "#F4C542",
+    desc: "GDP negativo per 2+ trimestri. Difensivi, oro e bond governativi come rifugio.",
+    impact: { "Tech": -0.20, "Finanza": -0.30, "Energia": -0.25, "Materiali": -0.28, "Salute": +0.05, "Consumer": -0.15, "Industriali": -0.22, "Utility": +0.02, "Real Estate": -0.18, "Telecom": +0.02, "ETF": -0.18 },
+    spxImpact: -0.30, duration: "6-18 mesi",
+    topPicks: [
+      { ticker: "GLD", name: "Gold ETF",          reason: "Oro come rifugio sicuro",           perf: 25 },
+      { ticker: "TLT", name: "Long Gov Bonds",    reason: "Treasury salgono in recessione",    perf: 30 },
+      { ticker: "XLV", name: "Healthcare ETF",    reason: "Salute è difensiva per natura",     perf: 5  },
+      { ticker: "XLP", name: "Staples ETF",       reason: "Beni di prima necessità resistono", perf: 3  },
+      { ticker: "JNJ", name: "Johnson & Johnson", reason: "Difensivo con dividendo stabile",   perf: 8  },
+    ],
+    worstPicks: [
+      { ticker: "XLF", name: "Financial ETF", reason: "Banche colpite da NPL",      perf: -35 },
+      { ticker: "XLB", name: "Materials ETF", reason: "Domanda industriale crolla",  perf: -30 },
+    ],
+    chartData: [
+      { m: "M1",  gold: 3,  bonds: 5,  spx: -5  },
+      { m: "M3",  gold: 9,  bonds: 14, spx: -14 },
+      { m: "M6",  gold: 16, bonds: 22, spx: -22 },
+      { m: "M9",  gold: 21, bonds: 27, spx: -28 },
+      { m: "M12", gold: 25, bonds: 30, spx: -30 },
+    ],
+    lineKeys: [{ k: "gold", l: "Oro", c: "#F4C542" }, { k: "bonds", l: "Gov Bond", c: "#5B8DEF" }, { k: "spx", l: "S&P 500", c: "#E87040" }],
+  },
+  {
+    id: "boom", label: "🚀 Boom Economico", color: "#26C6DA",
+    desc: "Crescita GDP >3%, piena occupazione. Ciclici, tech e small cap esplodono.",
+    impact: { "Tech": +0.30, "Finanza": +0.20, "Energia": +0.25, "Materiali": +0.35, "Salute": +0.08, "Consumer": +0.28, "Industriali": +0.32, "Utility": -0.05, "Real Estate": +0.15, "Telecom": +0.18, "ETF": +0.22 },
+    spxImpact: +0.28, duration: "12-36 mesi",
+    topPicks: [
+      { ticker: "IWM",  name: "Russell 2000",     reason: "Small cap salgono in boom",        perf: 35 },
+      { ticker: "XLI",  name: "Industrials ETF",  reason: "Industriali in forte crescita",    perf: 30 },
+      { ticker: "XLB",  name: "Materials ETF",    reason: "Commodities in domanda",           perf: 28 },
+      { ticker: "XLY",  name: "Consumer Disc.",   reason: "Consumi discrezionali esplodono",  perf: 32 },
+      { ticker: "NVDA", name: "Nvidia",           reason: "Tech ciclico con boom AI+capex",   perf: 80 },
+    ],
+    worstPicks: [
+      { ticker: "TLT", name: "Long Bonds", reason: "Bond venduti per risk-on",    perf: -15 },
+      { ticker: "GLD", name: "Gold ETF",   reason: "Oro perde appeal in risk-on", perf: -5  },
+    ],
+    chartData: [
+      { m: "M1",  smallcap: 4,  industriali: 3,  spx: 3  },
+      { m: "M3",  smallcap: 12, industriali: 9,  spx: 8  },
+      { m: "M6",  smallcap: 22, industriali: 18, spx: 15 },
+      { m: "M9",  smallcap: 29, industriali: 24, spx: 20 },
+      { m: "M12", smallcap: 35, industriali: 30, spx: 28 },
+    ],
+    lineKeys: [{ k: "smallcap", l: "Small Cap", c: "#26C6DA" }, { k: "industriali", l: "Industriali", c: "#5EC98A" }, { k: "spx", l: "S&P 500", c: "#888" }],
+  },
+];
+
 async function fetchScenarioData(symbol, scenario) {
   try {
     const res = await fetch(`${API_BASE}/api/scenario?symbol=${encodeURIComponent(symbol)}&from=${scenario.from}&to=${scenario.to}`);
@@ -829,15 +983,8 @@ function MacroScenarioSection({ stocks, sym, rate, fmt, pct: fmtPct, col }) {
     }));
   }, [selected, portfolioImpact.pct]);
 
-  // Colori linee grafico per scenario
-  const lineKeys = {
-    high_inflation: [{ k: "energy", l: "Energia", c: "#E87040" }, { k: "tech", l: "Tech", c: "#5B8DEF" }, { k: "gold", l: "Oro", c: "#F4C542" }],
-    low_inflation:  [{ k: "tech", l: "Tech", c: "#5B8DEF" }, { k: "bonds", l: "Bond", c: "#5EC98A" }, { k: "realestate", l: "Real Estate", c: "#BF6EEA" }],
-    high_rates:     [{ k: "banche", l: "Banche", c: "#5EC98A" }, { k: "realestate", l: "Real Estate", c: "#E87040" }, { k: "tech", l: "Tech", c: "#5B8DEF" }],
-    low_rates:      [{ k: "growth", l: "Growth", c: "#26C6DA" }, { k: "realestate", l: "Real Estate", c: "#BF6EEA" }, { k: "spx", l: "S&P 500", c: "#888" }],
-    recession:      [{ k: "gold", l: "Oro", c: "#F4C542" }, { k: "bonds", l: "Gov Bond", c: "#5B8DEF" }, { k: "spx", l: "S&P 500", c: "#E87040" }],
-    boom:           [{ k: "smallcap", l: "Small Cap", c: "#26C6DA" }, { k: "industriali", l: "Industriali", c: "#5EC98A" }, { k: "spx", l: "S&P 500", c: "#888" }],
-  }[selected.id] || [];
+  // Colori linee grafico — definiti direttamente nello scenario
+  const lineKeys = selected.lineKeys || [];
 
   return (
     <div style={{ marginTop: 40 }}>
