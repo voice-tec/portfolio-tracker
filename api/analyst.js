@@ -1,5 +1,45 @@
 // api/analyst.js — Analyst ratings + target price + ETF holdings da Yahoo Finance
 
+const SECTOR_MAP = {
+  "technology": "Tech",
+  "financial_services": "Finanza",
+  "financialservices": "Finanza",
+  "healthcare": "Salute",
+  "energy": "Energia",
+  "consumer_cyclical": "Consumer",
+  "consumercyclical": "Consumer",
+  "consumer_defensive": "Consumer",
+  "consumerdefensive": "Consumer",
+  "industrials": "Industriali",
+  "real_estate": "Real Estate",
+  "realestate": "Real Estate",
+  "utilities": "Utility",
+  "basic_materials": "Materiali",
+  "basicmaterials": "Materiali",
+  "communication_services": "Telecom",
+  "communicationservices": "Telecom",
+};
+
+function normalizeSector(raw) {
+  if (!raw) return "Altro";
+  const key = raw.toLowerCase().replace(/[^a-z]/g, "");
+  return SECTOR_MAP[key] || raw;
+}
+
+async function yahooFetch(url) {
+  const headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Origin": "https://finance.yahoo.com",
+    "Referer": "https://finance.yahoo.com/",
+  };
+  const r = await fetch(url, { headers });
+  if (!r.ok) throw new Error(`Yahoo error ${r.status}`);
+  return r.json();
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", process.env.ALLOWED_ORIGIN || "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
@@ -9,21 +49,11 @@ export default async function handler(req, res) {
   const { symbol } = req.query;
   if (!symbol) return res.status(400).json({ error: "Missing symbol" });
 
-  const headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "application/json",
-    "Accept-Language": "en-US,en;q=0.9",
-  };
-
   try {
-    // Fetch analyst data + ETF holdings in parallel
-    const [summaryRes, holdingsRes] = await Promise.all([
-      fetch(`https://query2.finance.yahoo.com/v11/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=financialData,recommendationTrend,defaultKeyStatistics`, { headers }),
-      fetch(`https://query2.finance.yahoo.com/v11/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=topHoldings`, { headers }),
+    const [summaryData, holdingsData] = await Promise.all([
+      yahooFetch(`https://query2.finance.yahoo.com/v11/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=financialData,recommendationTrend,defaultKeyStatistics`),
+      yahooFetch(`https://query2.finance.yahoo.com/v11/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=topHoldings`),
     ]);
-
-    const summaryData = await summaryRes.json();
-    const holdingsData = await holdingsRes.json();
 
     const result = summaryData?.quoteSummary?.result?.[0];
     const fin = result?.financialData || {};
@@ -31,31 +61,32 @@ export default async function handler(req, res) {
     const stats = result?.defaultKeyStatistics || {};
     const holdings = holdingsData?.quoteSummary?.result?.[0]?.topHoldings || {};
 
-    // Analyst ratings
+    console.log(`[analyst] ${symbol} sectorWeightings:`, JSON.stringify(holdings.sectorWeightings?.slice(0,3)));
+
     const analyst = {
       targetMean:   fin.targetMeanPrice?.raw || null,
       targetHigh:   fin.targetHighPrice?.raw || null,
       targetLow:    fin.targetLowPrice?.raw || null,
       currentPrice: fin.currentPrice?.raw || null,
-      recommendation: fin.recommendationKey || null, // "buy", "hold", "sell", "strongBuy"
+      recommendation: fin.recommendationKey || null,
       numberOfAnalysts: fin.numberOfAnalystOpinions?.raw || null,
-      // Consensus breakdown
-      strongBuy: rec.strongBuy || 0,
-      buy:       rec.buy || 0,
-      hold:      rec.hold || 0,
-      sell:      rec.sell || 0,
+      strongBuy:  rec.strongBuy  || 0,
+      buy:        rec.buy        || 0,
+      hold:       rec.hold       || 0,
+      sell:       rec.sell       || 0,
       strongSell: rec.strongSell || 0,
-      // Key stats
-      forwardPE:  stats.forwardPE?.raw || null,
-      beta:       stats.beta?.raw || null,
+      forwardPE:  stats.forwardPE?.raw  || null,
+      beta:       stats.beta?.raw       || null,
       shortRatio: stats.shortRatio?.raw || null,
     };
 
-    // ETF sector breakdown (se disponibile)
-    const sectorWeights = (holdings.sectorWeightings || []).map(sw => {
-      const [sector, weight] = Object.entries(sw)[0];
-      return { sector: normalizeSector(sector), weight: parseFloat((weight * 100).toFixed(1)) };
-    }).filter(s => s.weight > 0).sort((a, b) => b.weight - a.weight);
+    // ETF sector breakdown
+    const sectorWeights = (holdings.sectorWeightings || []).flatMap(sw => {
+      return Object.entries(sw).map(([sector, weight]) => ({
+        sector: normalizeSector(sector),
+        weight: parseFloat(((weight?.raw ?? weight) * 100).toFixed(1)),
+      }));
+    }).filter(s => s.weight > 0.1).sort((a, b) => b.weight - a.weight);
 
     const topHoldings = (holdings.holdings || []).slice(0, 10).map(h => ({
       ticker: h.symbol,
@@ -66,25 +97,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ analyst, sectorWeights, topHoldings });
 
   } catch (err) {
-    console.error("Analyst API error:", err);
-    return res.status(500).json({ error: "Failed to fetch analyst data" });
+    console.error(`[analyst] ${symbol} error:`, err.message);
+    return res.status(500).json({ error: err.message });
   }
-}
-
-function normalizeSector(raw) {
-  const map = {
-    "technology": "Tech",
-    "financial_services": "Finanza",
-    "healthcare": "Salute",
-    "energy": "Energia",
-    "consumer_cyclical": "Consumer",
-    "consumer_defensive": "Consumer",
-    "industrials": "Industriali",
-    "real_estate": "Real Estate",
-    "utilities": "Utility",
-    "basic_materials": "Materiali",
-    "communication_services": "Telecom",
-    "realestate": "Real Estate",
-  };
-  return map[raw?.toLowerCase()] || raw;
 }
