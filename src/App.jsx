@@ -1489,16 +1489,31 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
   totalPnL, totalPct, sectorData, portfolioHistory, alerts, setSelectedId, setEditId,
   handleRemove, setShowForm, marketOpen }) {
 
-  const [chartPeriod, setChartPeriod] = useState("1M"); // 1G, 1M, 1A
+  const [chartPeriod, setChartPeriod] = useState("1M");
   const [variations, setVariations] = useState({ day: null, month: null, year: null });
   const [varLoading, setVarLoading] = useState(false);
+  const [realChartData, setRealChartData] = useState([]);
+  const [chartLoading, setChartLoading] = useState(false);
 
-  // Calcola variazioni reali dal portafoglio usando history + Finnhub
+  const col = v => v >= 0 ? "#5EC98A" : "#E87040";
+  const sign = v => v >= 0 ? "+" : "";
+
+  // Parsing buyDate italiano "dd/mm/yy" → Date
+  const parseBuyDate = (s) => {
+    if (!s) return null;
+    const p = s.split("/");
+    if (p.length !== 3) return null;
+    const yr = p[2].length === 2 ? "20" + p[2] : p[2];
+    return new Date(`${yr}-${p[1].padStart(2,"0")}-${p[0].padStart(2,"0")}`);
+  };
+
+  // Fetch storico reale e costruisci grafico portafoglio
   useEffect(() => {
     if (stocks.length === 0) return;
     setVarLoading(true);
+    setChartLoading(true);
 
-    // Variazione giornaliera: usa prevClose da Finnhub/Yahoo già nello stock
+    // Variazione giornaliera
     const dayPnl = stocks.reduce((sum, s) => {
       const prevClose = s.prevClose || s.currentPrice;
       return sum + (s.currentPrice - prevClose) * s.qty;
@@ -1506,54 +1521,115 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
     const prevTotalValue = stocks.reduce((sum, s) => sum + (s.prevClose || s.currentPrice) * s.qty, 0);
     const dayPct = prevTotalValue > 0 ? (dayPnl / prevTotalValue) * 100 : 0;
 
-    // Variazioni mensile e annuale da Yahoo Finance
-    const fetchVar = async (days) => {
-      const prices = await Promise.all(stocks.map(async s => {
-        try {
-          const r = await fetch(`${API_BASE}/api/history?symbol=${encodeURIComponent(s.ticker)}&days=${days}`);
-          const d = await r.json();
-          const first = d.candles?.[0]?.price;
-          if (!first) return null;
-          return { ticker: s.ticker, qty: s.qty, oldPrice: first, newPrice: s.currentPrice };
-        } catch { return null; }
-      }));
-      const valid = prices.filter(Boolean);
-      if (!valid.length) return null;
-      const oldVal = valid.reduce((sum, p) => sum + p.oldPrice * p.qty, 0);
-      const newVal = valid.reduce((sum, p) => sum + p.newPrice * p.qty, 0);
-      const pnl = newVal - oldVal;
-      const pct = oldVal > 0 ? (pnl / oldVal) * 100 : 0;
-      return { pnl: parseFloat(pnl.toFixed(2)), pct: parseFloat(pct.toFixed(2)) };
-    };
+    // Periodo più lungo necessario: dalla prima data di acquisto
+    const firstDate = stocks.reduce((min, s) => {
+      const d = parseBuyDate(s.buyDate);
+      return d && (!min || d < min) ? d : min;
+    }, null);
+    const daysSinceFirst = firstDate ? Math.ceil((Date.now() - firstDate) / 86400000) + 5 : 400;
+    const daysToFetch = Math.max(daysSinceFirst, 395); // almeno 1 anno + buffer
 
-    Promise.all([fetchVar(30), fetchVar(365)]).then(([month, year]) => {
+    // Fetch storico per tutti i titoli
+    Promise.all(stocks.map(async s => {
+      try {
+        const r = await fetch(`${API_BASE}/api/history?symbol=${encodeURIComponent(s.ticker)}&days=${daysToFetch}`);
+        const d = await r.json();
+        return { ticker: s.ticker, qty: s.qty, buyDate: parseBuyDate(s.buyDate), candles: d.candles || [] };
+      } catch { return { ticker: s.ticker, qty: s.qty, buyDate: parseBuyDate(s.buyDate), candles: [] }; }
+    })).then(results => {
+      // Costruisci mappa date → prezzi per ogni titolo
+      const priceMap = {};
+      results.forEach(r => {
+        r.candles.forEach(c => {
+          if (!priceMap[c.date]) priceMap[c.date] = {};
+          priceMap[c.date][r.ticker] = c.price;
+        });
+      });
+
+      // Tutte le date ordinate
+      const allDates = Object.keys(priceMap).sort();
+
+      // Costruisci serie portafoglio giorno per giorno
+      // Solo titoli già acquistati in quella data
+      const lastKnown = {};
+      const series = [];
+      allDates.forEach(dateStr => {
+        const dateParts = dateStr.split("/");
+        let dateObj;
+        // dateStr può essere "10 mar 25" o "2024-03-10" a seconda dell'API
+        try { dateObj = new Date(dateStr); } catch { dateObj = null; }
+
+        results.forEach(r => {
+          if (priceMap[dateStr]?.[r.ticker]) lastKnown[r.ticker] = priceMap[dateStr][r.ticker];
+        });
+
+        let total = 0;
+        let anyActive = false;
+        results.forEach(r => {
+          if (!r.buyDate || !dateObj || dateObj >= r.buyDate) {
+            const price = lastKnown[r.ticker] || r.candles[r.candles.length - 1]?.price;
+            if (price) { total += r.qty * price; anyActive = true; }
+          }
+        });
+        if (anyActive && total > 0) series.push({ date: dateStr, valore: parseFloat(total.toFixed(2)) });
+      });
+
+      setRealChartData(series);
+
+      // Variazioni da serie reale
+      const now = series[series.length - 1]?.valore || 0;
+      const ago30  = series[Math.max(0, series.length - 30)]?.valore;
+      const ago365 = series[Math.max(0, series.length - 252)]?.valore; // ~1 anno trading days
+
+      const mkVar = (old) => {
+        if (!old || !now) return null;
+        const pnl = now - old;
+        return { pnl: parseFloat(pnl.toFixed(2)), pct: parseFloat(((pnl/old)*100).toFixed(2)) };
+      };
+
       setVariations({
         day: { pnl: parseFloat(dayPnl.toFixed(2)), pct: parseFloat(dayPct.toFixed(2)) },
-        month,
-        year,
+        month: mkVar(ago30),
+        year:  mkVar(ago365),
       });
       setVarLoading(false);
-    });
-  }, [stocks.length]);
+      setChartLoading(false);
+    }).catch(() => { setVarLoading(false); setChartLoading(false); });
+  }, [stocks.map(s => s.ticker + s.qty + s.buyDate).join(",")]);
 
-  const col = v => v >= 0 ? "#5EC98A" : "#E87040";
-  const sign = v => v >= 0 ? "+" : "";
-
-  // Grafico in base al periodo selezionato
+  // Slice grafico in base al periodo
   const chartData = useMemo(() => {
-    if (!stocks.length || !stocks[0]?.history?.length) return [];
-    const len = stocks[0].history.length;
-    const slice = chartPeriod === "1G" ? Math.min(1, len) :
-                  chartPeriod === "1M" ? Math.min(30, len) : len;
-    const hist = stocks[0].history.slice(-slice);
-    return hist.map((_, i) => {
-      const idx = len - slice + i;
-      return {
-        date: stocks[0].history[idx]?.date || "",
-        valore: parseFloat(stocks.reduce((s, st) => s + st.qty * (st.history[idx]?.price || st.currentPrice), 0).toFixed(2))
-      };
+    if (!realChartData.length) return [];
+    const n = realChartData.length;
+    const sliceMap = { "1M": 30, "3M": 63, "6M": 126, "1A": 252 };
+    const slice = chartPeriod === "Inizio" ? n : Math.min(sliceMap[chartPeriod] || 30, n);
+    return realChartData.slice(-slice);
+  }, [realChartData, chartPeriod]);
+
+  // Marker acquisti sul grafico
+  const purchaseMarkers = useMemo(() => {
+    if (!chartData.length) return [];
+    const markers = [];
+    stocks.forEach(s => {
+      if (!s.buyDate) return;
+      // Trova la data più vicina nel chartData
+      const idx = chartData.findIndex(pt => {
+        try {
+          const ptDate = new Date(pt.date);
+          const bd = s.buyDate ? (() => {
+            const p = s.buyDate.split("/");
+            if (p.length !== 3) return null;
+            const yr = p[2].length === 2 ? "20" + p[2] : p[2];
+            return new Date(`${yr}-${p[1].padStart(2,"0")}-${p[0].padStart(2,"0")}`);
+          })() : null;
+          if (!bd) return false;
+          return Math.abs(ptDate - bd) < 86400000 * 3;
+        } catch { return false; }
+      });
+      if (idx >= 0) markers.push({ ...chartData[idx], ticker: s.ticker, qty: s.qty, buyPrice: s.buyPrice, idx });
     });
-  }, [stocks, chartPeriod]);
+    return markers;
+  }, [chartData, stocks]);
 
   if (stocks.length === 0) return (
     <div className="fade-up" style={{ textAlign: "center", marginTop: 80 }}>
@@ -1606,7 +1682,7 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em" }}>Andamento portafoglio</div>
           <div style={{ display: "flex", gap: 4 }}>
-            {["1G","1M","1A"].map(p => (
+            {["1M","3M","6M","1A","Inizio"].map(p => (
               <button key={p} onClick={() => setChartPeriod(p)}
                 style={{ background: chartPeriod === p ? "#F4C542" : "none", color: chartPeriod === p ? "#0D0F14" : "#444",
                   border: `1px solid ${chartPeriod === p ? "#F4C542" : "#2a2d35"}`, borderRadius: 3,
@@ -1616,7 +1692,12 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
             ))}
           </div>
         </div>
-        <ResponsiveContainer width="100%" height={200}>
+        {chartLoading && (
+          <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, color: "#333", fontSize: 11 }}>
+            <Spinner size={14}/> Caricamento storico reale…
+          </div>
+        )}
+        {!chartLoading && <ResponsiveContainer width="100%" height={200}>
           <AreaChart data={chartData}>
             <defs>
               <linearGradient id="ovGrad" x1="0" y1="0" x2="0" y2="1">
@@ -1628,9 +1709,23 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
             <YAxis tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false} domain={["auto","auto"]} width={60} tickFormatter={v => `$${(v/1000).toFixed(1)}k`}/>
             <Tooltip contentStyle={{ background: "#0f1117", border: "1px solid #2a2d35", borderRadius: 4, fontSize: 11, color: "#E8E6DF" }}
               formatter={v => [`$${fmt(v)}`, "Portafoglio"]}/>
-            <Area type="monotone" dataKey="valore" stroke="#F4C542" strokeWidth={2} fill="url(#ovGrad)" dot={false}/>
-          </AreaChart>
-        </ResponsiveContainer>
+              <Area type="monotone" dataKey="valore" stroke="#F4C542" strokeWidth={2} fill="url(#ovGrad)"
+                dot={({ cx, cy, payload }) => {
+                  const marker = purchaseMarkers.find(m => m.date === payload.date);
+                  if (!marker) return <g key={payload.date}/>;
+                  return (
+                    <g key={payload.date}>
+                      <circle cx={cx} cy={cy} r={5} fill="#7EB8F7" stroke="#0D0F14" strokeWidth={2}/>
+                      <circle cx={cx} cy={cy} r={9} fill="none" stroke="#7EB8F7" strokeWidth={1} opacity={0.4}/>
+                    </g>
+                  );
+                }}
+              />
+              {purchaseMarkers.map(m => (
+                <ReferenceLine key={m.ticker + m.date} x={m.date} stroke="#7EB8F733" strokeDasharray="3 3" strokeWidth={1}/>
+              ))}
+            </AreaChart>
+          </ResponsiveContainer>}
       </div>
 
       {/* ── ALLOCAZIONE (torta stile GetQuin) ── */}
