@@ -989,6 +989,124 @@ function SimulazioniTab({ stocks, sym, rate, fmt, fmtPct }) {
 // ─── WHAT IF TAB ──────────────────────────────────────────────────────────────
 // ─── DIVIDENDI TAB ────────────────────────────────────────────────────────────
 // ─── FORECAST TAB ─────────────────────────────────────────────────────────────
+// ─── ALLOCATION CARD ──────────────────────────────────────────────────────────
+const PIE_COLORS = ["#5B8DEF","#26C6DA","#5EC98A","#F4C542","#BF6EEA","#E87040","#F06292","#FF7043","#80CBC4","#FFD54F"];
+
+function AllocationCard({ stocks, totalValue, eurRate, fmt, fmtPct }) {
+  const [pieTab, setPieTab] = useState("settori");
+
+  const pieData = useMemo(() => {
+    if (pieTab === "settori") {
+      const map = {};
+      stocks.forEach(s => {
+        const key = s.sector || "Altro";
+        map[key] = (map[key] || 0) + s.qty * s.currentPrice;
+      });
+      return Object.entries(map).map(([name, value]) => ({ name, value: parseFloat(value.toFixed(2)) }))
+        .sort((a, b) => b.value - a.value);
+    }
+    if (pieTab === "posizioni") {
+      return stocks.map(s => ({
+        name: s.ticker,
+        value: parseFloat((s.qty * s.currentPrice).toFixed(2))
+      })).sort((a, b) => b.value - a.value);
+    }
+    if (pieTab === "tipo") {
+      const map = {};
+      stocks.forEach(s => {
+        const tipo = ["ETF","Crypto"].includes(s.sector) ? s.sector : "Azioni";
+        map[tipo] = (map[tipo] || 0) + s.qty * s.currentPrice;
+      });
+      return Object.entries(map).map(([name, value]) => ({ name, value: parseFloat(value.toFixed(2)) }))
+        .sort((a, b) => b.value - a.value);
+    }
+    return [];
+  }, [stocks, pieTab]);
+
+  const [activeIndex, setActiveIndex] = useState(null);
+  const centerVal = activeIndex !== null && pieData[activeIndex]
+    ? pieData[activeIndex]
+    : null;
+
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      {/* Tab selector */}
+      <div style={{ display: "flex", gap: 0, marginBottom: 20, borderBottom: "1px solid #1a1d26" }}>
+        {["settori","posizioni","tipo"].map(t => (
+          <button key={t} onClick={() => setPieTab(t)}
+            style={{ background: "none", border: "none", borderBottom: pieTab === t ? "2px solid #F4C542" : "2px solid transparent",
+              color: pieTab === t ? "#E8E6DF" : "#444", fontFamily: "inherit", fontSize: 11,
+              padding: "6px 14px", cursor: "pointer", textTransform: "capitalize", transition: "all 0.15s", marginBottom: -1 }}>
+            {t}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 32, flexWrap: "wrap" }}>
+        {/* Grande torta con valore al centro */}
+        <div style={{ position: "relative", flexShrink: 0 }}>
+          <PieChart width={220} height={220}>
+            <Pie
+              data={pieData} cx={105} cy={105}
+              innerRadius={72} outerRadius={100}
+              dataKey="value" paddingAngle={1.5}
+              onMouseEnter={(_, i) => setActiveIndex(i)}
+              onMouseLeave={() => setActiveIndex(null)}>
+              {pieData.map((_, i) => (
+                <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]}
+                  opacity={activeIndex === null || activeIndex === i ? 1 : 0.35}
+                  style={{ cursor: "pointer", transition: "opacity 0.15s" }}/>
+              ))}
+            </Pie>
+          </PieChart>
+          {/* Centro torta */}
+          <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", textAlign: "center", pointerEvents: "none" }}>
+            {centerVal ? (
+              <>
+                <div style={{ fontSize: 10, color: "#555", marginBottom: 2 }}>{centerVal.name}</div>
+                <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 300, color: "#E8E6DF" }}>
+                  ${fmt(centerVal.value)}
+                </div>
+                <div style={{ fontSize: 11, color: "#F4C542", fontWeight: 500 }}>
+                  {totalValue > 0 ? ((centerVal.value / totalValue) * 100).toFixed(1) : 0}%
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 9, color: "#444", marginBottom: 3 }}>Patrimonio</div>
+                <div style={{ fontFamily: "'Fraunces', serif", fontSize: 17, fontWeight: 300, color: "#E8E6DF" }}>
+                  ${fmt(totalValue)}
+                </div>
+                <div style={{ fontSize: 10, color: "#555" }}>€{fmt(totalValue * eurRate)}</div>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Legenda */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: 1, minWidth: 160 }}>
+          {pieData.map((item, i) => {
+            const pct = totalValue > 0 ? ((item.value / totalValue) * 100).toFixed(1) : 0;
+            const isActive = activeIndex === i;
+            return (
+              <div key={item.name}
+                onMouseEnter={() => setActiveIndex(i)}
+                onMouseLeave={() => setActiveIndex(null)}
+                style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer",
+                  opacity: activeIndex === null || isActive ? 1 : 0.4, transition: "opacity 0.15s" }}>
+                <div style={{ width: 10, height: 10, borderRadius: 3, flexShrink: 0, background: PIE_COLORS[i % PIE_COLORS.length] }}/>
+                <span style={{ fontSize: 11, color: isActive ? "#E8E6DF" : "#888", flex: 1 }}>{item.name}</span>
+                <span style={{ fontSize: 11, color: "#E8E6DF", fontWeight: 500, minWidth: 36, textAlign: "right" }}>{pct}%</span>
+                <span style={{ fontSize: 10, color: "#444", minWidth: 70, textAlign: "right" }}>${fmt(item.value)}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── OVERVIEW TAB ─────────────────────────────────────────────────────────────
 function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, totalInvested,
   totalPnL, totalPct, sectorData, portfolioHistory, alerts, setSelectedId, setEditId,
@@ -1003,14 +1121,13 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
     if (stocks.length === 0) return;
     setVarLoading(true);
 
-    // Variazione giornaliera: usa change/changePercent da Finnhub già nei prezzi
-    // Ogni stock ha già il prezzo live — calcoliamo var giornaliera pesata
+    // Variazione giornaliera: usa prevClose da Finnhub/Yahoo già nello stock
     const dayPnl = stocks.reduce((sum, s) => {
-      // prevClose stimato: currentPrice / (1 + changePercent/100)
       const prevClose = s.prevClose || s.currentPrice;
       return sum + (s.currentPrice - prevClose) * s.qty;
     }, 0);
-    const dayPct = totalValue > 0 ? (dayPnl / (totalValue - dayPnl)) * 100 : 0;
+    const prevTotalValue = stocks.reduce((sum, s) => sum + (s.prevClose || s.currentPrice) * s.qty, 0);
+    const dayPct = prevTotalValue > 0 ? (dayPnl / prevTotalValue) * 100 : 0;
 
     // Variazioni mensile e annuale da Yahoo Finance
     const fetchVar = async (days) => {
@@ -1139,55 +1256,8 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
         </ResponsiveContainer>
       </div>
 
-      {/* ── TORTA SETTORI + KPI ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }} className="overview-mid-grid">
-        {/* Torta */}
-        <div className="card">
-          <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 12 }}>Esposizione settori</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-            <PieChart width={140} height={140}>
-              <Pie data={sectorData} cx={65} cy={65} innerRadius={40} outerRadius={65}
-                dataKey="value" paddingAngle={2}>
-                {sectorData.map((_, i) => <Cell key={i} fill={["#F4C542","#5EC98A","#5B8DEF","#E87040","#BF6EEA","#F06292","#26C6DA","#FF7043"][i % 8]}/>)}
-              </Pie>
-              <Tooltip contentStyle={{ background: "#0f1117", border: "1px solid #2a2d35", borderRadius: 4, fontSize: 11 }}
-                formatter={(v) => [`$${fmt(v)}`, ""]}/>
-            </PieChart>
-            <div style={{ display: "flex", flexDirection: "column", gap: 5, flex: 1 }}>
-              {sectorData.map((s, i) => {
-                const pct = totalValue > 0 ? (s.value / totalValue * 100).toFixed(1) : 0;
-                return (
-                  <div key={s.name} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <div style={{ width: 8, height: 8, borderRadius: 2, flexShrink: 0, background: ["#F4C542","#5EC98A","#5B8DEF","#E87040","#BF6EEA","#F06292","#26C6DA","#FF7043"][i % 8] }}/>
-                    <span style={{ fontSize: 10, color: "#888", flex: 1 }}>{s.name}</span>
-                    <span style={{ fontSize: 10, color: "#E8E6DF", fontWeight: 500 }}>{pct}%</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        {/* KPI box */}
-        <div className="card" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em" }}>Riepilogo</div>
-          {[
-            { l: "Investito",   v: `$${fmt(totalInvested)}`,   sub: `€${fmt(totalInvested * eurRate)}`, c: "#888" },
-            { l: "Valore att.", v: `$${fmt(totalValue)}`,       sub: `€${fmt(totalValue * eurRate)}`,    c: "#E8E6DF" },
-            { l: "P&L totale",  v: `${sign(totalPnL)}$${fmt(Math.abs(totalPnL))}`, sub: `${sign(totalPnL)}€${fmt(Math.abs(totalPnL * eurRate))}`, c: col(totalPnL) },
-            { l: "Performance", v: `${sign(totalPct)}${totalPct.toFixed(2)}%`, sub: null, c: col(totalPct) },
-            { l: "N° titoli",   v: stocks.length, sub: null, c: "#888" },
-          ].map(k => (
-            <div key={k.l} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 10, borderBottom: "1px solid #0f1117" }}>
-              <span style={{ fontSize: 11, color: "#444" }}>{k.l}</span>
-              <div style={{ textAlign: "right" }}>
-                <span style={{ fontSize: 13, fontWeight: 500, color: k.c }}>{k.v}</span>
-                {k.sub && <div style={{ fontSize: 9, color: "#333" }}>{k.sub}</div>}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+      {/* ── ALLOCAZIONE (torta stile GetQuin) ── */}
+      <AllocationCard stocks={stocks} totalValue={totalValue} eurRate={eurRate} fmt={fmt} fmtPct={fmtPct} />
 
       {/* ── LISTA TITOLI COMPATTA ── */}
       <div className="card">
@@ -1975,15 +2045,32 @@ export default function App() {
       // 🔄 Refresh prezzi sempre al login — serve per marketState e badge corretti
       if (mapped.length > 0) {
         mapped.forEach(stock => {
+          // Fix settore mancante o "Altro" — fetch da Yahoo
+          const needsSector = !stock.sector || stock.sector === "Altro" || stock.sector === "—";
+          if (needsSector) {
+            fetch(`${API_BASE}/api/search?q=${encodeURIComponent(stock.ticker)}`)
+              .then(r => r.json())
+              .then(d => {
+                const match = d.results?.find(r => r.ticker === stock.ticker);
+                if (match?.sector && match.sector !== "Altro") {
+                  setStocksRaw(prev => prev.map(s => s.id === stock.id ? { ...s, sector: match.sector } : s));
+                  if (stock.dbId) saveStock(user.id, { ...stock, sector: match.sector, dbId: stock.dbId }).catch(() => {});
+                }
+              }).catch(() => {});
+          }
+
           fetchRealPrice(stock.ticker, true).then(result => {
             if (!result) return;
             const livePrice = result.price;
             const ms = result.marketState || "CLOSED";
             setStocksRaw(prev => prev.map(s => s.id === stock.id
-              ? { ...s, currentPrice: livePrice, priceReal: true, marketState: ms }
+              ? { ...s, currentPrice: livePrice, priceReal: true, marketState: ms,
+                  prevClose: result.prevClose || livePrice,
+                  change: result.change || 0,
+                  changePct: result.changePct || 0 }
               : s
             ));
-            setStockStates(prev => ({ ...prev, [stock.ticker]: ms })); // ← aggiorna badge
+            setStockStates(prev => ({ ...prev, [stock.ticker]: ms }));
             if (stock.dbId && ms !== "CLOSED") {
               saveStock(user.id, {
                 ...stock,
@@ -2006,7 +2093,9 @@ export default function App() {
   const setNotes  = fn => setNotesRaw(prev => typeof fn === "function" ? fn(prev) : fn);
   const setAlerts = fn => setAlertsRaw(prev => typeof fn === "function" ? fn(prev) : fn);
 
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTabRaw, setActiveTabRaw] = useState("overview");
+  const activeTab = activeTabRaw;
+  const setActiveTab = (t) => setActiveTabRaw(t);
   const [selectedId, setSelectedId] = useState(null);
   const [editId, setEditId] = useState(null);
   const [showForm, setShowForm] = useState(false);
@@ -2458,7 +2547,7 @@ export default function App() {
             </div>
             {/* Desktop tabs */}
             <div style={{ display: "flex", alignItems: "center", gap: 0, overflowX: "auto", flex: 1, justifyContent: "center" }} className="desktop-tabs">
-              {["overview","titoli","settori","watchlist","confronto","alert","simulazioni","whatif","dividendi","previsioni"].map(t => (
+              {["overview","confronto","alert","simulazioni","whatif","dividendi","previsioni"].map(t => (
                 <button key={t} className={`tab-btn ${activeTab === t ? "active" : ""}`} onClick={() => setActiveTab(t)}>
                   {t === "whatif" ? "e se?" : t === "dividendi" ? "💰 dividendi" : t === "previsioni" ? "🔮 previsioni" : t}
                 </button>
@@ -2885,14 +2974,13 @@ export default function App() {
           {/* Mobile bottom navigation */}
           <div className="mobile-nav" style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "#0a0c10", borderTop: "1px solid #161820", zIndex: 999, justifyContent: "space-around", alignItems: "center", padding: "6px 0", paddingBottom: "env(safe-area-inset-bottom)" }}>
             {[
-              { id: "overview",      icon: "◈",  label: "Overview" },
-              { id: "titoli",        icon: "📋", label: "Titoli" },
-              { id: "settori",       icon: "◉",  label: "Settori" },
-              { id: "simulazioni",   icon: "⚡", label: "Stress" },
-              { id: "whatif",        icon: "🔁", label: "E se?" },
-              { id: "dividendi",     icon: "💰", label: "Divid." },
-              { id: "previsioni",    icon: "🔮", label: "Prev." },
-              { id: "alert",         icon: "🔔", label: "Alert" },
+              { id: "overview",    icon: "◈",  label: "Overview" },
+              { id: "confronto",   icon: "📊", label: "Confronto" },
+              { id: "simulazioni", icon: "⚡", label: "Stress" },
+              { id: "whatif",      icon: "🔁", label: "E se?" },
+              { id: "dividendi",   icon: "💰", label: "Divid." },
+              { id: "previsioni",  icon: "🔮", label: "Prev." },
+              { id: "alert",       icon: "🔔", label: "Alert" },
             ].map(t => (
               <button key={t.id} onClick={() => setActiveTab(t.id)}
                 style={{ background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "4px 8px", color: activeTab === t.id ? "#F4C542" : "#444", fontFamily: "inherit", transition: "color 0.15s" }}>
