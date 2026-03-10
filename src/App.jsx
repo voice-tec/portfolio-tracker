@@ -2802,7 +2802,7 @@ export default function App() {
   const [importPreview, setImportPreview] = useState([]);
   const [importErr, setImportErr] = useState("");
   const csvInputRef = useRef(null);
-  const [form, setForm] = useState({ ticker: "", qty: "", buyPrice: "", sector: "Altro" });
+  const [form, setForm] = useState({ ticker: "", qty: "", buyPrice: "", sector: "Altro", buyDate: new Date().toISOString().split("T")[0] });
   const [adding, setAdding] = useState(false);
   const [formErr, setFormErr] = useState("");
   const [compareA, setCompareA] = useState(null);
@@ -2895,7 +2895,11 @@ export default function App() {
     const curPrice = realPrice;
     const history = simulateHistory(curPrice);
     if (realPrice) history[history.length - 1].price = realPrice;
-    const ns = { ticker: t, qty: q, buyPrice: p, currentPrice: parseFloat(curPrice.toFixed(2)), history, sector: form.sector || "Altro", priceReal: !!realPrice, buyDate: new Date().toLocaleDateString("it-IT") };
+    // Converti data da YYYY-MM-DD a dd/mm/yy
+    const rawDate = form.buyDate || new Date().toISOString().split("T")[0];
+    const dp = rawDate.split("-");
+    const buyDateFormatted = dp.length === 3 ? `${dp[2]}/${dp[1]}/${dp[0].slice(2)}` : new Date().toLocaleDateString("it-IT");
+    const ns = { ticker: t, qty: q, buyPrice: p, currentPrice: parseFloat(curPrice.toFixed(2)), history, sector: form.sector || "Altro", priceReal: !!realPrice, buyDate: buyDateFormatted };
     // Save to Supabase if logged in
     let dbId = null;
     if (user) {
@@ -2904,7 +2908,7 @@ export default function App() {
     const withId = { ...ns, id: dbId || nextId.current++, dbId };
     setStocks(prev => [...prev, withId]);
     setSelectedId(withId.id);
-    setForm({ ticker: "", qty: "", buyPrice: "", sector: "Altro" });
+    setForm({ ticker: "", qty: "", buyPrice: "", sector: "Altro", buyDate: new Date().toISOString().split("T")[0] });
     setAdding(false); setShowForm(false);
   }
 
@@ -3237,9 +3241,16 @@ export default function App() {
           {/* Add form */}
           {showForm && (
             <div className="fade-up" style={{ padding: "14px 28px", background: "#0a0c10", borderBottom: "1px solid #1a1d26", display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
-              <TickerAutocomplete value={form.ticker} onChange={v => setForm(f => ({ ...f, ticker: v }))} onSelect={t => setForm(f => ({ ...f, ticker: t.ticker, sector: t.sector || "Altro" }))} />
-              <div style={{ flex: 1, minWidth: 130 }}>
-                <div style={{ fontSize: 10, color: "#555", marginBottom: 5, letterSpacing: "0.1em", textTransform: "uppercase" }}>Settore</div>
+              <TickerAutocomplete value={form.ticker} onChange={v => setForm(f => ({ ...f, ticker: v }))}
+                onSelect={t => {
+                  const sector = t.sector || "Altro";
+                  setForm(f => ({ ...f, ticker: t.ticker, sector }));
+                }} />
+              <div style={{ flex: 1, minWidth: 120 }}>
+                <div style={{ fontSize: 10, color: "#555", marginBottom: 5, letterSpacing: "0.1em", textTransform: "uppercase" }}>
+                  Settore
+                  {form.sector && form.sector !== "Altro" && <span style={{ color: "#5EC98A", marginLeft: 6 }}>✓ auto</span>}
+                </div>
                 <select value={form.sector} onChange={e => setForm(f => ({ ...f, sector: e.target.value }))}>
                   {SECTORS.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
@@ -3251,6 +3262,13 @@ export default function App() {
               <div style={{ flex: 1, minWidth: 120 }}>
                 <div style={{ fontSize: 10, color: "#555", marginBottom: 5, letterSpacing: "0.1em", textTransform: "uppercase" }}>Prezzo Acquisto</div>
                 <input type="number" placeholder="175.00" value={form.buyPrice} onChange={e => setForm(f => ({ ...f, buyPrice: e.target.value }))} />
+              </div>
+              <div style={{ flex: 1, minWidth: 130 }}>
+                <div style={{ fontSize: 10, color: "#555", marginBottom: 5, letterSpacing: "0.1em", textTransform: "uppercase" }}>Data Acquisto</div>
+                <input type="date" value={form.buyDate}
+                  max={new Date().toISOString().split("T")[0]}
+                  onChange={e => setForm(f => ({ ...f, buyDate: e.target.value }))}
+                  style={{ colorScheme: "dark" }}/>
               </div>
               <button className="add-btn" onClick={handleAdd} disabled={adding}>
                 {adding && <Spinner color="#0D0F14" />}
