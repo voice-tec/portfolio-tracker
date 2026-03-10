@@ -1403,10 +1403,37 @@ function AllocationCard({ stocks, totalValue, eurRate, fmt }) {
   const [activeIndex, setActiveIndex] = useState(null);
   const centerVal = activeIndex !== null ? pieData[activeIndex] : null;
 
+  // Calcola alert concentrazione >25%
+  const concentrationAlerts = useMemo(() => {
+    if (pieTab !== "settori") return [];
+    return pieData
+      .filter(item => totalValue > 0 && (item.value / totalValue) * 100 > 25)
+      .map(item => {
+        const pct = ((item.value / totalValue) * 100).toFixed(1);
+        const sector = item.name;
+        // Suggerimenti per settore
+        const suggestions = {
+          "Tech":       ["Bilancia con XLV (Salute) o XLP (Beni primari)", "Aggiungi esposizione internazionale con VEA", "Considera obbligazioni TLT per ridurre volatilità"],
+          "Energia":    ["Diversifica con XLK (Tech) o XLV (Salute)", "Alta ciclicità: considera XLP come difensivo", "GLD può bilanciare il rischio commodity"],
+          "Finanza":    ["Bilancia con settori difensivi come XLU o XLV", "Considera esposizione internazionale VWO", "I tassi alti favoriscono le banche ma aumentano rischio"],
+          "Salute":     ["Aggiungi ciclici come XLY o tech con QQQ", "Buon settore difensivo ma valuta di aggiungere crescita", "Considera small cap IWM per diversificazione"],
+          "Consumer":   ["Bilancia con Tech o Finanza", "Aggiungi esposizione internazionale", "Considera obbligazioni per ridurre correlazione"],
+          "Industriali":["Settore ciclico: aggiungi difensivi XLP o XLV", "Considera esposizione tech per crescita", "GLD come hedge in caso di recessione"],
+          "Real Estate":["REIT sensibili ai tassi: diversifica con Tech", "Aggiungi bond a breve SHY come bilanciamento", "Considera settori meno correlati ai tassi"],
+          "Valute":     ["UUP è hedge valutario: valuta esposizione azionaria", "Bilancia con azionario globale VTI o SPY", "Considera TIPS per protezione inflazione"],
+          "ETF":        ["Verifica la composizione interna degli ETF", "Evita sovrapposizioni tra ETF simili", "Considera ETF settoriali per maggiore controllo"],
+        };
+        const tips = suggestions[sector] || ["Diversifica su altri settori", "Considera ETF globali come VTI o VEA", "Valuta obbligazioni per ridurre volatilità"];
+        return { sector, pct, tips };
+      });
+  }, [pieData, totalValue, pieTab]);
+
+  const [showAlerts, setShowAlerts] = useState(true);
+
   return (
     <div className="card" style={{ marginBottom: 16 }}>
       {/* Tab selector */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, borderBottom: "1px solid #1a1d26", paddingBottom: 0 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, borderBottom: "1px solid #1a1d26", paddingBottom: 0 }}>
         <div style={{ display: "flex", gap: 0 }}>
           {["settori","posizioni","tipo"].map(t => (
             <button key={t} onClick={() => setPieTab(t)}
@@ -1417,19 +1444,29 @@ function AllocationCard({ stocks, totalValue, eurRate, fmt }) {
             </button>
           ))}
         </div>
-        {etfLoading && <span style={{ fontSize: 9, color: "#444" }}>caricamento ETF…</span>}
-        {!etfLoading && etfStocks.length > 0 && pieTab === "settori" && (
-          <span style={{ fontSize: 9, color: "#5EC98A" }}>✓ ETF scomposti</span>
-        )}
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          {etfLoading && <span style={{ fontSize: 9, color: "#444" }}>caricamento ETF…</span>}
+          {!etfLoading && etfStocks.length > 0 && pieTab === "settori" && (
+            <span style={{ fontSize: 9, color: "#5EC98A" }}>✓ ETF scomposti</span>
+          )}
+          {concentrationAlerts.length > 0 && (
+            <button onClick={() => setShowAlerts(v => !v)}
+              style={{ background: "#E8704011", border: "1px solid #E8704033", color: "#E87040",
+                fontSize: 9, padding: "3px 8px", borderRadius: 3, cursor: "pointer", fontFamily: "inherit" }}>
+              ⚠️ {concentrationAlerts.length} concentrazione{concentrationAlerts.length > 1 ? "i" : ""} &gt;25%
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Layout compatto: torta più piccola + legenda a destra */}
-      <div style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: 20, alignItems: "center" }}>
-        {/* Torta */}
-        <div style={{ position: "relative", width: 180, height: 180, flexShrink: 0 }}>
-          <PieChart width={180} height={180}>
-            <Pie data={pieData} cx={85} cy={85}
-              innerRadius={58} outerRadius={82}
+      {/* Layout principale: torta + legenda + eventuale panel alert */}
+      <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
+
+        {/* Torta compatta */}
+        <div style={{ position: "relative", width: 150, height: 150, flexShrink: 0 }}>
+          <PieChart width={150} height={150}>
+            <Pie data={pieData} cx={70} cy={70}
+              innerRadius={46} outerRadius={68}
               dataKey="value" paddingAngle={1.5}
               onMouseEnter={(_, i) => setActiveIndex(i)}
               onMouseLeave={() => setActiveIndex(null)}>
@@ -1440,30 +1477,30 @@ function AllocationCard({ stocks, totalValue, eurRate, fmt }) {
               ))}
             </Pie>
           </PieChart>
-          {/* Centro */}
-          <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-46%,-50%)", textAlign: "center", pointerEvents: "none", width: 90 }}>
+          <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-46%,-50%)", textAlign: "center", pointerEvents: "none", width: 72 }}>
             {centerVal ? (
               <>
-                <div style={{ fontSize: 9, color: "#555", marginBottom: 1, lineHeight: 1.2 }}>{centerVal.name}</div>
-                <div style={{ fontFamily: "'Fraunces', serif", fontSize: 13, fontWeight: 300, color: "#E8E6DF" }}>${fmt(centerVal.value)}</div>
-                <div style={{ fontSize: 12, color: "#F4C542", fontWeight: 600 }}>
+                <div style={{ fontSize: 8, color: "#555", lineHeight: 1.2, marginBottom: 1 }}>{centerVal.name}</div>
+                <div style={{ fontFamily: "'Fraunces', serif", fontSize: 12, color: "#E8E6DF" }}>${fmt(centerVal.value)}</div>
+                <div style={{ fontSize: 11, color: "#F4C542", fontWeight: 600 }}>
                   {totalValue > 0 ? ((centerVal.value / totalValue) * 100).toFixed(1) : 0}%
                 </div>
               </>
             ) : (
               <>
-                <div style={{ fontSize: 8, color: "#444", marginBottom: 2 }}>Patrimonio</div>
-                <div style={{ fontFamily: "'Fraunces', serif", fontSize: 14, fontWeight: 300, color: "#E8E6DF" }}>${fmt(totalValue)}</div>
-                <div style={{ fontSize: 9, color: "#555" }}>€{fmt(totalValue * eurRate)}</div>
+                <div style={{ fontSize: 7, color: "#444", marginBottom: 1 }}>Patrimonio</div>
+                <div style={{ fontFamily: "'Fraunces', serif", fontSize: 12, color: "#E8E6DF" }}>${fmt(totalValue)}</div>
+                <div style={{ fontSize: 8, color: "#555" }}>€{fmt(totalValue * eurRate)}</div>
               </>
             )}
           </div>
         </div>
 
-        {/* Legenda compatta */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {/* Legenda */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 5, flex: 1, minWidth: 160 }}>
           {pieData.map((item, i) => {
             const pct = totalValue > 0 ? ((item.value / totalValue) * 100).toFixed(1) : 0;
+            const isAlert = parseFloat(pct) > 25;
             const isActive = activeIndex === i;
             return (
               <div key={item.name}
@@ -1471,14 +1508,54 @@ function AllocationCard({ stocks, totalValue, eurRate, fmt }) {
                 onMouseLeave={() => setActiveIndex(null)}
                 style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer",
                   opacity: activeIndex === null || isActive ? 1 : 0.35, transition: "opacity 0.15s" }}>
-                <div style={{ width: 8, height: 8, borderRadius: 2, flexShrink: 0, background: PIE_COLORS[i % PIE_COLORS.length] }}/>
+                <div style={{ width: 7, height: 7, borderRadius: 2, flexShrink: 0, background: PIE_COLORS[i % PIE_COLORS.length] }}/>
                 <span style={{ fontSize: 11, color: isActive ? "#E8E6DF" : "#777", flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.name}</span>
-                <span style={{ fontSize: 11, color: "#E8E6DF", fontWeight: 600, minWidth: 38, textAlign: "right" }}>{pct}%</span>
-                <span style={{ fontSize: 10, color: "#444", minWidth: 65, textAlign: "right" }}>${fmt(item.value)}</span>
+                <span style={{ fontSize: 11, fontWeight: 600, minWidth: 36, textAlign: "right",
+                  color: isAlert ? "#E87040" : "#E8E6DF" }}>{pct}%</span>
+                {isAlert && <span style={{ fontSize: 9, color: "#E87040" }}>⚠️</span>}
+                <span style={{ fontSize: 10, color: "#444", minWidth: 60, textAlign: "right" }}>${fmt(item.value)}</span>
               </div>
             );
           })}
         </div>
+
+        {/* Panel alert concentrazione */}
+        {concentrationAlerts.length > 0 && showAlerts && (
+          <div style={{ flex: 1, minWidth: 200, maxWidth: 280, background: "#0f1117", borderRadius: 8,
+            border: "1px solid #E8704033", padding: "12px 14px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div style={{ fontSize: 9, color: "#E87040", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 600 }}>
+                ⚠️ Concentrazione elevata
+              </div>
+              <button onClick={() => setShowAlerts(false)}
+                style={{ background: "none", border: "none", color: "#444", cursor: "pointer", fontSize: 12, padding: 0 }}>✕</button>
+            </div>
+            {concentrationAlerts.map(a => (
+              <div key={a.sector} style={{ marginBottom: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                  <span style={{ fontSize: 11, color: "#E8E6DF", fontWeight: 500 }}>{a.sector}</span>
+                  <span style={{ fontSize: 12, color: "#E87040", fontWeight: 700 }}>{a.pct}%</span>
+                </div>
+                {/* Barra visuale */}
+                <div style={{ height: 4, background: "#1a1d26", borderRadius: 2, marginBottom: 8, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${Math.min(parseFloat(a.pct), 100)}%`,
+                    background: parseFloat(a.pct) > 50 ? "#E87040" : "#F4C542", borderRadius: 2 }}/>
+                  <div style={{ height: "100%", width: "2px", background: "#5EC98A", position: "relative", top: -4, left: "25%" }}/>
+                </div>
+                <div style={{ fontSize: 9, color: "#444", marginBottom: 6 }}>Suggerimenti:</div>
+                {a.tips.map((tip, j) => (
+                  <div key={j} style={{ fontSize: 10, color: "#666", marginBottom: 4, paddingLeft: 8,
+                    borderLeft: "2px solid #2a2d35", lineHeight: 1.4 }}>
+                    {tip}
+                  </div>
+                ))}
+              </div>
+            ))}
+            <div style={{ fontSize: 9, color: "#2a2d35", marginTop: 4, borderTop: "1px solid #1a1d26", paddingTop: 8 }}>
+              Soglia consigliata per settore: &lt;25%
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1627,7 +1704,7 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
     return filtered.length > 1 ? filtered : realChartData.slice(-days);
   }, [realChartData, chartPeriod]);
 
-  // Marker acquisti: trova il punto più vicino alla data di acquisto
+  // Marker acquisti: mostra sempre tutti gli acquisti nel range visibile
   const purchaseMarkers = useMemo(() => {
     if (!chartData.length) return [];
     const markers = [];
@@ -1635,13 +1712,31 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
       const bd = parseBuyDate(s.buyDate);
       if (!bd) return;
       const bdISO = bd.toISOString().split("T")[0];
-      // Trova punto con data >= bdISO più vicino
-      const pt = chartData.find(p => p.date >= bdISO) || chartData[0];
-      if (pt) markers.push({ ...pt, ticker: s.ticker, qty: s.qty, buyPrice: s.buyPrice });
+      const firstChartDate = chartData[0]?.date;
+      const lastChartDate  = chartData[chartData.length - 1]?.date;
+      let pt;
+      if (bdISO >= firstChartDate) {
+        // Acquisto nel range: trova il punto più vicino
+        pt = chartData.find(p => p.date >= bdISO);
+      } else {
+        // Acquisto prima del range (es. periodo 1M ma comprato 6M fa)
+        // Mostra marker sul primo punto con tooltip "acquistato il X"
+        pt = chartData[0];
+      }
+      if (pt) markers.push({
+        ...pt, ticker: s.ticker, qty: s.qty, buyPrice: s.buyPrice,
+        actualBuyDate: bdISO,
+        beforeRange: bdISO < (firstChartDate || ""),
+      });
     });
-    // Deduplicazione per stessa data
+    // Deduplicazione: se più acquisti stesso giorno, mostra solo il primo per ticker
     const seen = new Set();
-    return markers.filter(m => { if (seen.has(m.date + m.ticker)) return false; seen.add(m.date + m.ticker); return true; });
+    return markers.filter(m => {
+      const key = m.ticker + m.date;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   }, [chartData, stocks]);
 
   if (stocks.length === 0) return (
@@ -2930,6 +3025,15 @@ export default function App() {
     setSelectedId(withId.id);
     setForm({ ticker: "", qty: "", buyPrice: "", sector: "Altro", buyDate: new Date().toISOString().split("T")[0] });
     setAdding(false); setShowForm(false);
+    // Auto-refresh prezzo live dopo aggiunta
+    fetchRealPrice(t, true).then(result => {
+      if (!result) return;
+      setStocksRaw(prev => prev.map(s => s.ticker === t && !s.priceReal
+        ? { ...s, currentPrice: result.price, priceReal: true, marketState: result.marketState || "CLOSED",
+            prevClose: result.prevClose || result.price }
+        : s
+      ));
+    }).catch(() => {});
   }
 
   function handleRemove(id) {
