@@ -1,4 +1,4 @@
-// api/history.js — SEMPRE Yahoo Finance, niente Finnhub
+// api/history.js — Yahoo Finance, date in formato ISO YYYY-MM-DD
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", process.env.ALLOWED_ORIGIN || "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
@@ -34,10 +34,12 @@ export default async function handler(req, res) {
     const candles = result.timestamp
       .map((ts, i) => ({ ts, price: closes[i] }))
       .filter(c => c.price != null && c.price > 0)
-      .map(c => ({
-        date: new Date(c.ts * 1000).toLocaleDateString("it-IT", { day: "2-digit", month: "short", year: "2-digit" }),
-        price: parseFloat(c.price.toFixed(4)),
-      }));
+      .map(c => {
+        const d = new Date(c.ts * 1000);
+        // Data in formato ISO YYYY-MM-DD per parsing affidabile
+        const iso = d.toISOString().split("T")[0];
+        return { date: iso, price: parseFloat(c.price.toFixed(4)) };
+      });
 
     if (!candles.length) return res.status(404).json({ error: "Nessun dato per questa data e questo titolo" });
 

@@ -1498,13 +1498,18 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
   const col = v => v >= 0 ? "#5EC98A" : "#E87040";
   const sign = v => v >= 0 ? "+" : "";
 
-  // Parsing buyDate italiano "dd/mm/yy" → Date
+  // Parsing buyDate: supporta "dd/mm/yy", "dd/mm/yyyy", "YYYY-MM-DD"
   const parseBuyDate = (s) => {
     if (!s) return null;
+    // Formato ISO YYYY-MM-DD
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return new Date(s + "T00:00:00");
+    // Formato italiano dd/mm/yy o dd/mm/yyyy
     const p = s.split("/");
-    if (p.length !== 3) return null;
-    const yr = p[2].length === 2 ? "20" + p[2] : p[2];
-    return new Date(`${yr}-${p[1].padStart(2,"0")}-${p[0].padStart(2,"0")}`);
+    if (p.length === 3) {
+      const yr = p[2].length === 2 ? "20" + p[2] : p[2];
+      return new Date(`${yr}-${p[1].padStart(2,"0")}-${p[0].padStart(2,"0")}T00:00:00`);
+    }
+    return null;
   };
 
   // Fetch storico reale e costruisci grafico portafoglio
@@ -1521,24 +1526,29 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
     const prevTotalValue = stocks.reduce((sum, s) => sum + (s.prevClose || s.currentPrice) * s.qty, 0);
     const dayPct = prevTotalValue > 0 ? (dayPnl / prevTotalValue) * 100 : 0;
 
-    // Periodo più lungo necessario: dalla prima data di acquisto
+    // Calcola giorni da fetchare: dalla prima data di acquisto
     const firstDate = stocks.reduce((min, s) => {
       const d = parseBuyDate(s.buyDate);
       return d && (!min || d < min) ? d : min;
     }, null);
-    const daysSinceFirst = firstDate ? Math.ceil((Date.now() - firstDate) / 86400000) + 5 : 400;
-    const daysToFetch = Math.max(daysSinceFirst, 395); // almeno 1 anno + buffer
+    const daysSinceFirst = firstDate
+      ? Math.ceil((Date.now() - firstDate.getTime()) / 86400000) + 10
+      : 400;
+    const daysToFetch = Math.max(daysSinceFirst, 395);
 
-    // Fetch storico per tutti i titoli
+    // Fetch storico ISO per tutti i titoli
     Promise.all(stocks.map(async s => {
       try {
         const r = await fetch(`${API_BASE}/api/history?symbol=${encodeURIComponent(s.ticker)}&days=${daysToFetch}`);
         const d = await r.json();
-        return { ticker: s.ticker, qty: s.qty, buyDate: parseBuyDate(s.buyDate), candles: d.candles || [] };
-      } catch { return { ticker: s.ticker, qty: s.qty, buyDate: parseBuyDate(s.buyDate), candles: [] }; }
+        const bd = parseBuyDate(s.buyDate);
+        return { ticker: s.ticker, qty: s.qty, buyDateISO: bd ? bd.toISOString().split("T")[0] : null, candles: d.candles || [] };
+      } catch {
+        return { ticker: s.ticker, qty: s.qty, buyDateISO: null, candles: [] };
+      }
     })).then(results => {
-      // Costruisci mappa date → prezzi per ogni titolo
-      const priceMap = {};
+      // Mappa ISO date → prezzi per ogni titolo
+      const priceMap = {}; // { "2024-03-10": { AAPL: 175.0, MSFT: 380.0 } }
       results.forEach(r => {
         r.candles.forEach(c => {
           if (!priceMap[c.date]) priceMap[c.date] = {};
@@ -1546,89 +1556,92 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
         });
       });
 
-      // Tutte le date ordinate
+      // Date ordinate (ISO → sort alfabetico = sort cronologico)
       const allDates = Object.keys(priceMap).sort();
 
-      // Costruisci serie portafoglio giorno per giorno
-      // Solo titoli già acquistati in quella data
-      const lastKnown = {};
+      // Costruisci serie: per ogni giorno somma solo titoli già acquistati
+      const lastKnown = {}; // ultimo prezzo noto per ogni ticker
       const series = [];
-      allDates.forEach(dateStr => {
-        const dateParts = dateStr.split("/");
-        let dateObj;
-        // dateStr può essere "10 mar 25" o "2024-03-10" a seconda dell'API
-        try { dateObj = new Date(dateStr); } catch { dateObj = null; }
 
+      allDates.forEach(dateISO => {
+        // Aggiorna lastKnown con prezzi del giorno
         results.forEach(r => {
-          if (priceMap[dateStr]?.[r.ticker]) lastKnown[r.ticker] = priceMap[dateStr][r.ticker];
+          if (priceMap[dateISO]?.[r.ticker] != null) {
+            lastKnown[r.ticker] = priceMap[dateISO][r.ticker];
+          }
         });
 
         let total = 0;
         let anyActive = false;
         results.forEach(r => {
-          if (!r.buyDate || !dateObj || dateObj >= r.buyDate) {
-            const price = lastKnown[r.ticker] || r.candles[r.candles.length - 1]?.price;
+          // Includi il titolo solo se la data è >= data acquisto
+          if (!r.buyDateISO || dateISO >= r.buyDateISO) {
+            const price = lastKnown[r.ticker];
             if (price) { total += r.qty * price; anyActive = true; }
           }
         });
-        if (anyActive && total > 0) series.push({ date: dateStr, valore: parseFloat(total.toFixed(2)) });
+        if (anyActive && total > 0) {
+          // Label visuale: "10 mar" per assi X
+          const d = new Date(dateISO + "T12:00:00");
+          const label = d.toLocaleDateString("it-IT", { day: "2-digit", month: "short" });
+          series.push({ date: dateISO, label, valore: parseFloat(total.toFixed(2)) });
+        }
       });
 
       setRealChartData(series);
 
       // Variazioni da serie reale
-      const now = series[series.length - 1]?.valore || 0;
-      const ago30  = series[Math.max(0, series.length - 30)]?.valore;
-      const ago365 = series[Math.max(0, series.length - 252)]?.valore; // ~1 anno trading days
+      const nowVal = series[series.length - 1]?.valore || 0;
+      const findAgo = (days) => {
+        const target = new Date(Date.now() - days * 86400000).toISOString().split("T")[0];
+        // Trova il punto più vicino
+        const pt = series.filter(p => p.date <= target).slice(-1)[0];
+        return pt?.valore;
+      };
 
       const mkVar = (old) => {
-        if (!old || !now) return null;
-        const pnl = now - old;
+        if (!old || !nowVal) return null;
+        const pnl = nowVal - old;
         return { pnl: parseFloat(pnl.toFixed(2)), pct: parseFloat(((pnl/old)*100).toFixed(2)) };
       };
 
       setVariations({
-        day: { pnl: parseFloat(dayPnl.toFixed(2)), pct: parseFloat(dayPct.toFixed(2)) },
-        month: mkVar(ago30),
-        year:  mkVar(ago365),
+        day:   { pnl: parseFloat(dayPnl.toFixed(2)), pct: parseFloat(dayPct.toFixed(2)) },
+        month: mkVar(findAgo(30)),
+        year:  mkVar(findAgo(365)),
       });
       setVarLoading(false);
       setChartLoading(false);
     }).catch(() => { setVarLoading(false); setChartLoading(false); });
   }, [stocks.map(s => s.ticker + s.qty + s.buyDate).join(",")]);
 
-  // Slice grafico in base al periodo
+  // Slice grafico in base al periodo selezionato
   const chartData = useMemo(() => {
     if (!realChartData.length) return [];
     const n = realChartData.length;
+    if (chartPeriod === "Inizio") return realChartData;
     const sliceMap = { "1M": 30, "3M": 63, "6M": 126, "1A": 252 };
-    const slice = chartPeriod === "Inizio" ? n : Math.min(sliceMap[chartPeriod] || 30, n);
-    return realChartData.slice(-slice);
+    const days = sliceMap[chartPeriod] || 30;
+    const cutoff = new Date(Date.now() - days * 86400000).toISOString().split("T")[0];
+    const filtered = realChartData.filter(p => p.date >= cutoff);
+    return filtered.length > 1 ? filtered : realChartData.slice(-days);
   }, [realChartData, chartPeriod]);
 
-  // Marker acquisti sul grafico
+  // Marker acquisti: trova il punto più vicino alla data di acquisto
   const purchaseMarkers = useMemo(() => {
     if (!chartData.length) return [];
     const markers = [];
     stocks.forEach(s => {
-      if (!s.buyDate) return;
-      // Trova la data più vicina nel chartData
-      const idx = chartData.findIndex(pt => {
-        try {
-          const ptDate = new Date(pt.date);
-          const bd = s.buyDate ? (() => {
-            const p = s.buyDate.split("/");
-            if (p.length !== 3) return null;
-            const yr = p[2].length === 2 ? "20" + p[2] : p[2];
-            return new Date(`${yr}-${p[1].padStart(2,"0")}-${p[0].padStart(2,"0")}`);
-          })() : null;
-          if (!bd) return false;
-          return Math.abs(ptDate - bd) < 86400000 * 3;
-        } catch { return false; }
-      });
-      if (idx >= 0) markers.push({ ...chartData[idx], ticker: s.ticker, qty: s.qty, buyPrice: s.buyPrice, idx });
+      const bd = parseBuyDate(s.buyDate);
+      if (!bd) return;
+      const bdISO = bd.toISOString().split("T")[0];
+      // Trova punto con data >= bdISO più vicino
+      const pt = chartData.find(p => p.date >= bdISO) || chartData[0];
+      if (pt) markers.push({ ...pt, ticker: s.ticker, qty: s.qty, buyPrice: s.buyPrice });
     });
-    return markers;
+    // Deduplicazione per stessa data
+    const seen = new Set();
+    return markers.filter(m => { if (seen.has(m.date + m.ticker)) return false; seen.add(m.date + m.ticker); return true; });
   }, [chartData, stocks]);
 
   if (stocks.length === 0) return (
@@ -1716,22 +1729,23 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
                       <stop offset="100%" stopColor={lineColor} stopOpacity={0}/>
                     </linearGradient>
                   </defs>
-                  <XAxis dataKey="date" tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false}
+                  <XAxis dataKey="label" tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false}
                     interval="preserveStartEnd" tickMargin={8}/>
                   <YAxis hide domain={["auto","auto"]}/>
                   <Tooltip
                     contentStyle={{ background: "#0f1117", border: "1px solid #1a1d26", borderRadius: 6, fontSize: 11, color: "#E8E6DF", padding: "6px 12px" }}
-                    formatter={v => [`$${fmt(v)}`, ""]}
-                    labelStyle={{ color: "#555", fontSize: 10 }}
+                    formatter={(v, name, props) => [`$${fmt(v)}`, ""]}
+                    labelFormatter={label => `${label}`}
+                    labelStyle={{ color: "#555", fontSize: 10, marginBottom: 2 }}
                     cursor={{ stroke: lineColor, strokeWidth: 1, strokeDasharray: "4 2" }}
                   />
                   <Area type="monotone" dataKey="valore" stroke={lineColor} strokeWidth={1.5}
                     fill="url(#gqGrad)" dot={false}
                     activeDot={{ r: 4, fill: lineColor, stroke: "#0D0F14", strokeWidth: 2 }}/>
                   {purchaseMarkers.map(m => (
-                    <ReferenceLine key={m.ticker + m.date} x={m.date}
-                      stroke="#7EB8F744" strokeDasharray="3 3" strokeWidth={1}
-                      label={{ value: m.ticker, position: "top", fill: "#7EB8F7", fontSize: 8 }}/>
+                    <ReferenceLine key={m.ticker + m.date} x={m.label}
+                      stroke="#7EB8F755" strokeDasharray="3 3" strokeWidth={1}
+                      label={{ value: m.ticker, position: "insideTopRight", fill: "#7EB8F7", fontSize: 8 }}/>
                   ))}
                 </AreaChart>
               </ResponsiveContainer>
@@ -2699,18 +2713,24 @@ export default function App() {
       // 🔄 Refresh prezzi sempre al login — serve per marketState e badge corretti
       if (mapped.length > 0) {
         mapped.forEach(stock => {
-          // Fix settore mancante o "Altro" — fetch da Yahoo
+          // Fix settore mancante: prima controlla ETF noti, poi Yahoo
           const needsSector = !stock.sector || stock.sector === "Altro" || stock.sector === "—";
+          const KNOWN_ETFS = ["QQQ","SPY","IVV","VOO","VTI","VEA","VWO","XLE","XLF","XLK","XLV","XLI","XLP","XLY","XLB","XLU","XLRE","XLC","GLD","SLV","TLT","IEF","HYG","LQD","ARKK","ARKG","IWM","EEM","UUP","CQQQ","TIPS","BIL","SHY"];
           if (needsSector) {
-            fetch(`${API_BASE}/api/search?q=${encodeURIComponent(stock.ticker)}`)
-              .then(r => r.json())
-              .then(d => {
-                const match = d.results?.find(r => r.ticker === stock.ticker);
-                if (match?.sector && match.sector !== "Altro") {
-                  setStocksRaw(prev => prev.map(s => s.id === stock.id ? { ...s, sector: match.sector } : s));
-                  if (stock.dbId) saveStock(user.id, { ...stock, sector: match.sector, dbId: stock.dbId }).catch(() => {});
-                }
-              }).catch(() => {});
+            if (KNOWN_ETFS.includes(stock.ticker.toUpperCase())) {
+              setStocksRaw(prev => prev.map(s => s.id === stock.id ? { ...s, sector: "ETF" } : s));
+              if (stock.dbId) saveStock(user.id, { ...stock, sector: "ETF", dbId: stock.dbId }).catch(() => {});
+            } else {
+              fetch(`${API_BASE}/api/search?q=${encodeURIComponent(stock.ticker)}`)
+                .then(r => r.json())
+                .then(d => {
+                  const match = d.results?.find(r => r.ticker === stock.ticker);
+                  if (match?.sector && match.sector !== "Altro") {
+                    setStocksRaw(prev => prev.map(s => s.id === stock.id ? { ...s, sector: match.sector } : s));
+                    if (stock.dbId) saveStock(user.id, { ...stock, sector: match.sector, dbId: stock.dbId }).catch(() => {});
+                  }
+                }).catch(() => {});
+            }
           }
 
           fetchRealPrice(stock.ticker, true).then(result => {
