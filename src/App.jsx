@@ -992,99 +992,125 @@ function SimulazioniTab({ stocks, sym, rate, fmt, fmtPct }) {
 // ─── ALLOCATION CARD ──────────────────────────────────────────────────────────
 const PIE_COLORS = ["#5B8DEF","#26C6DA","#5EC98A","#F4C542","#BF6EEA","#E87040","#F06292","#FF7043","#80CBC4","#FFD54F"];
 
-function AllocationCard({ stocks, totalValue, eurRate, fmt, fmtPct }) {
+function AllocationCard({ stocks, totalValue, eurRate, fmt }) {
   const [pieTab, setPieTab] = useState("settori");
+  const [etfHoldings, setEtfHoldings] = useState({}); // { ticker: { sectorWeights: [...] } }
+  const [etfLoading, setEtfLoading] = useState(false);
 
+  // ETF: lista titoli con settore ETF
+  const etfStocks = useMemo(() => stocks.filter(s => s.sector === "ETF"), [stocks]);
+
+  // Fetch ETF holdings al mount o quando cambia lista ETF
+  useEffect(() => {
+    if (etfStocks.length === 0) return;
+    setEtfLoading(true);
+    Promise.all(etfStocks.map(s =>
+      fetch(`${API_BASE}/api/analyst?symbol=${encodeURIComponent(s.ticker)}`)
+        .then(r => r.json())
+        .then(d => ({ ticker: s.ticker, sectorWeights: d.sectorWeights || [] }))
+        .catch(() => ({ ticker: s.ticker, sectorWeights: [] }))
+    )).then(results => {
+      const map = {};
+      results.forEach(r => { map[r.ticker] = r; });
+      setEtfHoldings(map);
+      setEtfLoading(false);
+    });
+  }, [etfStocks.map(s => s.ticker).join(",")]);
+
+  // Calcola dati torta con ETF scomposti
   const pieData = useMemo(() => {
-    if (pieTab === "settori") {
-      const map = {};
-      stocks.forEach(s => {
+    const map = {};
+
+    stocks.forEach(s => {
+      const posVal = s.qty * s.currentPrice;
+      const holdings = etfHoldings[s.ticker];
+
+      // Se è ETF e abbiamo i dati di scomposizione → scomponi per settore
+      if (s.sector === "ETF" && holdings?.sectorWeights?.length > 0 && pieTab === "settori") {
+        holdings.sectorWeights.forEach(sw => {
+          map[sw.sector] = (map[sw.sector] || 0) + posVal * (sw.weight / 100);
+        });
+        return;
+      }
+
+      if (pieTab === "settori") {
         const key = s.sector || "Altro";
-        map[key] = (map[key] || 0) + s.qty * s.currentPrice;
-      });
-      return Object.entries(map).map(([name, value]) => ({ name, value: parseFloat(value.toFixed(2)) }))
-        .sort((a, b) => b.value - a.value);
-    }
-    if (pieTab === "posizioni") {
-      return stocks.map(s => ({
-        name: s.ticker,
-        value: parseFloat((s.qty * s.currentPrice).toFixed(2))
-      })).sort((a, b) => b.value - a.value);
-    }
-    if (pieTab === "tipo") {
-      const map = {};
-      stocks.forEach(s => {
-        const tipo = ["ETF","Crypto"].includes(s.sector) ? s.sector : "Azioni";
-        map[tipo] = (map[tipo] || 0) + s.qty * s.currentPrice;
-      });
-      return Object.entries(map).map(([name, value]) => ({ name, value: parseFloat(value.toFixed(2)) }))
-        .sort((a, b) => b.value - a.value);
-    }
-    return [];
-  }, [stocks, pieTab]);
+        map[key] = (map[key] || 0) + posVal;
+      } else if (pieTab === "posizioni") {
+        map[s.ticker] = (map[s.ticker] || 0) + posVal;
+      } else if (pieTab === "tipo") {
+        const tipo = s.sector === "ETF" ? "ETF" : s.sector === "Crypto" ? "Crypto" : "Azioni";
+        map[tipo] = (map[tipo] || 0) + posVal;
+      }
+    });
+
+    return Object.entries(map)
+      .map(([name, value]) => ({ name, value: parseFloat(value.toFixed(2)) }))
+      .sort((a, b) => b.value - a.value);
+  }, [stocks, pieTab, etfHoldings]);
 
   const [activeIndex, setActiveIndex] = useState(null);
-  const centerVal = activeIndex !== null && pieData[activeIndex]
-    ? pieData[activeIndex]
-    : null;
+  const centerVal = activeIndex !== null ? pieData[activeIndex] : null;
 
   return (
     <div className="card" style={{ marginBottom: 16 }}>
       {/* Tab selector */}
-      <div style={{ display: "flex", gap: 0, marginBottom: 20, borderBottom: "1px solid #1a1d26" }}>
-        {["settori","posizioni","tipo"].map(t => (
-          <button key={t} onClick={() => setPieTab(t)}
-            style={{ background: "none", border: "none", borderBottom: pieTab === t ? "2px solid #F4C542" : "2px solid transparent",
-              color: pieTab === t ? "#E8E6DF" : "#444", fontFamily: "inherit", fontSize: 11,
-              padding: "6px 14px", cursor: "pointer", textTransform: "capitalize", transition: "all 0.15s", marginBottom: -1 }}>
-            {t}
-          </button>
-        ))}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, borderBottom: "1px solid #1a1d26", paddingBottom: 0 }}>
+        <div style={{ display: "flex", gap: 0 }}>
+          {["settori","posizioni","tipo"].map(t => (
+            <button key={t} onClick={() => setPieTab(t)}
+              style={{ background: "none", border: "none", borderBottom: pieTab === t ? "2px solid #F4C542" : "2px solid transparent",
+                color: pieTab === t ? "#E8E6DF" : "#444", fontFamily: "inherit", fontSize: 11,
+                padding: "6px 12px", cursor: "pointer", textTransform: "capitalize", transition: "all 0.15s", marginBottom: -1 }}>
+              {t}
+            </button>
+          ))}
+        </div>
+        {etfLoading && <span style={{ fontSize: 9, color: "#444" }}>caricamento ETF…</span>}
+        {!etfLoading && etfStocks.length > 0 && pieTab === "settori" && (
+          <span style={{ fontSize: 9, color: "#5EC98A" }}>✓ ETF scomposti</span>
+        )}
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 32, flexWrap: "wrap" }}>
-        {/* Grande torta con valore al centro */}
-        <div style={{ position: "relative", flexShrink: 0 }}>
-          <PieChart width={220} height={220}>
-            <Pie
-              data={pieData} cx={105} cy={105}
-              innerRadius={72} outerRadius={100}
+      {/* Layout compatto: torta più piccola + legenda a destra */}
+      <div style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: 20, alignItems: "center" }}>
+        {/* Torta */}
+        <div style={{ position: "relative", width: 180, height: 180, flexShrink: 0 }}>
+          <PieChart width={180} height={180}>
+            <Pie data={pieData} cx={85} cy={85}
+              innerRadius={58} outerRadius={82}
               dataKey="value" paddingAngle={1.5}
               onMouseEnter={(_, i) => setActiveIndex(i)}
               onMouseLeave={() => setActiveIndex(null)}>
               {pieData.map((_, i) => (
                 <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]}
-                  opacity={activeIndex === null || activeIndex === i ? 1 : 0.35}
-                  style={{ cursor: "pointer", transition: "opacity 0.15s" }}/>
+                  opacity={activeIndex === null || activeIndex === i ? 1 : 0.3}
+                  style={{ cursor: "pointer" }}/>
               ))}
             </Pie>
           </PieChart>
-          {/* Centro torta */}
-          <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", textAlign: "center", pointerEvents: "none" }}>
+          {/* Centro */}
+          <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-46%,-50%)", textAlign: "center", pointerEvents: "none", width: 90 }}>
             {centerVal ? (
               <>
-                <div style={{ fontSize: 10, color: "#555", marginBottom: 2 }}>{centerVal.name}</div>
-                <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 300, color: "#E8E6DF" }}>
-                  ${fmt(centerVal.value)}
-                </div>
-                <div style={{ fontSize: 11, color: "#F4C542", fontWeight: 500 }}>
+                <div style={{ fontSize: 9, color: "#555", marginBottom: 1, lineHeight: 1.2 }}>{centerVal.name}</div>
+                <div style={{ fontFamily: "'Fraunces', serif", fontSize: 13, fontWeight: 300, color: "#E8E6DF" }}>${fmt(centerVal.value)}</div>
+                <div style={{ fontSize: 12, color: "#F4C542", fontWeight: 600 }}>
                   {totalValue > 0 ? ((centerVal.value / totalValue) * 100).toFixed(1) : 0}%
                 </div>
               </>
             ) : (
               <>
-                <div style={{ fontSize: 9, color: "#444", marginBottom: 3 }}>Patrimonio</div>
-                <div style={{ fontFamily: "'Fraunces', serif", fontSize: 17, fontWeight: 300, color: "#E8E6DF" }}>
-                  ${fmt(totalValue)}
-                </div>
-                <div style={{ fontSize: 10, color: "#555" }}>€{fmt(totalValue * eurRate)}</div>
+                <div style={{ fontSize: 8, color: "#444", marginBottom: 2 }}>Patrimonio</div>
+                <div style={{ fontFamily: "'Fraunces', serif", fontSize: 14, fontWeight: 300, color: "#E8E6DF" }}>${fmt(totalValue)}</div>
+                <div style={{ fontSize: 9, color: "#555" }}>€{fmt(totalValue * eurRate)}</div>
               </>
             )}
           </div>
         </div>
 
-        {/* Legenda */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: 1, minWidth: 160 }}>
+        {/* Legenda compatta */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {pieData.map((item, i) => {
             const pct = totalValue > 0 ? ((item.value / totalValue) * 100).toFixed(1) : 0;
             const isActive = activeIndex === i;
@@ -1092,12 +1118,12 @@ function AllocationCard({ stocks, totalValue, eurRate, fmt, fmtPct }) {
               <div key={item.name}
                 onMouseEnter={() => setActiveIndex(i)}
                 onMouseLeave={() => setActiveIndex(null)}
-                style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer",
-                  opacity: activeIndex === null || isActive ? 1 : 0.4, transition: "opacity 0.15s" }}>
-                <div style={{ width: 10, height: 10, borderRadius: 3, flexShrink: 0, background: PIE_COLORS[i % PIE_COLORS.length] }}/>
-                <span style={{ fontSize: 11, color: isActive ? "#E8E6DF" : "#888", flex: 1 }}>{item.name}</span>
-                <span style={{ fontSize: 11, color: "#E8E6DF", fontWeight: 500, minWidth: 36, textAlign: "right" }}>{pct}%</span>
-                <span style={{ fontSize: 10, color: "#444", minWidth: 70, textAlign: "right" }}>${fmt(item.value)}</span>
+                style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer",
+                  opacity: activeIndex === null || isActive ? 1 : 0.35, transition: "opacity 0.15s" }}>
+                <div style={{ width: 8, height: 8, borderRadius: 2, flexShrink: 0, background: PIE_COLORS[i % PIE_COLORS.length] }}/>
+                <span style={{ fontSize: 11, color: isActive ? "#E8E6DF" : "#777", flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.name}</span>
+                <span style={{ fontSize: 11, color: "#E8E6DF", fontWeight: 600, minWidth: 38, textAlign: "right" }}>{pct}%</span>
+                <span style={{ fontSize: 10, color: "#444", minWidth: 65, textAlign: "right" }}>${fmt(item.value)}</span>
               </div>
             );
           })}
@@ -1353,6 +1379,7 @@ function ForecastTab({ stocks, fmt, fmtPct, sym, rate }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const allLoadedRef = useRef(false);
+  const [analystData, setAnalystData] = useState({}); // { ticker: { analyst, ... } }
 
   // Carica tutti i titoli in background al mount per card aggregata stabile
   useEffect(() => {
@@ -1380,6 +1407,15 @@ function ForecastTab({ stocks, fmt, fmtPct, sym, rate }) {
         setLoading(false);
       })
       .catch(() => { setError("Errore nel caricamento dati"); setLoading(false); });
+  }, [selected?.ticker]);
+
+  // Fetch analyst ratings per il titolo selezionato
+  useEffect(() => {
+    if (!selected || analystData[selected.ticker]) return;
+    fetch(`${API_BASE}/api/analyst?symbol=${encodeURIComponent(selected.ticker)}`)
+      .then(r => r.json())
+      .then(d => { if (!d.error) setAnalystData(prev => ({ ...prev, [selected.ticker]: d })); })
+      .catch(() => {});
   }, [selected?.ticker]);
 
   const portfolioForecast = useMemo(() => {
@@ -1522,6 +1558,94 @@ function ForecastTab({ stocks, fmt, fmtPct, sym, rate }) {
               ))}
             </div>
           </div>
+
+          {/* ── ANALYST RATINGS ── */}
+          {(() => {
+            const a = analystData[selected?.ticker]?.analyst;
+            if (!a || !a.targetMean) return null;
+            const rec = a.recommendation;
+            const recColor = rec === "strongBuy" || rec === "buy" ? "#5EC98A" : rec === "hold" ? "#F4C542" : "#E87040";
+            const recLabel = { strongBuy: "Acquisto Forte", buy: "Acquisto", hold: "Neutrale", sell: "Vendita", strongSell: "Vendita Forte" }[rec] || rec;
+            const total = (a.strongBuy + a.buy + a.hold + a.sell + a.strongSell) || 1;
+            const upside = a.currentPrice ? (((a.targetMean - a.currentPrice) / a.currentPrice) * 100).toFixed(1) : null;
+            return (
+              <div className="card" style={{ border: "1px solid #2a2d35" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+                  <div>
+                    <div style={{ fontSize: 8, color: "#F4C542", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6 }}>
+                      📊 Rating Analisti — {selected.ticker}
+                    </div>
+                    {a.numberOfAnalysts && (
+                      <div style={{ fontSize: 10, color: "#444" }}>{a.numberOfAnalysts} analisti coperti</div>
+                    )}
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: recColor, textTransform: "uppercase", letterSpacing: "0.05em" }}>{recLabel}</div>
+                    {upside && <div style={{ fontSize: 10, color: upside > 0 ? "#5EC98A" : "#E87040", marginTop: 2 }}>Upside: {upside > 0 ? "+" : ""}{upside}%</div>}
+                  </div>
+                </div>
+
+                {/* Target price */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginBottom: 16 }}>
+                  {[
+                    { l: "Target min", v: a.targetLow,  c: "#E87040" },
+                    { l: "Target medio", v: a.targetMean, c: "#F4C542" },
+                    { l: "Target max", v: a.targetHigh, c: "#5EC98A" },
+                  ].map(t => t.v ? (
+                    <div key={t.l} style={{ textAlign: "center", background: "#0f1117", borderRadius: 6, padding: "10px 6px" }}>
+                      <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>{t.l}</div>
+                      <div style={{ fontFamily: "'Fraunces', serif", fontSize: 18, color: t.c }}>${fmt(t.v)}</div>
+                      {a.currentPrice && (
+                        <div style={{ fontSize: 9, color: t.c, marginTop: 2 }}>
+                          {(((t.v - a.currentPrice) / a.currentPrice) * 100) > 0 ? "+" : ""}
+                          {(((t.v - a.currentPrice) / a.currentPrice) * 100).toFixed(1)}%
+                        </div>
+                      )}
+                    </div>
+                  ) : null)}
+                </div>
+
+                {/* Consensus bar */}
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>Consenso analisti</div>
+                  <div style={{ display: "flex", borderRadius: 4, overflow: "hidden", height: 8 }}>
+                    {[
+                      { key: "strongBuy", color: "#2E7D32", val: a.strongBuy },
+                      { key: "buy",       color: "#5EC98A", val: a.buy },
+                      { key: "hold",      color: "#F4C542", val: a.hold },
+                      { key: "sell",      color: "#E87040", val: a.sell },
+                      { key: "strongSell",color: "#B71C1C", val: a.strongSell },
+                    ].map(b => b.val > 0 ? (
+                      <div key={b.key} style={{ background: b.color, width: `${(b.val/total)*100}%`, transition: "width 0.3s" }}/>
+                    ) : null)}
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
+                    {[
+                      { label: "Forte acq.", val: a.strongBuy, color: "#2E7D32" },
+                      { label: "Acquisto",   val: a.buy,       color: "#5EC98A" },
+                      { label: "Neutrale",   val: a.hold,      color: "#F4C542" },
+                      { label: "Vendita",    val: a.sell,      color: "#E87040" },
+                      { label: "Forte vend.", val: a.strongSell, color: "#B71C1C" },
+                    ].filter(b => b.val > 0).map(b => (
+                      <div key={b.label} style={{ textAlign: "center" }}>
+                        <div style={{ fontSize: 10, fontWeight: 600, color: b.color }}>{b.val}</div>
+                        <div style={{ fontSize: 8, color: "#444" }}>{b.label}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Key stats */}
+                {(a.forwardPE || a.beta) && (
+                  <div style={{ display: "flex", gap: 16, paddingTop: 12, borderTop: "1px solid #1a1d26" }}>
+                    {a.forwardPE && <div><span style={{ fontSize: 9, color: "#444" }}>Forward P/E: </span><span style={{ fontSize: 11, color: "#888" }}>{a.forwardPE.toFixed(1)}</span></div>}
+                    {a.beta && <div><span style={{ fontSize: 9, color: "#444" }}>Beta: </span><span style={{ fontSize: 11, color: "#888" }}>{a.beta.toFixed(2)}</span></div>}
+                    {a.shortRatio && <div><span style={{ fontSize: 9, color: "#444" }}>Short ratio: </span><span style={{ fontSize: 11, color: "#888" }}>{a.shortRatio.toFixed(1)}</span></div>}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           <div className="card">
             <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 14 }}>
