@@ -1,44 +1,12 @@
-// api/analyst.js — Analyst ratings + ETF holdings
-// Usa query1 con crumb per evitare blocco Yahoo
+// api/analyst.js — Analyst ratings + target price da Finnhub
+// ETF holdings da FMP (Financial Modeling Prep) con chiave gratuita
 
 const SECTOR_MAP = {
-  "technology": "Tech", "financialservices": "Finanza", "financial_services": "Finanza",
-  "healthcare": "Salute", "energy": "Energia", "consumercyclical": "Consumer",
-  "consumer_cyclical": "Consumer", "consumerdefensive": "Consumer", "consumer_defensive": "Consumer",
-  "industrials": "Industriali", "realestate": "Real Estate", "real_estate": "Real Estate",
-  "utilities": "Utility", "basicmaterials": "Materiali", "basic_materials": "Materiali",
-  "communicationservices": "Telecom", "communication_services": "Telecom",
+  "Technology": "Tech", "Financial Services": "Finanza", "Healthcare": "Salute",
+  "Energy": "Energia", "Consumer Cyclical": "Consumer", "Consumer Defensive": "Consumer",
+  "Industrials": "Industriali", "Real Estate": "Real Estate", "Utilities": "Utility",
+  "Basic Materials": "Materiali", "Communication Services": "Telecom",
 };
-
-function normalizeSector(raw) {
-  if (!raw) return "Altro";
-  return SECTOR_MAP[raw.toLowerCase().replace(/[^a-z]/g, "")] || raw;
-}
-
-const HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-  "Accept": "application/json",
-  "Accept-Language": "en-US,en;q=0.9",
-  "Referer": "https://finance.yahoo.com/quote/AAPL/analysis/",
-  "Origin": "https://finance.yahoo.com",
-};
-
-async function getCrumb() {
-  // Ottieni cookie + crumb da Yahoo
-  const r = await fetch("https://query2.finance.yahoo.com/v1/test/getcrumb", { headers: HEADERS });
-  if (!r.ok) throw new Error(`Crumb error ${r.status}`);
-  return r.text();
-}
-
-async function fetchModules(symbol, modules, crumb) {
-  const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=${encodeURIComponent(modules)}&crumb=${encodeURIComponent(crumb)}`;
-  const r = await fetch(url, { headers: HEADERS });
-  if (!r.ok) {
-    const body = await r.text();
-    throw new Error(`Yahoo ${r.status}: ${body.slice(0, 200)}`);
-  }
-  return r.json();
-}
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", process.env.ALLOWED_ORIGIN || "*");
@@ -49,57 +17,66 @@ export default async function handler(req, res) {
   const { symbol } = req.query;
   if (!symbol) return res.status(400).json({ error: "Missing symbol" });
 
-  try {
-    const crumb = await getCrumb();
-    console.log(`[analyst] ${symbol} crumb: ${crumb?.slice(0,8)}...`);
+  const finnhubKey = process.env.FINNHUB_API_KEY;
+  const fmpKey = process.env.FMP_API_KEY || "demo";
 
-    const [summaryData, holdingsData] = await Promise.all([
-      fetchModules(symbol, "financialData,recommendationTrend,defaultKeyStatistics", crumb),
-      fetchModules(symbol, "topHoldings", crumb),
+  try {
+    // Finnhub: price target + recommendation trends (funziona da server)
+    const [targetRes, recRes, etfRes] = await Promise.all([
+      fetch(`https://finnhub.io/api/v1/stock/price-target?symbol=${symbol}&token=${finnhubKey}`),
+      fetch(`https://finnhub.io/api/v1/stock/recommendation?symbol=${symbol}&token=${finnhubKey}`),
+      // FMP: ETF sector holdings (piano gratuito)
+      fetch(`https://financialmodelingprep.com/api/v3/etf-sector-weightings/${symbol}?apikey=${fmpKey}`),
     ]);
 
-    const result  = summaryData?.quoteSummary?.result?.[0];
-    const fin     = result?.financialData || {};
-    const rec     = result?.recommendationTrend?.trend?.[0] || {};
-    const stats   = result?.defaultKeyStatistics || {};
-    const holdings = holdingsData?.quoteSummary?.result?.[0]?.topHoldings || {};
+    const targetData = await targetRes.json();
+    const recData    = await recRes.json();
+    const etfData    = await etfRes.json();
 
-    console.log(`[analyst] ${symbol} targetMean: ${fin.targetMeanPrice?.raw}, sectorWeights: ${holdings.sectorWeightings?.length || 0}`);
+    console.log(`[analyst] ${symbol} target:`, JSON.stringify(targetData).slice(0,100));
+    console.log(`[analyst] ${symbol} etf sectors:`, JSON.stringify(etfData).slice(0,100));
 
+    // Analyst target price
     const analyst = {
-      targetMean:       fin.targetMeanPrice?.raw        || null,
-      targetHigh:       fin.targetHighPrice?.raw        || null,
-      targetLow:        fin.targetLowPrice?.raw         || null,
-      currentPrice:     fin.currentPrice?.raw           || null,
-      recommendation:   fin.recommendationKey           || null,
-      numberOfAnalysts: fin.numberOfAnalystOpinions?.raw|| null,
-      strongBuy:  rec.strongBuy  || 0,
-      buy:        rec.buy        || 0,
-      hold:       rec.hold       || 0,
-      sell:       rec.sell       || 0,
-      strongSell: rec.strongSell || 0,
-      forwardPE:  stats.forwardPE?.raw  || null,
-      beta:       stats.beta?.raw       || null,
-      shortRatio: stats.shortRatio?.raw || null,
+      targetMean:       targetData.targetMean   || null,
+      targetHigh:       targetData.targetHigh   || null,
+      targetLow:        targetData.targetLow    || null,
+      currentPrice:     targetData.lastUpdated  ? null : null,
+      recommendation:   recData[0] ? getConsensus(recData[0]) : null,
+      numberOfAnalysts: targetData.targetMean   ? (recData[0]?.buy + recData[0]?.hold + recData[0]?.sell || null) : null,
+      strongBuy:  recData[0]?.strongBuy  || 0,
+      buy:        recData[0]?.buy        || 0,
+      hold:       recData[0]?.hold       || 0,
+      sell:       recData[0]?.sell       || 0,
+      strongSell: recData[0]?.strongSell || 0,
+      forwardPE:  null,
+      beta:       null,
     };
 
-    const sectorWeights = (holdings.sectorWeightings || []).flatMap(sw =>
-      Object.entries(sw).map(([sector, weight]) => ({
-        sector: normalizeSector(sector),
-        weight: parseFloat(((weight?.raw ?? weight) * 100).toFixed(1)),
-      }))
-    ).filter(s => s.weight > 0.1).sort((a, b) => b.weight - a.weight);
+    // ETF sector weights da FMP
+    const sectorWeights = Array.isArray(etfData)
+      ? etfData.map(s => ({
+          sector: SECTOR_MAP[s.sector] || s.sector || "Altro",
+          weight: parseFloat((parseFloat(s.weightPercentage) || 0).toFixed(1)),
+        })).filter(s => s.weight > 0.1).sort((a, b) => b.weight - a.weight)
+      : [];
 
-    const topHoldings = (holdings.holdings || []).slice(0, 10).map(h => ({
-      ticker: h.symbol,
-      name:   h.holdingName,
-      weight: parseFloat(((h.holdingPercent?.raw || 0) * 100).toFixed(2)),
-    }));
-
-    return res.status(200).json({ analyst, sectorWeights, topHoldings });
+    return res.status(200).json({ analyst, sectorWeights, topHoldings: [] });
 
   } catch (err) {
     console.error(`[analyst] ${symbol} error:`, err.message);
     return res.status(500).json({ error: err.message });
   }
+}
+
+function getConsensus(rec) {
+  if (!rec) return null;
+  const total = rec.strongBuy + rec.buy + rec.hold + rec.sell + rec.strongSell;
+  if (!total) return null;
+  const score = (rec.strongBuy * 5 + rec.buy * 4 + rec.hold * 3 + rec.sell * 2 + rec.strongSell * 1) / total;
+  if (score >= 4.5) return "strongBuy";
+  if (score >= 3.5) return "buy";
+  if (score >= 2.5) return "hold";
+  if (score >= 1.5) return "sell";
+  return "strongSell";
 }
