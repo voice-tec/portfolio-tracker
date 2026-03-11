@@ -7,8 +7,10 @@ const SECTOR_MAP = {
   "Basic Materials": "Materiali", "Communication Services": "Telecom",
 };
 
-// Pesi settoriali hardcoded per ETF principali (fonte: iShares/Invesco factsheets, aggiornati 2024)
+// Pesi settoriali hardcoded per ETF principali
+// ETF US: fonte Yahoo Finance/Morningstar | ETF EU: fonte MSCI/Vanguard factsheets set-ott 2025
 const ETF_SECTORS = {
+  // ── ETF US ────────────────────────────────────────────────────────────────
   "QQQ":  [{ sector:"Tech", weight:58.2 },{ sector:"Telecom", weight:17.1 },{ sector:"Consumer", weight:12.3 },{ sector:"Salute", weight:6.8 },{ sector:"Industriali", weight:3.9 },{ sector:"Utility", weight:0.8 },{ sector:"Materiali", weight:0.9 }],
   "SPY":  [{ sector:"Tech", weight:31.5 },{ sector:"Finanza", weight:13.2 },{ sector:"Salute", weight:11.8 },{ sector:"Consumer", weight:10.9 },{ sector:"Industriali", weight:8.7 },{ sector:"Telecom", weight:8.9 },{ sector:"Energia", weight:3.8 },{ sector:"Real Estate", weight:2.5 },{ sector:"Materiali", weight:2.5 },{ sector:"Utility", weight:2.4 },{ sector:"Altro", weight:3.8 }],
   "IVV":  [{ sector:"Tech", weight:31.5 },{ sector:"Finanza", weight:13.2 },{ sector:"Salute", weight:11.8 },{ sector:"Consumer", weight:10.9 },{ sector:"Industriali", weight:8.7 },{ sector:"Telecom", weight:8.9 },{ sector:"Energia", weight:3.8 },{ sector:"Real Estate", weight:2.5 },{ sector:"Materiali", weight:2.5 },{ sector:"Utility", weight:2.4 },{ sector:"Altro", weight:3.8 }],
@@ -16,6 +18,27 @@ const ETF_SECTORS = {
   "VTI":  [{ sector:"Tech", weight:29.8 },{ sector:"Finanza", weight:13.5 },{ sector:"Salute", weight:12.1 },{ sector:"Consumer", weight:11.2 },{ sector:"Industriali", weight:10.4 },{ sector:"Telecom", weight:8.2 },{ sector:"Energia", weight:4.1 },{ sector:"Real Estate", weight:3.8 },{ sector:"Materiali", weight:2.6 },{ sector:"Utility", weight:2.6 },{ sector:"Altro", weight:1.7 }],
   "VEA":  [{ sector:"Finanza", weight:20.1 },{ sector:"Industriali", weight:16.3 },{ sector:"Salute", weight:13.2 },{ sector:"Consumer", weight:12.8 },{ sector:"Tech", weight:10.9 },{ sector:"Materiali", weight:7.8 },{ sector:"Telecom", weight:5.6 },{ sector:"Energia", weight:5.1 },{ sector:"Utility", weight:4.2 },{ sector:"Real Estate", weight:3.0 },{ sector:"Altro", weight:1.0 }],
   "VWO":  [{ sector:"Finanza", weight:22.3 },{ sector:"Tech", weight:21.5 },{ sector:"Consumer", weight:13.8 },{ sector:"Energia", weight:7.2 },{ sector:"Materiali", weight:7.0 },{ sector:"Industriali", weight:6.8 },{ sector:"Telecom", weight:6.5 },{ sector:"Salute", weight:4.9 },{ sector:"Utility", weight:3.5 },{ sector:"Real Estate", weight:3.0 },{ sector:"Altro", weight:3.5 }],
+  // ── ETF EU UCITS — MSCI World (SWDA/IWDA/EUNL stessa composizione) ────────
+  // Fonte: MSCI World Index factsheet set 2025
+  "SWDA": [{ sector:"Tech", weight:26.2 },{ sector:"Finanza", weight:16.0 },{ sector:"Consumer", weight:11.2 },{ sector:"Industriali", weight:10.6 },{ sector:"Salute", weight:10.4 },{ sector:"Telecom", weight:8.1 },{ sector:"Beni primari", weight:6.1 },{ sector:"Energia", weight:3.7 },{ sector:"Materiali", weight:3.2 },{ sector:"Utility", weight:2.5 },{ sector:"Real Estate", weight:2.0 }],
+  "IWDA": [{ sector:"Tech", weight:26.2 },{ sector:"Finanza", weight:16.0 },{ sector:"Consumer", weight:11.2 },{ sector:"Industriali", weight:10.6 },{ sector:"Salute", weight:10.4 },{ sector:"Telecom", weight:8.1 },{ sector:"Beni primari", weight:6.1 },{ sector:"Energia", weight:3.7 },{ sector:"Materiali", weight:3.2 },{ sector:"Utility", weight:2.5 },{ sector:"Real Estate", weight:2.0 }],
+  "EUNL": [{ sector:"Tech", weight:26.2 },{ sector:"Finanza", weight:16.0 },{ sector:"Consumer", weight:11.2 },{ sector:"Industriali", weight:10.6 },{ sector:"Salute", weight:10.4 },{ sector:"Telecom", weight:8.1 },{ sector:"Beni primari", weight:6.1 },{ sector:"Energia", weight:3.7 },{ sector:"Materiali", weight:3.2 },{ sector:"Utility", weight:2.5 },{ sector:"Real Estate", weight:2.0 }],
+  // ── ETF EU UCITS — FTSE All-World (VWCE/VWRL stessa composizione) ─────────
+  // Fonte: Yahoo Finance VWCE.AS/VWCE.DE holdings mar 2026
+  "VWCE": [{ sector:"Tech", weight:27.0 },{ sector:"Finanza", weight:17.0 },{ sector:"Industriali", weight:10.8 },{ sector:"Consumer", weight:10.1 },{ sector:"Telecom", weight:9.0 },{ sector:"Salute", weight:8.8 },{ sector:"Beni primari", weight:5.1 },{ sector:"Materiali", weight:3.9 },{ sector:"Energia", weight:3.7 },{ sector:"Utility", weight:2.6 },{ sector:"Real Estate", weight:1.9 }],
+  "VWRL": [{ sector:"Tech", weight:27.0 },{ sector:"Finanza", weight:17.0 },{ sector:"Industriali", weight:10.8 },{ sector:"Consumer", weight:10.1 },{ sector:"Telecom", weight:9.0 },{ sector:"Salute", weight:8.8 },{ sector:"Beni primari", weight:5.1 },{ sector:"Materiali", weight:3.9 },{ sector:"Energia", weight:3.7 },{ sector:"Utility", weight:2.6 },{ sector:"Real Estate", weight:1.9 }],
+  // ── ETF EU UCITS — S&P 500 (CSPX/VUSA/SXR8/VUAA stessa composizione) ─────
+  // Fonte: iShares CSPX factsheet ott 2025
+  "CSPX": [{ sector:"Tech", weight:32.0 },{ sector:"Finanza", weight:14.0 },{ sector:"Salute", weight:12.0 },{ sector:"Consumer", weight:11.0 },{ sector:"Industriali", weight:9.0 },{ sector:"Telecom", weight:9.0 },{ sector:"Energia", weight:3.5 },{ sector:"Materiali", weight:2.5 },{ sector:"Utility", weight:2.5 },{ sector:"Real Estate", weight:2.5 },{ sector:"Beni primari", weight:2.0 }],
+  "VUSA": [{ sector:"Tech", weight:32.0 },{ sector:"Finanza", weight:14.0 },{ sector:"Salute", weight:12.0 },{ sector:"Consumer", weight:11.0 },{ sector:"Industriali", weight:9.0 },{ sector:"Telecom", weight:9.0 },{ sector:"Energia", weight:3.5 },{ sector:"Materiali", weight:2.5 },{ sector:"Utility", weight:2.5 },{ sector:"Real Estate", weight:2.5 },{ sector:"Beni primari", weight:2.0 }],
+  "SXR8": [{ sector:"Tech", weight:32.0 },{ sector:"Finanza", weight:14.0 },{ sector:"Salute", weight:12.0 },{ sector:"Consumer", weight:11.0 },{ sector:"Industriali", weight:9.0 },{ sector:"Telecom", weight:9.0 },{ sector:"Energia", weight:3.5 },{ sector:"Materiali", weight:2.5 },{ sector:"Utility", weight:2.5 },{ sector:"Real Estate", weight:2.5 },{ sector:"Beni primari", weight:2.0 }],
+  "VUAA": [{ sector:"Tech", weight:32.0 },{ sector:"Finanza", weight:14.0 },{ sector:"Salute", weight:12.0 },{ sector:"Consumer", weight:11.0 },{ sector:"Industriali", weight:9.0 },{ sector:"Telecom", weight:9.0 },{ sector:"Energia", weight:3.5 },{ sector:"Materiali", weight:2.5 },{ sector:"Utility", weight:2.5 },{ sector:"Real Estate", weight:2.5 },{ sector:"Beni primari", weight:2.0 }],
+  // ── ETF EU UCITS — Emerging Markets ──────────────────────────────────────
+  "IEMA": [{ sector:"Tech", weight:22.0 },{ sector:"Finanza", weight:21.0 },{ sector:"Consumer", weight:13.0 },{ sector:"Energia", weight:7.5 },{ sector:"Materiali", weight:7.0 },{ sector:"Industriali", weight:6.5 },{ sector:"Telecom", weight:6.0 },{ sector:"Salute", weight:5.0 },{ sector:"Utility", weight:4.0 },{ sector:"Real Estate", weight:3.0 },{ sector:"Altro", weight:5.0 }],
+  "IUSQ": [{ sector:"Tech", weight:26.0 },{ sector:"Finanza", weight:16.5 },{ sector:"Consumer", weight:11.0 },{ sector:"Industriali", weight:10.5 },{ sector:"Salute", weight:10.0 },{ sector:"Telecom", weight:8.5 },{ sector:"Beni primari", weight:5.5 },{ sector:"Energia", weight:4.0 },{ sector:"Materiali", weight:3.5 },{ sector:"Utility", weight:2.5 },{ sector:"Real Estate", weight:2.0 }],
+  // ── ETF EU UCITS — Europe ─────────────────────────────────────────────────
+  "MEUD": [{ sector:"Finanza", weight:20.0 },{ sector:"Industriali", weight:17.0 },{ sector:"Salute", weight:15.0 },{ sector:"Consumer", weight:12.0 },{ sector:"Materiali", weight:8.0 },{ sector:"Tech", weight:8.0 },{ sector:"Telecom", weight:6.0 },{ sector:"Energia", weight:5.5 },{ sector:"Utility", weight:5.0 },{ sector:"Real Estate", weight:3.5 }],
+  "XDWD": [{ sector:"Tech", weight:26.2 },{ sector:"Finanza", weight:16.0 },{ sector:"Consumer", weight:11.2 },{ sector:"Industriali", weight:10.6 },{ sector:"Salute", weight:10.4 },{ sector:"Telecom", weight:8.1 },{ sector:"Beni primari", weight:6.1 },{ sector:"Energia", weight:3.7 },{ sector:"Materiali", weight:3.2 },{ sector:"Utility", weight:2.5 },{ sector:"Real Estate", weight:2.0 }],
   "XLE":  [{ sector:"Energia", weight:100 }],
   "XLF":  [{ sector:"Finanza", weight:100 }],
   "XLK":  [{ sector:"Tech", weight:100 }],
@@ -66,8 +89,9 @@ export default async function handler(req, res) {
   const fmpKey     = process.env.FMP_API_KEY;
   const sym        = symbol.toUpperCase();
 
-  // ETF sectors: usa hardcoded se disponibile
-  const sectorWeights = ETF_SECTORS[sym] || [];
+  // ETF sectors: cerca ticker esatto poi senza suffisso borsa (.MI .DE .AS ecc.)
+  const baseSym = sym.replace(/\.(MI|DE|AS|PA|SW|L|BR|MA)$/i, "");
+  const sectorWeights = ETF_SECTORS[sym] || ETF_SECTORS[baseSym] || [];
 
   try {
     const [recRes, fmpTargetRes] = await Promise.all([
