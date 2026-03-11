@@ -2,6 +2,16 @@ import { useState, useEffect, useRef, useCallback, createContext, useContext, us
 import { createPortal } from "react-dom";
 import { PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area, ReferenceLine, LineChart, Line, Legend, BarChart, Bar, ComposedChart } from "recharts";
 import { supabase, signIn, signUp, signOut, getSession, loadStocks, saveStock, deleteStock, loadNotes, saveNote, loadAlerts, saveAlert, deleteAlert } from "./utils/supabase";
+import { toUSD, detectCurrency } from "./utils/currency";
+import { resolveMarketState } from "./utils/market";
+import { parseBuyDate, isoToDisplay } from "./utils/dates";
+import { fmt as fmtUtil, fmtPct as fmtPctUtil } from "./utils/format";
+import { isKnownETF } from "./utils/etf";
+import { fetchPrice, fetchHistory, fetchAnalyst, fetchSearch, fetchNews, fetchScenario, fetchAIAnalysis, API_BASE } from "./utils/api";
+import { useEurRate } from "./hooks/useEurRate";
+import { AllocationCard } from "./components/AllocationCard";
+import { ChartCard } from "./components/ChartCard";
+import { MarketBadge } from "./components/MarketBadge";
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const SECTOR_COLORS = ["#F4C542","#E87040","#5B8DEF","#5EC98A","#BF6EEA","#F06292","#26C6DA","#FF7043"];
@@ -33,83 +43,7 @@ function simulateHistory(base, days = 30) {
   });
 }
 
-// ─── API ──────────────────────────────────────────────────────────────────────
-// Detect if running on Vercel (production) or Claude preview
-const IS_VERCEL = typeof window !== "undefined" && window.location.hostname.includes("vercel.app");
-const API_BASE  = IS_VERCEL ? "" : "https://portfolio-tracker-i97337xz6-voice-tecs-projects.vercel.app";
-
-// Price cache to avoid hammering the API
-const priceCache = {};
-const CACHE_TTL = 60_000; // 60 seconds
-
-async function fetchRealPrice(ticker, full = false) {
-  const key = ticker.toUpperCase();
-  const cached = priceCache[key];
-  if (cached && Date.now() - cached.ts < CACHE_TTL) return full ? cached : cached.price;
-  try {
-    const res = await fetch(`${API_BASE}/api/price?symbol=${encodeURIComponent(key)}`);
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (!data.price) return null;
-    const marketState = data.marketState || "CLOSED";
-    let effectivePrice = data.price;
-    if (marketState === "PRE" && data.preMarket?.price) effectivePrice = data.preMarket.price;
-    else if (marketState === "POST" && data.afterHours?.price) effectivePrice = data.afterHours.price;
-    const result = { price: effectivePrice, regularPrice: data.price, marketState, preMarket: data.preMarket, afterHours: data.afterHours, ts: Date.now() };
-    priceCache[key] = result;
-    return full ? result : effectivePrice;
-  } catch { return null; }
-}
-
-async function fetchRealHistory(ticker, days = 30) {
-  try {
-    const res = await fetch(`${API_BASE}/api/history?symbol=${encodeURIComponent(ticker.toUpperCase())}&days=${days}`);
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data.candles || null;
-  } catch { return null; }
-}
-
-async function fetchTickerSearch(q) {
-  try {
-    const res = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(q)}`);
-    if (!res.ok) return [];
-    const data = await res.json();
-    return (data.results || []).map(r => ({ ticker: r.ticker, name: r.name, exchange: r.exchange, sector: "—" }));
-  } catch { return []; }
-}
-
-async function claudeCall(system, userMsg, tools = []) {
-  const body = { model: "claude-sonnet-4-20250514", max_tokens: 400, system, messages: [{ role: "user", content: userMsg }] };
-  if (tools.length) body.tools = tools;
-  const res = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  const data = await res.json();
-  return (data.content || []).map(b => b.text || "").join("").trim();
-}
-
-async function fetchAIAnalysis(stock, note, sym, currency) {
-  try {
-    const pnlPct = ((stock.currentPrice - stock.buyPrice) / stock.buyPrice * 100).toFixed(2);
-    const res = await fetch(`${API_BASE}/api/analyze`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ticker: stock.ticker,
-        qty: stock.qty,
-        buyPrice: (stock.buyPrice).toFixed(2),
-        currentPrice: (stock.currentPrice).toFixed(2),
-        pnlPct,
-        note: note || "",
-        currency: sym,
-      })
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    return data.analysis || "Analisi non disponibile.";
-  } catch (err) {
-    return "Errore nel recupero dell'analisi. Riprova tra qualche secondo.";
-  }
-}
+// ─── API ora in src/utils/api.js ───────────────────────────────────────────────
 
 // ─── SCENARIOS ────────────────────────────────────────────────────────────────
 const SCENARIOS = [
@@ -459,7 +393,7 @@ function TickerAutocomplete({ value, onChange, onSelect }) {
     if (cache.current[k]) { setResults(cache.current[k]); return; }
     setLoading(true);
     timer.current = setTimeout(async () => {
-      const r = await fetchTickerSearch(value);
+      const r = await fetchSearch(value);
       cache.current[k] = r;
       setResults(r);
       setLoading(false);
@@ -562,7 +496,7 @@ function WatchlistTab({ eurRate, fmt, fmtPct }) {
     watchlist.forEach(item => {
       if (prices[item.ticker]) return;
       setLoading(l => ({ ...l, [item.ticker]: true }));
-      fetchRealPrice(item.ticker).then(p => {
+      fetchPrice(item.ticker).then(p => {
         setPrices(prev => ({ ...prev, [item.ticker]: p }));
         setLoading(l => ({ ...l, [item.ticker]: false }));
       });
@@ -726,18 +660,6 @@ function EditModal({ stock, onClose, onSave }) {
 }
 
 // ─── STOCK DETAIL MODAL ───────────────────────────────────────────────────────
-// ─── MARKET BADGE ─────────────────────────────────────────────────────────────
-function MarketBadge({ state = "CLOSED", size = 8, ml = 0 }) {
-  const cfg = {
-    PRE:     { label: "PRE",   bg: "#1a1f2a", color: "#7EB8F7" },
-    REGULAR: { label: "LIVE",  bg: "#1a2a1a", color: "#5EC98A" },
-    POST:    { label: "AFTER", bg: "#2a1f0a", color: "#F4C542" },
-    POSTPOST: { label: "AFTER", bg: "#2a1f0a", color: "#F4C542" },
-    CLOSED:  { label: "CHIUS", bg: "#2a1a1a", color: "#E87040" },
-  };
-  const c = cfg[state] || cfg.CLOSED;
-  return <span style={{ fontSize: size, background: c.bg, color: c.color, padding: "2px 6px", borderRadius: 2, marginLeft: ml }}>{c.label}</span>;
-}
 
 // ─── TRADINGVIEW WIDGET ───────────────────────────────────────────────────────
 function TradingViewWidget({ ticker }) {
@@ -815,7 +737,7 @@ function StockModal({ stock, onClose, notes, setNotes, alerts, setAlerts, handle
 
   useEffect(() => {
     setHistLoading(true);
-    fetchRealHistory(stock.ticker, chartPeriod).then(candles => {
+    fetchHistory(stock.ticker, chartPeriod).then(candles => {
       setHistory(candles || simulateHistory(stock.currentPrice, chartPeriod));
       setHistLoading(false);
     });
@@ -1373,570 +1295,20 @@ function SimulazioniTab({ stocks, sym, rate, fmt, fmtPct }) {
 // ─── WHAT IF TAB ──────────────────────────────────────────────────────────────
 // ─── DIVIDENDI TAB ────────────────────────────────────────────────────────────
 // ─── FORECAST TAB ─────────────────────────────────────────────────────────────
-// ─── ALLOCATION CARD ──────────────────────────────────────────────────────────
-const PIE_COLORS = ["#5B8DEF","#26C6DA","#5EC98A","#F4C542","#BF6EEA","#E87040","#F06292","#FF7043","#80CBC4","#FFD54F"];
-// Colore fisso per settore — evita che cambino posizione nell'array
-const SECTOR_COLOR_MAP = {
-  "Tecnologia": "#5B8DEF", "Tech": "#5B8DEF",
-  "ETF": "#26C6DA",
-  "Salute": "#5EC98A", "Healthcare": "#5EC98A",
-  "Finanza": "#F4C542", "Finance": "#F4C542",
-  "Energia": "#E87040", "Energy": "#E87040",
-  "Beni di consumo": "#F06292", "Consumer": "#F06292",
-  "Industriale": "#FF7043", "Industria": "#FF7043",
-  "Telecom": "#BF6EEA",
-  "Immobiliare": "#80CBC4", "Real Estate": "#80CBC4",
-  "Materie prime": "#FFD54F", "Materials": "#FFD54F",
-  "Utilities": "#aaa",
-  "Altro": "#555",
-};
-function getPieColor(name, idx) {
-  return SECTOR_COLOR_MAP[name] || PIE_COLORS[idx % PIE_COLORS.length];
-}
-
-function AllocationCard({ stocks, totalValue, eurRate, fmt }) {
-  const [pieTab, setPieTab] = useState("settori");
-  const [etfHoldings, setEtfHoldings] = useState({}); // { ticker: { sectorWeights: [...] } }
-  const [etfLoading, setEtfLoading] = useState(false);
-
-  // ETF: lista titoli con settore ETF
-  const etfStocks = useMemo(() => stocks.filter(s => s.sector === "ETF"), [stocks]);
-
-  // Fetch ETF holdings al mount o quando cambia lista ETF
-  useEffect(() => {
-    if (etfStocks.length === 0) return;
-    setEtfLoading(true);
-    Promise.all(etfStocks.map(s =>
-      fetch(`${API_BASE}/api/analyst?symbol=${encodeURIComponent(s.ticker)}`)
-        .then(r => r.json())
-        .then(d => ({ ticker: s.ticker, sectorWeights: d.sectorWeights || [] }))
-        .catch(() => ({ ticker: s.ticker, sectorWeights: [] }))
-    )).then(results => {
-      const map = {};
-      results.forEach(r => { map[r.ticker] = r; });
-      setEtfHoldings(map);
-      setEtfLoading(false);
-    });
-  }, [etfStocks.map(s => s.ticker).join(",")]);
-
-  // Calcola dati torta con ETF scomposti (valori in USD)
-  const pieData = useMemo(() => {
-    const map = {};
-
-    stocks.forEach(s => {
-      const posVal = s.qty * toUSD(s.currentPrice, s.currency, eurRate);
-      const holdings = etfHoldings[s.ticker];
-
-      // Se è ETF e abbiamo i dati di scomposizione → scomponi per settore
-      if (s.sector === "ETF" && holdings?.sectorWeights?.length > 0 && pieTab === "settori") {
-        holdings.sectorWeights.forEach(sw => {
-          map[sw.sector] = (map[sw.sector] || 0) + posVal * (sw.weight / 100);
-        });
-        return;
-      }
-
-      if (pieTab === "settori") {
-        const key = (s.sector && s.sector !== "-" && s.sector !== "—") ? s.sector : "Altro";
-        map[key] = (map[key] || 0) + posVal;
-      } else if (pieTab === "posizioni") {
-        map[s.ticker] = (map[s.ticker] || 0) + posVal;
-      } else if (pieTab === "tipo") {
-        const tipo = s.sector === "ETF" ? "ETF" : s.sector === "Crypto" ? "Crypto" : "Azioni";
-        map[tipo] = (map[tipo] || 0) + posVal;
-      }
-    });
-
-    return Object.entries(map)
-      .map(([name, value]) => ({ name, value: parseFloat(value.toFixed(2)) }))
-      .sort((a, b) => b.value - a.value);
-  }, [stocks, pieTab, etfHoldings, eurRate]);
-
-  const [activeIndex, setActiveIndex] = useState(null);
-  const centerVal = activeIndex !== null ? pieData[activeIndex] : null;
-
-  // Calcola alert concentrazione >25%
-  const concentrationAlerts = useMemo(() => {
-    if (pieTab !== "settori") return [];
-    return pieData
-      .filter(item => totalValue > 0 && (item.value / totalValue) * 100 > 25)
-      .map(item => {
-        const pct = ((item.value / totalValue) * 100).toFixed(1);
-        const sector = item.name;
-        // Suggerimenti per settore
-        const suggestions = {
-          "Tech":       ["Bilancia con XLV (Salute) o XLP (Beni primari)", "Aggiungi esposizione internazionale con VEA", "Considera obbligazioni TLT per ridurre volatilità"],
-          "Energia":    ["Diversifica con XLK (Tech) o XLV (Salute)", "Alta ciclicità: considera XLP come difensivo", "GLD può bilanciare il rischio commodity"],
-          "Finanza":    ["Bilancia con settori difensivi come XLU o XLV", "Considera esposizione internazionale VWO", "I tassi alti favoriscono le banche ma aumentano rischio"],
-          "Salute":     ["Aggiungi ciclici come XLY o tech con QQQ", "Buon settore difensivo ma valuta di aggiungere crescita", "Considera small cap IWM per diversificazione"],
-          "Consumer":   ["Bilancia con Tech o Finanza", "Aggiungi esposizione internazionale", "Considera obbligazioni per ridurre correlazione"],
-          "Industriali":["Settore ciclico: aggiungi difensivi XLP o XLV", "Considera esposizione tech per crescita", "GLD come hedge in caso di recessione"],
-          "Real Estate":["REIT sensibili ai tassi: diversifica con Tech", "Aggiungi bond a breve SHY come bilanciamento", "Considera settori meno correlati ai tassi"],
-          "Valute":     ["UUP è hedge valutario: valuta esposizione azionaria", "Bilancia con azionario globale VTI o SPY", "Considera TIPS per protezione inflazione"],
-          "ETF":        ["Verifica la composizione interna degli ETF", "Evita sovrapposizioni tra ETF simili", "Considera ETF settoriali per maggiore controllo"],
-        };
-        const tips = suggestions[sector] || ["Diversifica su altri settori", "Considera ETF globali come VTI o VEA", "Valuta obbligazioni per ridurre volatilità"];
-        return { sector, pct, tips };
-      });
-  }, [pieData, totalValue, pieTab]);
-
-  const [showAlerts, setShowAlerts] = useState(true);
-
-  return (
-    <div className="card" style={{ marginBottom: 16 }}>
-      {/* Tab selector */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, borderBottom: "1px solid #1a1d26", paddingBottom: 0 }}>
-        <div style={{ display: "flex", gap: 0 }}>
-          {["settori","posizioni","tipo"].map(t => (
-            <button key={t} onClick={() => setPieTab(t)}
-              style={{ background: "none", border: "none", borderBottom: pieTab === t ? "2px solid #F4C542" : "2px solid transparent",
-                color: pieTab === t ? "#E8E6DF" : "#444", fontFamily: "inherit", fontSize: 11,
-                padding: "6px 12px", cursor: "pointer", textTransform: "capitalize", transition: "all 0.15s", marginBottom: -1 }}>
-              {t}
-            </button>
-          ))}
-        </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          {etfLoading && <span style={{ fontSize: 9, color: "#444" }}>caricamento ETF…</span>}
-          {!etfLoading && etfStocks.length > 0 && pieTab === "settori" && (
-            <span style={{ fontSize: 9, color: "#5EC98A" }}>✓ ETF scomposti</span>
-          )}
-          {concentrationAlerts.length > 0 && (
-            <button onClick={() => setShowAlerts(v => !v)}
-              style={{ background: "#E8704011", border: "1px solid #E8704033", color: "#E87040",
-                fontSize: 9, padding: "3px 8px", borderRadius: 3, cursor: "pointer", fontFamily: "inherit" }}>
-              ⚠️ {concentrationAlerts.length} concentrazione{concentrationAlerts.length > 1 ? "i" : ""} &gt;25%
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Layout principale: torta + legenda + eventuale panel alert */}
-      <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
-
-        {/* Torta compatta */}
-        <div style={{ position: "relative", width: 150, height: 150, flexShrink: 0 }}>
-          <PieChart width={150} height={150}>
-            <Pie data={pieData} cx={70} cy={70}
-              innerRadius={46} outerRadius={68}
-              dataKey="value" paddingAngle={1.5}
-              onMouseEnter={(_, i) => setActiveIndex(i)}
-              onMouseLeave={() => setActiveIndex(null)}>
-              {pieData.map((entry, i) => (
-                <Cell key={i} fill={getPieColor(entry.name, i)}
-                  opacity={activeIndex === null || activeIndex === i ? 1 : 0.3}
-                  style={{ cursor: "pointer" }}/>
-              ))}
-            </Pie>
-          </PieChart>
-          <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-46%,-50%)", textAlign: "center", pointerEvents: "none", width: 72 }}>
-            {centerVal ? (
-              <>
-                <div style={{ fontSize: 8, color: "#555", lineHeight: 1.2, marginBottom: 1 }}>{centerVal.name}</div>
-                <div style={{ fontFamily: "'Fraunces', serif", fontSize: 12, color: "#E8E6DF" }}>${fmt(centerVal.value)}</div>
-                <div style={{ fontSize: 11, color: "#F4C542", fontWeight: 600 }}>
-                  {totalValue > 0 ? ((centerVal.value / totalValue) * 100).toFixed(1) : 0}%
-                </div>
-              </>
-            ) : (
-              <>
-                <div style={{ fontSize: 7, color: "#444", marginBottom: 1 }}>Patrimonio</div>
-                <div style={{ fontFamily: "'Fraunces', serif", fontSize: 12, color: "#E8E6DF" }}>${fmt(totalValue)}</div>
-                <div style={{ fontSize: 8, color: "#555" }}>€{fmt(totalValue * eurRate)}</div>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Legenda */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 5, flex: 1, minWidth: 160 }}>
-          {pieData.map((item, i) => {
-            const pct = totalValue > 0 ? ((item.value / totalValue) * 100).toFixed(1) : 0;
-            const isAlert = parseFloat(pct) > 25;
-            const isActive = activeIndex === i;
-            return (
-              <div key={item.name}
-                onMouseEnter={() => setActiveIndex(i)}
-                onMouseLeave={() => setActiveIndex(null)}
-                style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer",
-                  opacity: activeIndex === null || isActive ? 1 : 0.35, transition: "opacity 0.15s" }}>
-                <div style={{ width: 7, height: 7, borderRadius: 2, flexShrink: 0, background: getPieColor(item.name, i) }}/>
-                <span style={{ fontSize: 11, color: isActive ? "#E8E6DF" : "#777", flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.name}</span>
-                <span style={{ fontSize: 11, fontWeight: 600, minWidth: 36, textAlign: "right",
-                  color: isAlert ? "#E87040" : "#E8E6DF" }}>{pct}%</span>
-                {isAlert && <span style={{ fontSize: 9, color: "#E87040" }}>⚠️</span>}
-                <span style={{ fontSize: 10, color: "#444", minWidth: 60, textAlign: "right" }}>${fmt(item.value)}</span>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Panel alert concentrazione */}
-        {concentrationAlerts.length > 0 && showAlerts && (
-          <div style={{ flex: 1, minWidth: 200, maxWidth: 280, background: "#0f1117", borderRadius: 8,
-            border: "1px solid #E8704033", padding: "12px 14px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-              <div style={{ fontSize: 9, color: "#E87040", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 600 }}>
-                ⚠️ Concentrazione elevata
-              </div>
-              <button onClick={() => setShowAlerts(false)}
-                style={{ background: "none", border: "none", color: "#444", cursor: "pointer", fontSize: 12, padding: 0 }}>✕</button>
-            </div>
-            {concentrationAlerts.map(a => (
-              <div key={a.sector} style={{ marginBottom: 12 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                  <span style={{ fontSize: 11, color: "#E8E6DF", fontWeight: 500 }}>{a.sector}</span>
-                  <span style={{ fontSize: 12, color: "#E87040", fontWeight: 700 }}>{a.pct}%</span>
-                </div>
-                {/* Barra visuale */}
-                <div style={{ height: 4, background: "#1a1d26", borderRadius: 2, marginBottom: 8, overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${Math.min(parseFloat(a.pct), 100)}%`,
-                    background: parseFloat(a.pct) > 50 ? "#E87040" : "#F4C542", borderRadius: 2 }}/>
-                  <div style={{ height: "100%", width: "2px", background: "#5EC98A", position: "relative", top: -4, left: "25%" }}/>
-                </div>
-                <div style={{ fontSize: 9, color: "#444", marginBottom: 6 }}>Suggerimenti:</div>
-                {a.tips.map((tip, j) => (
-                  <div key={j} style={{ fontSize: 10, color: "#666", marginBottom: 4, paddingLeft: 8,
-                    borderLeft: "2px solid #2a2d35", lineHeight: 1.4 }}>
-                    {tip}
-                  </div>
-                ))}
-              </div>
-            ))}
-            <div style={{ fontSize: 9, color: "#2a2d35", marginTop: 4, borderTop: "1px solid #1a1d26", paddingTop: 8 }}>
-              Soglia consigliata per settore: &lt;25%
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // ─── OVERVIEW TAB ─────────────────────────────────────────────────────────────
 function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, totalInvested,
   totalPnL, totalPct, sectorData, portfolioHistory, alerts, setSelectedId, setEditId,
   handleRemove, setShowForm, marketOpen }) {
 
-  const [chartPeriod, setChartPeriod] = useState("1M");
   const [variations, setVariations] = useState({ day: null, month: null, year: null });
   const [varLoading, setVarLoading] = useState(false);
-  const [realChartData, setRealChartData] = useState([]);
-  const [chartLoading, setChartLoading] = useState(false);
-  const [showBenchmark, setShowBenchmark] = useState(false);
-  const [benchmarkData, setBenchmarkData] = useState([]); // Serie SPY normalizzata
 
   const col = v => v >= 0 ? "#5EC98A" : "#E87040";
   const sign = v => v >= 0 ? "+" : "";
 
-  // Parsing buyDate: supporta "dd/mm/yy", "dd/mm/yyyy", "YYYY-MM-DD"
-  const parseBuyDate = (s) => {
-    if (!s) return null;
-    // Formato ISO YYYY-MM-DD
-    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return new Date(s + "T00:00:00");
-    // Formato italiano dd/mm/yy o dd/mm/yyyy
-    const p = s.split("/");
-    if (p.length === 3) {
-      const yr = p[2].length === 2 ? "20" + p[2] : p[2];
-      return new Date(`${yr}-${p[1].padStart(2,"0")}-${p[0].padStart(2,"0")}T00:00:00`);
-    }
-    return null;
-  };
 
-  // Fetch storico reale e costruisci grafico portafoglio
-  useEffect(() => {
-    if (stocks.length === 0) return;
-    setVarLoading(true);
-    setChartLoading(true);
 
-    // Variazione giornaliera — usa prevClose se disponibile, altrimenti serie storica
-    // Variazione oggi: usa changePct dall'API live (più affidabile di prevClose)
-    const stocksWithChange = stocks.filter(s => s.prevClose && s.prevClose !== s.currentPrice);
-    const hasPrevClose = stocksWithChange.length > 0;
-    const dayPnl = hasPrevClose
-      ? stocksWithChange.reduce((sum, s) => {
-          const curUSD = toUSD(s.currentPrice, s.currency, eurRate);
-          const preUSD = toUSD(s.prevClose, s.currency, eurRate);
-          return sum + (curUSD - preUSD) * s.qty;
-        }, 0)
-      : 0;
-    const prevTotalValue = hasPrevClose
-      ? stocks.reduce((sum, s) => {
-          const p = s.prevClose && s.prevClose !== s.currentPrice ? s.prevClose : s.currentPrice;
-          return sum + toUSD(p, s.currency, eurRate) * s.qty;
-        }, 0)
-      : 0;
-    const dayPct = prevTotalValue > 0 && hasPrevClose ? (dayPnl / prevTotalValue) * 100 : null;
 
-    // Calcola giorni da fetchare: dalla prima data di acquisto
-    const firstDate = stocks.reduce((min, s) => {
-      const d = parseBuyDate(s.buyDate);
-      return d && (!min || d < min) ? d : min;
-    }, null);
-    const daysSinceFirst = firstDate
-      ? Math.ceil((Date.now() - firstDate.getTime()) / 86400000) + 10
-      : 400;
-    const daysToFetch = Math.max(daysSinceFirst, 395);
-
-    // Fetch storico ISO per tutti i titoli
-    Promise.all(stocks.map(async s => {
-      try {
-        const r = await fetch(`${API_BASE}/api/history?symbol=${encodeURIComponent(s.ticker)}&days=${daysToFetch}`);
-        const d = await r.json();
-        const bd = parseBuyDate(s.buyDate);
-        return { ticker: s.ticker, qty: s.qty, buyDateISO: bd ? bd.toISOString().split("T")[0] : null, candles: d.candles || [], currency: s.currency || "USD", eurRate };
-      } catch {
-        return { ticker: s.ticker, qty: s.qty, buyDateISO: null, candles: [], currency: s.currency || "USD", eurRate };
-      }
-    })).then(results => {
-      // Mappa ISO date → prezzi per ogni titolo
-      const priceMap = {}; // { "2024-03-10": { AAPL: 175.0, MSFT: 380.0 } }
-      results.forEach(r => {
-        r.candles.forEach(c => {
-          if (!priceMap[c.date]) priceMap[c.date] = {};
-          priceMap[c.date][r.ticker] = c.price;
-        });
-      });
-
-      // Date ordinate (ISO → sort alfabetico = sort cronologico)
-      const allDates = Object.keys(priceMap).sort();
-
-      // ── TWR (Time-Weighted Return) ──────────────────────────────────────────
-      // Invece di usare il valore assoluto (che cresce con i versamenti),
-      // calcoliamo il rendimento puro del capitale: ogni volta che entra un
-      // nuovo titolo, "resettiamo" solo quella quota senza distorcere la %
-      // totale. È lo stesso metodo usato da GetQuin, Moneyfarm, Bloomberg.
-      //
-      // Algoritmo:
-      //  - Per ogni "sub-periodo" (tra un acquisto e il successivo) calcoliamo
-      //    il rendimento percentuale solo dei titoli già in portafoglio
-      //  - Il TWR finale è il prodotto di tutti questi sub-rendimenti
-      //  - twr = (1+r1) * (1+r2) * ... * (1+rN) - 1
-      // ────────────────────────────────────────────────────────────────────────
-
-      const lastKnown = {};
-      const series = [];
-
-      // Valore del portafoglio al giorno precedente (per calcolo rendimento giornaliero)
-      let prevDayValue = null;
-      // TWR cumulativo (prodotto dei rendimenti giornalieri)
-      let twrFactor = 1.0;
-      // Valore investito "appena prima" di ogni giorno (per isolare nuovi ingressi)
-      let prevActiveSet = new Set();
-
-      allDates.forEach(dateISO => {
-        // Aggiorna prezzi noti
-        results.forEach(r => {
-          if (priceMap[dateISO]?.[r.ticker] != null) {
-            lastKnown[r.ticker] = priceMap[dateISO][r.ticker];
-          }
-        });
-
-        // Calcola valore totale del giorno in USD (solo titoli già acquistati)
-        let todayValue = 0;
-        const activeToday = new Set();
-        results.forEach(r => {
-          if (!r.buyDateISO || dateISO >= r.buyDateISO) {
-            const price = lastKnown[r.ticker];
-            if (price) {
-              const er = r.eurRate || 0.92;
-              const priceUSD = r.currency === "EUR" ? price / er
-                             : r.currency === "GBp" ? (price / 100) / (er * 0.85)
-                             : price;
-              todayValue += r.qty * priceUSD;
-              activeToday.add(r.ticker);
-            }
-          }
-        });
-
-        if (activeToday.size === 0 || todayValue === 0) return;
-
-        const label = new Date(dateISO + "T12:00:00").toLocaleDateString("it-IT", { day: "2-digit", month: "short" });
-
-        if (prevDayValue === null) {
-          // Primo giorno: TWR parte da 0%
-          twrFactor = 1.0;
-          series.push({ date: dateISO, label, valore: parseFloat(todayValue.toFixed(2)), twr: 0 });
-        } else {
-          // Controlla se sono entrati nuovi titoli oggi
-          const newEntries = [...activeToday].filter(t => !prevActiveSet.has(t));
-
-          if (newEntries.length > 0) {
-            // Nuovi acquisti: calcola il valore di IERI per i titoli già esistenti
-            // e il valore di OGGI per i nuovi — il rendimento del giorno è solo
-            // sulla parte "vecchia" del portafoglio
-            let oldPartYesterday = 0;
-            let oldPartToday = 0;
-            results.forEach(r => {
-              if (prevActiveSet.has(r.ticker)) {
-                const p = lastKnown[r.ticker] || 0;
-                const er = r.eurRate || 0.92;
-                const pUSD = r.currency === "EUR" ? p / er : r.currency === "GBp" ? (p / 100) / (er * 0.85) : p;
-                oldPartToday += r.qty * pUSD;
-              }
-            });
-
-            // Rendimento giornaliero solo sulla parte "vecchia"
-            const oldYesterday = prevDayValue - newEntries.reduce((s, t) => {
-              // Sottrai il valore dei nuovi titoli a prezzo di acquisto (in USD!)
-              const stock = results.find(r => r.ticker === t);
-              if (!stock) return s;
-              const rawPrice = priceMap[stock.buyDateISO]?.[t] || lastKnown[t] || 0;
-              const er = stock.eurRate || 0.92;
-              const priceUSD = stock.currency === "EUR" ? rawPrice / er
-                             : stock.currency === "GBp" ? (rawPrice / 100) / (er * 0.85)
-                             : rawPrice;
-              return s + stock.qty * priceUSD;
-            }, 0);
-
-            if (oldYesterday > 0 && oldPartToday > 0) {
-              // Rendimento dei titoli già presenti
-              const dayReturn = Math.max(-0.5, Math.min(0.5, (oldPartToday - oldYesterday) / oldYesterday)); // cap ±50% per evitare spike
-              twrFactor *= (1 + dayReturn);
-            }
-            // Altrimenti TWR invariato (primo giorno non calcoliamo)
-          } else {
-            // Nessun nuovo titolo: rendimento normale
-            const dayReturn = prevDayValue > 0 ? (todayValue - prevDayValue) / prevDayValue : 0;
-            twrFactor *= (1 + dayReturn);
-          }
-
-          const twrPct = parseFloat(((twrFactor - 1) * 100).toFixed(2));
-          series.push({ date: dateISO, label, valore: parseFloat(todayValue.toFixed(2)), twr: twrPct });
-        }
-
-        prevDayValue = todayValue;
-        prevActiveSet = new Set(activeToday);
-      });
-
-      setRealChartData(series);
-
-      // Fetch benchmark SPY (normalizzato al primo valore del portafoglio)
-      fetch(`${API_BASE}/api/history?symbol=SPY&days=${daysToFetch}`)
-        .then(r => r.json())
-        .then(d => {
-          const spyCandles = d.candles || [];
-          if (spyCandles.length < 2 || !series.length) return;
-          // Trova primo valore SPY allineato alla prima data del portafoglio
-          const firstPortDate = series[0]?.date;
-          const spyStart = spyCandles.find(c => c.date >= firstPortDate) || spyCandles[0];
-          if (!spyStart) return;
-          const basePrice = spyStart.price;
-          const basePortVal = series[0]?.valore;
-          if (!basePrice || !basePortVal) return;
-          // Normalizza: SPY al valore iniziale del portafoglio
-          const normalized = spyCandles
-            .filter(c => c.date >= firstPortDate)
-            .map(c => ({
-              date: c.date,
-              label: new Date(c.date + "T12:00:00").toLocaleDateString("it-IT", { day: "2-digit", month: "short" }),
-              spy: parseFloat((basePortVal * c.price / basePrice).toFixed(2))
-            }));
-          setBenchmarkData(normalized);
-        }).catch(() => {});
-
-      // Variazioni usando TWR (rendimento puro, escluso apporto di capitale)
-      const nowVal   = series[series.length - 1]?.valore || 0;
-      const nowTwr   = series[series.length - 1]?.twr ?? 0;
-
-      const findAgoTwr = (days) => {
-        const target = new Date(Date.now() - days * 86400000).toISOString().split("T")[0];
-        const pt = series.filter(p => p.date <= target).slice(-1)[0];
-        return pt;
-      };
-
-      const mkVar = (pt) => {
-        if (!pt) return null;
-        // TWR relativo: rendimento dal punto "pt" ad oggi
-        const relTwr = (((1 + nowTwr / 100) / (1 + (pt.twr ?? 0) / 100)) - 1) * 100;
-        // P&L in valore assoluto (differenza reale di valore)
-        const pnl = nowVal - pt.valore;
-        return { pnl: parseFloat(pnl.toFixed(2)), pct: parseFloat(relTwr.toFixed(2)) };
-      };
-
-      // Variazione oggi: usa serie storica (ieri vs oggi) se non abbiamo prevClose
-      const seriesDay = series.length >= 2
-        ? mkVar(series[series.length - 2]?.valore)
-        : null;
-      const dayVar = hasPrevClose && dayPct !== null
-        ? { pnl: parseFloat(dayPnl.toFixed(2)), pct: parseFloat(dayPct.toFixed(2)) }
-        : seriesDay;
-
-      setVariations({
-        day:   dayVar,
-        month: mkVar(findAgoTwr(30)),
-        year:  mkVar(findAgoTwr(365)),
-      });
-      setVarLoading(false);
-      setChartLoading(false);
-    }).catch(() => { setVarLoading(false); setChartLoading(false); });
-  }, [stocks.map(s => s.ticker + s.qty + s.buyDate).join(",")]);
-
-  // Slice grafico in base al periodo selezionato + benchmark in %
-  const chartData = useMemo(() => {
-    if (!realChartData.length) return [];
-    const sliceMap = { "1M": 30, "3M": 63, "6M": 126, "1A": 252 };
-    let base;
-    if (chartPeriod === "Inizio") {
-      base = realChartData;
-    } else {
-      const days = sliceMap[chartPeriod] || 30;
-      const cutoff = new Date(Date.now() - days * 86400000).toISOString().split("T")[0];
-      const filtered = realChartData.filter(p => p.date >= cutoff);
-      base = filtered.length > 1 ? filtered : realChartData.slice(-days);
-    }
-    // TWR già calcolato nella serie — lo "resettiamo" all'inizio del range selezionato
-    const baseTwr = base[0]?.twr ?? 0;
-
-    // Benchmark SPY in % rispetto alla prima data del range
-    const bMap = Object.fromEntries(benchmarkData.map(b => [b.date, b.spy]));
-    const spyBase = bMap[base[0]?.date] ?? benchmarkData.find(b => b.date >= base[0]?.date)?.spy;
-
-    return base.map(p => ({
-      ...p,
-      // pct = TWR relativo all'inizio del range (es. se scelgo 1M, parte da 0% un mese fa)
-      pct: parseFloat(((((1 + (p.twr ?? 0) / 100) / (1 + baseTwr / 100)) - 1) * 100).toFixed(2)),
-      spyPct: (() => {
-        const sv = bMap[p.date];
-        if (!sv || !spyBase) return null;
-        return parseFloat(((sv - spyBase) / spyBase * 100).toFixed(2));
-      })(),
-    }));
-  }, [realChartData, chartPeriod, benchmarkData]);
-
-  // Marker acquisti: mostra sempre tutti gli acquisti nel range visibile
-  const purchaseMarkers = useMemo(() => {
-    if (!chartData.length) return [];
-    const markers = [];
-    stocks.forEach(s => {
-      const bd = parseBuyDate(s.buyDate);
-      if (!bd) return;
-      const bdISO = bd.toISOString().split("T")[0];
-      const firstChartDate = chartData[0]?.date;
-      const lastChartDate  = chartData[chartData.length - 1]?.date;
-      let pt;
-      if (bdISO >= firstChartDate) {
-        // Acquisto nel range: trova il punto più vicino
-        pt = chartData.find(p => p.date >= bdISO);
-      } else {
-        // Acquisto prima del range (es. periodo 1M ma comprato 6M fa)
-        // Mostra marker sul primo punto con tooltip "acquistato il X"
-        pt = chartData[0];
-      }
-      if (pt) markers.push({
-        ...pt, ticker: s.ticker, qty: s.qty, buyPrice: s.buyPrice,
-        actualBuyDate: bdISO,
-        beforeRange: bdISO < (firstChartDate || ""),
-      });
-    });
-    // Deduplicazione: se più acquisti stesso giorno, mostra solo il primo per ticker
-    const seen = new Set();
-    return markers.filter(m => {
-      const key = m.ticker + m.date;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  }, [chartData, stocks]);
 
   if (stocks.length === 0) return (
     <div className="fade-up" style={{ textAlign: "center", marginTop: 80 }}>
@@ -1986,117 +1358,10 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
         </div>
       </div>
 
-      {/* ── GRAFICO PORTAFOGLIO stile GetQuin ── */}
-      {(() => {
-        const chartPct = chartData[chartData.length - 1]?.pct ?? 0;
-        const chartPos = chartPct >= 0;
-        const lineColor = chartPos ? "#5EC98A" : "#E87040";
-        return (
-          <div style={{ marginBottom: 16, background: "#0D0F14", borderRadius: 8, padding: "20px 0 8px 0" }}>
-            {/* Periodo selector stile GetQuin */}
-            <div style={{ display: "flex", gap: 2, marginBottom: 16, paddingLeft: 20, alignItems: "center", flexWrap: "wrap" }}>
-              {["1M","3M","6M","1A","Inizio"].map(p => (
-                <button key={p} onClick={() => setChartPeriod(p)}
-                  style={{ background: chartPeriod === p ? "#1a1d26" : "none",
-                    color: chartPeriod === p ? "#E8E6DF" : "#333",
-                    border: "none", borderRadius: 4,
-                    fontSize: 11, padding: "4px 10px", cursor: "pointer", fontFamily: "inherit",
-                    fontWeight: chartPeriod === p ? 500 : 400 }}>
-                  {p}
-                </button>
-              ))}
-              <div style={{ marginLeft: "auto", marginRight: 20, display: "flex", alignItems: "center", gap: 12 }}>
-                {/* Toggle benchmark */}
-                <button onClick={() => setShowBenchmark(v => !v)}
-                  style={{ fontSize: 9, padding: "3px 8px", borderRadius: 3, cursor: "pointer",
-                    fontFamily: "inherit", border: "1px solid",
-                    background: showBenchmark ? "#F4C54211" : "none",
-                    color: showBenchmark ? "#F4C542" : "#333",
-                    borderColor: showBenchmark ? "#F4C54244" : "#2a2d35" }}>
-                  vs S&P 500
-                </button>
-                <span style={{ fontSize: 11, color: chartPos ? "#5EC98A" : "#E87040" }}>
-                  {chartPos ? "▲" : "▼"} {Math.abs(chartPct).toFixed(2)}%
-                </span>
-              </div>
-            </div>
-
-            {chartLoading ? (
-              <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, color: "#333", fontSize: 11 }}>
-                <Spinner size={14}/> Caricamento…
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height={180}>
-                <ComposedChart data={chartData} margin={{ top: 5, right: 0, bottom: 0, left: 0 }}>
-                  <defs>
-                    <linearGradient id="gqGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={lineColor} stopOpacity={0.15}/>
-                      <stop offset="100%" stopColor={lineColor} stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <XAxis dataKey="label" hide axisLine={false} tickLine={false}/>
-                  <YAxis hide domain={["auto","auto"]}/>
-                  <Tooltip
-                    contentStyle={{ background: "#0f1117", border: "1px solid #1a1d26", borderRadius: 6, fontSize: 11, color: "#E8E6DF", padding: "6px 12px" }}
-                    formatter={(v, name) => {
-                      if (name === "pct") return [`${v >= 0 ? "+" : ""}${v?.toFixed(2)}%  ($${fmt(chartData.find(p => p.pct === v)?.valore || 0)})`, "Portafoglio"];
-                      if (name === "spyPct") return [`${v >= 0 ? "+" : ""}${v?.toFixed(2)}%`, "S&P 500"];
-                      return [v, name];
-                    }}
-                    labelFormatter={label => label}
-                    labelStyle={{ color: "#555", fontSize: 10, marginBottom: 2 }}
-                    cursor={{ stroke: lineColor, strokeWidth: 1, strokeDasharray: "4 2" }}
-                  />
-                  <Area type="monotone" dataKey="pct" stroke={lineColor} strokeWidth={1.5}
-                    fill="url(#gqGrad)" dot={false}
-                    activeDot={{ r: 4, fill: lineColor, stroke: "#0D0F14", strokeWidth: 2 }}/>
-                  {showBenchmark && (
-                    <Line type="monotone" dataKey="spyPct" stroke="#F4C542" strokeWidth={1}
-                      dot={false} strokeDasharray="4 2"
-                      activeDot={{ r: 3, fill: "#F4C542" }}
-                      connectNulls={true}/>
-                  )}
-                  {purchaseMarkers.map(m => (
-                    <ReferenceLine key={m.ticker + m.date} x={m.label}
-                      stroke="#7EB8F755" strokeDasharray="3 3" strokeWidth={1}
-                      label={{ value: m.ticker, position: "insideTopRight", fill: "#7EB8F7", fontSize: 8 }}/>
-                  ))}
-                </ComposedChart>
-              </ResponsiveContainer>
-            )}
-
-            {/* Legenda benchmark + acquisti */}
-            <div style={{ display: "flex", gap: 16, flexWrap: "wrap", padding: "8px 20px 0", borderTop: "1px solid #0f1117", marginTop: 8, alignItems: "center" }}>
-              {showBenchmark && (
-                <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, color: "#444" }}>
-                  <div style={{ width: 16, height: 1, background: "#F4C542", borderTop: "1px dashed #F4C542" }}/>
-                  <span style={{ color: "#F4C542" }}>S&P 500</span>
-                  {(() => {
-                    const spyFirst = chartData.find(p => p.spy != null)?.spy;
-                    const spyLast  = [...chartData].reverse().find(p => p.spy != null)?.spy;
-                    if (!spyFirst || !spyLast) return null;
-                    const spyPct = ((spyLast - spyFirst) / spyFirst * 100);
-                    return <span style={{ color: spyPct >= 0 ? "#5EC98A" : "#E87040", fontSize: 10 }}>
-                      {spyPct >= 0 ? "+" : ""}{spyPct.toFixed(2)}%
-                    </span>;
-                  })()}
-                </div>
-              )}
-              {purchaseMarkers.map(m => (
-                <div key={m.ticker + m.date} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, color: "#444" }}>
-                  <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#7EB8F7", flexShrink: 0 }}/>
-                  <span style={{ color: "#7EB8F7" }}>{m.ticker}</span>
-                  <span>{m.qty} az. @ ${fmt(m.buyPrice)}</span>
-                  {m.beforeRange && <span style={{ color: "#555", fontSize: 9 }}>(prima del periodo)</span>}
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })()}
+      <ChartCard stocks={stocks} eurRate={eurRate} />
 
       {/* ── ALLOCAZIONE (torta stile GetQuin) ── */}
-      <AllocationCard stocks={stocks} totalValue={totalValue} eurRate={eurRate} fmt={fmt} fmtPct={fmtPct} />
+      <AllocationCard stocks={stocks} eurRate={eurRate} />
 
       {/* ── LISTA TITOLI COMPATTA ── */}
       <div className="card">
@@ -2975,13 +2240,7 @@ function WhatIfTab({ fmt, fmtPct, eurRate }) {
 
 // Converte prezzo in USD usando il tasso EUR/USD corrente
 // EUR → price / eurRate | GBp (pence) → price/100 / (eurRate*0.85) | USD → invariato
-function toUSD(price, currency, eurRate = 0.92) {
-  if (!price) return 0;
-  if (!currency || currency === "USD") return price;
-  if (currency === "EUR") return eurRate > 0 ? price / eurRate : price;
-  if (currency === "GBp") return eurRate > 0 ? (price / 100) / (eurRate * 0.85) : price;
-  return price;
-}
+
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -3007,23 +2266,11 @@ export default function App() {
   const currency = "USD";
   const sym = "$";
   const rate = 1;
-  const [eurRate, setEurRate] = useState(0.92); // live EUR/USD rate
+  const eurRate = useEurRate(); // live EUR/USD rate
 
 
 
-  // Fetch live EUR rate on mount
-  useEffect(() => {
-    fetch("https://api.exchangerate-api.com/v4/latest/USD")
-      .then(r => r.json())
-      .then(d => {
-        if (d.rates?.EUR) {
-          const liveEur = parseFloat(d.rates.EUR.toFixed(4));
-          setEurRate(liveEur);
-          CURRENCIES.EUR.rate = liveEur; // aggiorna tasso live
-        }
-      })
-      .catch(() => {});
-  }, []);
+  // eurRate gestito da useEurRate hook
 
   const setPlan = (p) => { setPlanRaw(p); lsSet("pt_plan", p); };
 
@@ -3077,7 +2324,7 @@ export default function App() {
             }
           }
 
-          fetchRealPrice(stock.ticker, true).then(result => {
+          fetchPrice(stock.ticker, true).then(result => {
             if (!result) return;
             const livePrice = result.price;
             const ms = result.marketState || "CLOSED";
@@ -3142,7 +2389,7 @@ export default function App() {
     setRefreshing(true);
     let done = 0;
     stocks.forEach(stock => {
-      fetchRealPrice(stock.ticker, true).then(result => {
+      fetchPrice(stock.ticker, true).then(result => {
         if (result) {
           const livePrice = result.price;
           const ms = result.marketState || "CLOSED";
@@ -3233,8 +2480,8 @@ export default function App() {
   useEffect(() => {
     (async () => {
       const updated = await Promise.all(stocks.map(async s => {
-        const real = await fetchRealPrice(s.ticker);
-        const history = await fetchRealHistory(s.ticker) || simulateHistory(real || s.buyPrice);
+        const real = await fetchPrice(s.ticker);
+        const history = await fetchHistory(s.ticker) || simulateHistory(real || s.buyPrice);
         if (real && history.length > 0) history[history.length - 1].price = real;
         return { ...s, currentPrice: real || s.currentPrice, history, priceReal: !!real };
       }));
@@ -3252,7 +2499,7 @@ export default function App() {
     if (plan === "free" && stocks.length >= PLANS.free.maxStocks) { setShowUpgrade(true); return; }
     setFormErr(""); setAdding(true);
     // Valida sempre il ticker — se non esiste blocca l'aggiunta
-    const realPrice = await fetchRealPrice(t);
+    const realPrice = await fetchPrice(t);
     if (!realPrice) {
       setFormErr(`Ticker "${t}" non trovato. Verifica il simbolo e riprova.`);
       setAdding(false);
@@ -3283,7 +2530,7 @@ export default function App() {
     setForm({ ticker: "", qty: "", buyPrice: "", sector: "Altro", buyDate: new Date().toISOString().split("T")[0] });
     setAdding(false); setShowForm(false);
     // Auto-refresh prezzo live dopo aggiunta
-    fetchRealPrice(t, true).then(result => {
+    fetchPrice(t, true).then(result => {
       if (!result) return;
       const detCurr = result.currency || (
         t.endsWith(".MI")||t.endsWith(".AS")||t.endsWith(".PA")||t.endsWith(".DE")||t.endsWith(".SW") ? "EUR" :
@@ -3380,7 +2627,7 @@ export default function App() {
     const key = `${displayStock.ticker}_${chartPeriod}`;
     if (periodHistory[key]) return;
     setPeriodLoading(true);
-    fetchRealHistory(displayStock.ticker, chartPeriod).then(candles => {
+    fetchHistory(displayStock.ticker, chartPeriod).then(candles => {
       setPeriodHistory(h => ({ ...h, [key]: candles || simulateHistory(displayStock.currentPrice, chartPeriod) }));
       setPeriodLoading(false);
     });
@@ -3468,7 +2715,7 @@ export default function App() {
     }
     const KNOWN_ETFS_IMPORT = ["QQQ","SPY","IVV","VOO","VTI","VEA","VWO","XLE","XLF","XLK","XLV","XLI","XLP","XLY","XLB","XLU","XLRE","XLC","GLD","SLV","TLT","IEF","HYG","LQD","ARKK","ARKG","IWM","EEM","SWDA","VWCE","IWDA","CSPX","EUNL","IUSQ","XDWD","VUSA","MEUD","IEMA","AGGH","IBCI","SGLD","IBTM","VGOV","VMID","CQQQ","TIPS","BIL","SHY","VWRL","SXR8","VUAA"];
     const imported = await Promise.all(importPreview.map(async (r) => {
-      const result = await fetchRealPrice(r.ticker, true);
+      const result = await fetchPrice(r.ticker, true);
       const livePrice = result?.price || null;
       const detectedCurrency = result?.currency || (
         r.ticker.endsWith(".MI")||r.ticker.endsWith(".AS")||r.ticker.endsWith(".PA")||r.ticker.endsWith(".DE")||r.ticker.endsWith(".SW") ? "EUR" :
