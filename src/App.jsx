@@ -1923,8 +1923,10 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
           ].map(({ l, v }) => (
             <div key={l} style={{ background: "#0f1117", border: "1px solid #1a1d26", borderRadius: 6, padding: "10px 14px", minWidth: 90, textAlign: "center" }}>
               <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 5 }}>{l}</div>
-              {varLoading || !v ? (
+              {varLoading ? (
                 <div style={{ fontSize: 11, color: "#333" }}>…</div>
+              ) : !v || isNaN(v.pct) || isNaN(v.pnl) ? (
+                <div style={{ fontSize: 11, color: "#333" }}>—</div>
               ) : (
                 <>
                   <div style={{ fontSize: 13, fontWeight: 500, color: col(v.pct) }}>{sign(v.pct)}{v.pct.toFixed(2)}%</div>
