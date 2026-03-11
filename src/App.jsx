@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, createContext, useContext, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area, ReferenceLine, LineChart, Line, Legend, BarChart, Bar } from "recharts";
+import { PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area, ReferenceLine, LineChart, Line, Legend, BarChart, Bar, ComposedChart } from "recharts";
 import { supabase, signIn, signUp, signOut, getSession, loadStocks, saveStock, deleteStock, loadNotes, saveNote, loadAlerts, saveAlert, deleteAlert } from "./utils/supabase";
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
@@ -653,6 +653,19 @@ function EditModal({ stock, onClose, onSave }) {
   const [stopLoss, setStopLoss] = useState(String(stock.stopLoss || ""));
   const [sector, setSector] = useState(stock.sector || "Altro");
 
+  // Converti buyDate in YYYY-MM-DD per il datepicker
+  const toISO = (s) => {
+    if (!s) return new Date().toISOString().split("T")[0];
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const p = s.split("/");
+    if (p.length === 3) {
+      const yr = p[2].length === 2 ? "20" + p[2] : p[2];
+      return `${yr}-${p[1].padStart(2,"0")}-${p[0].padStart(2,"0")}`;
+    }
+    return new Date().toISOString().split("T")[0];
+  };
+  const [buyDate, setBuyDate] = useState(toISO(stock.buyDate));
+
   useEffect(() => {
     const fn = e => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", fn);
@@ -660,13 +673,18 @@ function EditModal({ stock, onClose, onSave }) {
   }, []);
 
   function handleSave() {
-    onSave({ ...stock, qty: parseFloat(qty)||stock.qty, buyPrice: parseFloat(buyPrice)||stock.buyPrice, targetPrice: parseFloat(targetPrice)||null, stopLoss: parseFloat(stopLoss)||null, sector });
+    // Converti data da YYYY-MM-DD a dd/mm/yy
+    const dp = buyDate.split("-");
+    const buyDateFormatted = dp.length === 3 ? `${dp[2]}/${dp[1]}/${dp[0].slice(2)}` : stock.buyDate;
+    onSave({ ...stock, qty: parseFloat(qty)||stock.qty, buyPrice: parseFloat(buyPrice)||stock.buyPrice,
+      targetPrice: parseFloat(targetPrice)||null, stopLoss: parseFloat(stopLoss)||null,
+      sector, buyDate: buyDateFormatted });
     onClose();
   }
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 9100, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: "#0D0F14", border: "1px solid #1a1d26", borderRadius: 12, width: "100%", maxWidth: 400, padding: "28px 28px 24px", animation: "fadeUp 0.2s ease" }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: "#0D0F14", border: "1px solid #1a1d26", borderRadius: 12, width: "100%", maxWidth: 420, padding: "28px 28px 24px", animation: "fadeUp 0.2s ease" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 22 }}>
           <div>
             <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300 }}>{stock.ticker}</div>
@@ -691,6 +709,11 @@ function EditModal({ stock, onClose, onSave }) {
             <select value={sector} onChange={e => setSector(e.target.value)}>
               {SECTORS.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
+          </div>
+          <div>
+            <div style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6 }}>📅 Data Acquisto</div>
+            <input type="date" value={buyDate} max={new Date().toISOString().split("T")[0]}
+              onChange={e => setBuyDate(e.target.value)} style={{ fontSize: 13, colorScheme: "dark" }}/>
           </div>
         </div>
         <div style={{ display: "flex", gap: 10, marginTop: 22 }}>
@@ -1571,6 +1594,8 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
   const [varLoading, setVarLoading] = useState(false);
   const [realChartData, setRealChartData] = useState([]);
   const [chartLoading, setChartLoading] = useState(false);
+  const [showBenchmark, setShowBenchmark] = useState(false);
+  const [benchmarkData, setBenchmarkData] = useState([]); // Serie SPY normalizzata
 
   const col = v => v >= 0 ? "#5EC98A" : "#E87040";
   const sign = v => v >= 0 ? "+" : "";
@@ -1595,13 +1620,18 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
     setVarLoading(true);
     setChartLoading(true);
 
-    // Variazione giornaliera
+    // Variazione giornaliera — usa prevClose se disponibile, altrimenti serie storica
+    const hasPrevClose = stocks.some(s => s.prevClose && s.prevClose !== s.currentPrice);
     const dayPnl = stocks.reduce((sum, s) => {
-      const prevClose = s.prevClose || s.currentPrice;
-      return sum + (s.currentPrice - prevClose) * s.qty;
+      const prev = s.prevClose && s.prevClose !== s.currentPrice ? s.prevClose : null;
+      if (!prev) return sum; // skippa se non abbiamo dato reale
+      return sum + (s.currentPrice - prev) * s.qty;
     }, 0);
-    const prevTotalValue = stocks.reduce((sum, s) => sum + (s.prevClose || s.currentPrice) * s.qty, 0);
-    const dayPct = prevTotalValue > 0 ? (dayPnl / prevTotalValue) * 100 : 0;
+    const prevTotalValue = stocks.reduce((sum, s) => {
+      const prev = s.prevClose && s.prevClose !== s.currentPrice ? s.prevClose : s.currentPrice;
+      return sum + prev * s.qty;
+    }, 0);
+    const dayPct = prevTotalValue > 0 && hasPrevClose ? (dayPnl / prevTotalValue) * 100 : null;
 
     // Calcola giorni da fetchare: dalla prima data di acquisto
     const firstDate = stocks.reduce((min, s) => {
@@ -1667,6 +1697,30 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
 
       setRealChartData(series);
 
+      // Fetch benchmark SPY (normalizzato al primo valore del portafoglio)
+      fetch(`${API_BASE}/api/history?symbol=SPY&days=${daysToFetch}`)
+        .then(r => r.json())
+        .then(d => {
+          const spyCandles = d.candles || [];
+          if (spyCandles.length < 2 || !series.length) return;
+          // Trova primo valore SPY allineato alla prima data del portafoglio
+          const firstPortDate = series[0]?.date;
+          const spyStart = spyCandles.find(c => c.date >= firstPortDate) || spyCandles[0];
+          if (!spyStart) return;
+          const basePrice = spyStart.price;
+          const basePortVal = series[0]?.valore;
+          if (!basePrice || !basePortVal) return;
+          // Normalizza: SPY al valore iniziale del portafoglio
+          const normalized = spyCandles
+            .filter(c => c.date >= firstPortDate)
+            .map(c => ({
+              date: c.date,
+              label: new Date(c.date + "T12:00:00").toLocaleDateString("it-IT", { day: "2-digit", month: "short" }),
+              spy: parseFloat((basePortVal * c.price / basePrice).toFixed(2))
+            }));
+          setBenchmarkData(normalized);
+        }).catch(() => {});
+
       // Variazioni da serie reale
       const nowVal = series[series.length - 1]?.valore || 0;
       const findAgo = (days) => {
@@ -1682,8 +1736,16 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
         return { pnl: parseFloat(pnl.toFixed(2)), pct: parseFloat(((pnl/old)*100).toFixed(2)) };
       };
 
+      // Variazione oggi: usa serie storica (ieri vs oggi) se non abbiamo prevClose
+      const seriesDay = series.length >= 2
+        ? mkVar(series[series.length - 2]?.valore)
+        : null;
+      const dayVar = hasPrevClose && dayPct !== null
+        ? { pnl: parseFloat(dayPnl.toFixed(2)), pct: parseFloat(dayPct.toFixed(2)) }
+        : seriesDay;
+
       setVariations({
-        day:   { pnl: parseFloat(dayPnl.toFixed(2)), pct: parseFloat(dayPct.toFixed(2)) },
+        day:   dayVar,
         month: mkVar(findAgo(30)),
         year:  mkVar(findAgo(365)),
       });
@@ -1692,17 +1754,21 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
     }).catch(() => { setVarLoading(false); setChartLoading(false); });
   }, [stocks.map(s => s.ticker + s.qty + s.buyDate).join(",")]);
 
-  // Slice grafico in base al periodo selezionato
+  // Slice grafico in base al periodo selezionato + merge benchmark
   const chartData = useMemo(() => {
     if (!realChartData.length) return [];
-    const n = realChartData.length;
-    if (chartPeriod === "Inizio") return realChartData;
+    if (chartPeriod === "Inizio") {
+      const bMap = Object.fromEntries(benchmarkData.map(b => [b.date, b.spy]));
+      return realChartData.map(p => ({ ...p, spy: bMap[p.date] ?? null }));
+    }
     const sliceMap = { "1M": 30, "3M": 63, "6M": 126, "1A": 252 };
     const days = sliceMap[chartPeriod] || 30;
     const cutoff = new Date(Date.now() - days * 86400000).toISOString().split("T")[0];
     const filtered = realChartData.filter(p => p.date >= cutoff);
-    return filtered.length > 1 ? filtered : realChartData.slice(-days);
-  }, [realChartData, chartPeriod]);
+    const base = filtered.length > 1 ? filtered : realChartData.slice(-days);
+    const bMap = Object.fromEntries(benchmarkData.map(b => [b.date, b.spy]));
+    return base.map(p => ({ ...p, spy: bMap[p.date] ?? null }));
+  }, [realChartData, chartPeriod, benchmarkData]);
 
   // Marker acquisti: mostra sempre tutti gli acquisti nel range visibile
   const purchaseMarkers = useMemo(() => {
@@ -1795,7 +1861,7 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
         return (
           <div style={{ marginBottom: 16, background: "#0D0F14", borderRadius: 8, padding: "20px 0 8px 0" }}>
             {/* Periodo selector stile GetQuin */}
-            <div style={{ display: "flex", gap: 2, marginBottom: 16, paddingLeft: 20 }}>
+            <div style={{ display: "flex", gap: 2, marginBottom: 16, paddingLeft: 20, alignItems: "center", flexWrap: "wrap" }}>
               {["1M","3M","6M","1A","Inizio"].map(p => (
                 <button key={p} onClick={() => setChartPeriod(p)}
                   style={{ background: chartPeriod === p ? "#1a1d26" : "none",
@@ -1806,9 +1872,20 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
                   {p}
                 </button>
               ))}
-              <span style={{ marginLeft: "auto", marginRight: 20, fontSize: 11, color: chartPos ? "#5EC98A" : "#E87040", alignSelf: "center" }}>
-                {chartPos ? "▲" : "▼"} {Math.abs(chartPct).toFixed(2)}%
-              </span>
+              <div style={{ marginLeft: "auto", marginRight: 20, display: "flex", alignItems: "center", gap: 12 }}>
+                {/* Toggle benchmark */}
+                <button onClick={() => setShowBenchmark(v => !v)}
+                  style={{ fontSize: 9, padding: "3px 8px", borderRadius: 3, cursor: "pointer",
+                    fontFamily: "inherit", border: "1px solid",
+                    background: showBenchmark ? "#F4C54211" : "none",
+                    color: showBenchmark ? "#F4C542" : "#333",
+                    borderColor: showBenchmark ? "#F4C54244" : "#2a2d35" }}>
+                  vs S&P 500
+                </button>
+                <span style={{ fontSize: 11, color: chartPos ? "#5EC98A" : "#E87040" }}>
+                  {chartPos ? "▲" : "▼"} {Math.abs(chartPct).toFixed(2)}%
+                </span>
+              </div>
             </div>
 
             {chartLoading ? (
@@ -1817,7 +1894,7 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
               </div>
             ) : (
               <ResponsiveContainer width="100%" height={180}>
-                <AreaChart data={chartData} margin={{ top: 5, right: 0, bottom: 0, left: 0 }}>
+                <ComposedChart data={chartData} margin={{ top: 5, right: 0, bottom: 0, left: 0 }}>
                   <defs>
                     <linearGradient id="gqGrad" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor={lineColor} stopOpacity={0.15}/>
@@ -1837,27 +1914,47 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
                   <Area type="monotone" dataKey="valore" stroke={lineColor} strokeWidth={1.5}
                     fill="url(#gqGrad)" dot={false}
                     activeDot={{ r: 4, fill: lineColor, stroke: "#0D0F14", strokeWidth: 2 }}/>
+                  {showBenchmark && (
+                    <Line type="monotone" dataKey="spy" stroke="#F4C542" strokeWidth={1}
+                      dot={false} strokeDasharray="4 2"
+                      activeDot={{ r: 3, fill: "#F4C542" }}
+                      connectNulls={true}/>
+                  )}
                   {purchaseMarkers.map(m => (
                     <ReferenceLine key={m.ticker + m.date} x={m.label}
                       stroke="#7EB8F755" strokeDasharray="3 3" strokeWidth={1}
                       label={{ value: m.ticker, position: "insideTopRight", fill: "#7EB8F7", fontSize: 8 }}/>
                   ))}
-                </AreaChart>
+                </ComposedChart>
               </ResponsiveContainer>
             )}
 
-            {/* Legenda acquisti */}
-            {purchaseMarkers.length > 0 && (
-              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", padding: "8px 20px 0", borderTop: "1px solid #0f1117", marginTop: 8 }}>
-                {purchaseMarkers.map(m => (
-                  <div key={m.ticker + m.date} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, color: "#444" }}>
-                    <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#7EB8F7" }}/>
-                    <span style={{ color: "#7EB8F7" }}>{m.ticker}</span>
-                    <span>{m.qty} az. @ ${fmt(m.buyPrice)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+            {/* Legenda benchmark + acquisti */}
+            <div style={{ display: "flex", gap: 16, flexWrap: "wrap", padding: "8px 20px 0", borderTop: "1px solid #0f1117", marginTop: 8, alignItems: "center" }}>
+              {showBenchmark && (
+                <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, color: "#444" }}>
+                  <div style={{ width: 16, height: 1, background: "#F4C542", borderTop: "1px dashed #F4C542" }}/>
+                  <span style={{ color: "#F4C542" }}>S&P 500</span>
+                  {(() => {
+                    const spyFirst = chartData.find(p => p.spy != null)?.spy;
+                    const spyLast  = [...chartData].reverse().find(p => p.spy != null)?.spy;
+                    if (!spyFirst || !spyLast) return null;
+                    const spyPct = ((spyLast - spyFirst) / spyFirst * 100);
+                    return <span style={{ color: spyPct >= 0 ? "#5EC98A" : "#E87040", fontSize: 10 }}>
+                      {spyPct >= 0 ? "+" : ""}{spyPct.toFixed(2)}%
+                    </span>;
+                  })()}
+                </div>
+              )}
+              {purchaseMarkers.map(m => (
+                <div key={m.ticker + m.date} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, color: "#444" }}>
+                  <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#7EB8F7", flexShrink: 0 }}/>
+                  <span style={{ color: "#7EB8F7" }}>{m.ticker}</span>
+                  <span>{m.qty} az. @ ${fmt(m.buyPrice)}</span>
+                  {m.beforeRange && <span style={{ color: "#555", fontSize: 9 }}>(prima del periodo)</span>}
+                </div>
+              ))}
+            </div>
           </div>
         );
       })()}
