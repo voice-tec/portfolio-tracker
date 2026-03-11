@@ -6,8 +6,8 @@ import { parseBuyDate } from "../utils/dates";
 const DAYS_MAP = { "1M": 30, "3M": 63, "6M": 126, "1A": 252 };
 
 export function useChart(stocks, eurRate, period = "Inizio") {
-  const [rawSeries, setRawSeries] = useState([]); // [{date, label, valore, pnlPct}]
-  const [benchmark, setBenchmark] = useState([]); // [{date, spy}]
+  const [rawSeries, setRawSeries] = useState([]); // [{date, label, valore, costoTot}]
+  const [benchmark, setBenchmark] = useState([]);
   const [loading, setLoading]     = useState(false);
 
   useEffect(() => {
@@ -26,10 +26,10 @@ export function useChart(stocks, eurRate, period = "Inizio") {
         .then(c => ({ ticker: "SPY", candles: c || [] }))
         .catch(() => ({ ticker: "SPY", candles: [] })),
     ]).then(results => {
-      const spyCandles  = results.find(r => r.ticker === "SPY")?.candles || [];
+      const spyCandles   = results.find(r => r.ticker === "SPY")?.candles || [];
       const stockResults = results.filter(r => r.ticker !== "SPY");
 
-      // {ticker → {dateISO → price}}
+      // {ticker → {dateISO → price}} — prezzi in valuta nativa
       const priceMap = {};
       stockResults.forEach(({ ticker, candles }) => {
         priceMap[ticker] = {};
@@ -54,24 +54,18 @@ export function useChart(stocks, eurRate, period = "Inizio") {
         return last;
       }
 
-      // Posizioni con buyDateISO e costoBases in USD
-      const positions = stocks
-        .map((s, i) => {
-          const buyDateISO = (() => {
-            const d = parseBuyDate(s.buyDate);
-            return d ? d.toISOString().slice(0, 10) : null;
-          })();
-          // Costo acquisto in USD (fisso — non cambia mai)
-          const costUSD = s.qty * toUSD(s.buyPrice, s.currency, eurRate);
-          return { ...s, posId: i, buyDateISO, costUSD };
-        })
-        .sort((a, b) => (a.buyDateISO || "").localeCompare(b.buyDateISO || ""));
-
-      // Prima data disponibile per ogni posizione
-      positions.forEach(pos => {
-        pos._firstDate = pos.buyDateISO
-          ? (Object.keys(priceMap[pos.ticker] || {}).sort().find(d => d >= pos.buyDateISO) || null)
+      // Posizioni con buyDateISO e costo in USD
+      const positions = stocks.map((s, i) => {
+        const buyDateISO = (() => {
+          const d = parseBuyDate(s.buyDate);
+          return d ? d.toISOString().slice(0, 10) : null;
+        })();
+        const costUSD = s.qty * toUSD(s.buyPrice, s.currency, eurRate);
+        // Prima data disponibile >= buyDate
+        const firstDate = buyDateISO
+          ? (Object.keys(priceMap[s.ticker] || {}).sort().find(d => d >= buyDateISO) || null)
           : null;
+        return { ...s, posId: i, buyDateISO, costUSD, firstDate };
       });
 
       // Tutte le date con dati
@@ -79,15 +73,7 @@ export function useChart(stocks, eurRate, period = "Inizio") {
         Object.values(priceMap).flatMap(m => Object.keys(m))
       )].sort();
 
-      // ── Serie storica ────────────────────────────────────────────────────
-      // Per ogni giorno calcola:
-      //   valore    = Σ qty × prezzoStorico  (in USD)
-      //   costoTot  = Σ costUSD per posizioni attive (fisso)
-      //   pnlPct    = (valore / costoTot - 1) × 100
-      //
-      // pnlPct non ha mai spike perché il denominatore (costoTot) è fisso
-      // e cresce solo quando entra una nuova posizione — in modo graduale.
-
+      // ── Serie: per ogni giorno somma valore e costo attivi ───────────────
       const series = [];
 
       allDates.forEach(dateISO => {
@@ -96,7 +82,7 @@ export function useChart(stocks, eurRate, period = "Inizio") {
         let active   = 0;
 
         positions.forEach(pos => {
-          if (!pos._firstDate || dateISO < pos._firstDate) return;
+          if (!pos.firstDate || dateISO < pos.firstDate) return;
           const p = priceAt(pos.ticker, dateISO);
           if (p == null) return;
           valore   += pos.qty * toUSD(p, pos.currency, eurRate);
@@ -104,13 +90,12 @@ export function useChart(stocks, eurRate, period = "Inizio") {
           active++;
         });
 
-        if (active === 0 || valore === 0 || costoTot === 0) return;
+        if (!active || !valore) return;
 
-        const pnlPct = parseFloat(((valore / costoTot - 1) * 100).toFixed(2));
-        const label  = new Date(dateISO + "T12:00:00")
+        const label = new Date(dateISO + "T12:00:00")
           .toLocaleDateString("it-IT", { day: "2-digit", month: "short" });
 
-        series.push({ date: dateISO, label, valore, pnlPct });
+        series.push({ date: dateISO, label, valore, costoTot });
       });
 
       setRawSeries(series);
@@ -128,10 +113,10 @@ export function useChart(stocks, eurRate, period = "Inizio") {
     eurRate,
   ]);
 
-  // ── Slice per periodo ──────────────────────────────────────────────────────
   const chartData = useMemo(() => {
     if (!rawSeries.length) return [];
 
+    // Slice per periodo
     let slice;
     if (period === "Inizio") {
       slice = rawSeries;
@@ -142,25 +127,21 @@ export function useChart(stocks, eurRate, period = "Inizio") {
       slice = filtered.length > 1 ? filtered : rawSeries.slice(-days);
     }
 
-    // Modalità VALORE: usa valore assoluto — nessuna normalizzazione
-    // Modalità PERFORMANCE: usa pnlPct già calcolato — nessuna normalizzazione
-    // Entrambe non hanno spike perché:
-    //   - valore: è la somma reale dei prezzi storici
-    //   - pnlPct: denominatore fisso (costo acquisto)
-
-    // Benchmark SPY normalizzato al primo giorno del range
-    const bMap   = Object.fromEntries(benchmark.map(b => [b.date, b.spy]));
+    // Benchmark SPY normalizzato al valore del portafoglio al primo giorno del range
+    const bMap    = Object.fromEntries(benchmark.map(b => [b.date, b.spy]));
     const spyBase = bMap[slice[0]?.date]
       ?? benchmark.find(b => b.date >= slice[0]?.date)?.spy;
+    const valBase = slice[0]?.valore ?? 1;
 
     return slice.map(p => ({
       ...p,
-      // pct = performance relativa al periodo (per modalità "performance nel range")
-      pct: parseFloat((p.pnlPct - (slice[0]?.pnlPct ?? 0)).toFixed(2)),
-      spyPct: (() => {
+      // Rendimento % dal primo giorno del range (per tooltip e confronto)
+      pct: parseFloat(((p.valore / valBase - 1) * 100).toFixed(2)),
+      // SPY scalato allo stesso valore iniziale del portafoglio
+      spyScaled: (() => {
         const sv = bMap[p.date];
         if (!sv || !spyBase) return null;
-        return parseFloat(((sv / spyBase - 1) * 100).toFixed(2));
+        return parseFloat(((sv / spyBase) * valBase).toFixed(2));
       })(),
     }));
   }, [rawSeries, benchmark, period]);
