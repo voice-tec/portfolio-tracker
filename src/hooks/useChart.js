@@ -31,129 +31,89 @@ export function useChart(stocks, eurRate, period = "Inizio") {
       const spyResult = results.find(r => r.ticker === "SPY");
       const stockResults = results.filter(r => r.ticker !== "SPY");
 
-      // Mappa {dateISO: {ticker: price}}
-      const priceMap = {};
+      // Mappa prezzi {ticker: {dateISO: price}}
+      const tickerPriceMap = {};
       stockResults.forEach(r => {
+        tickerPriceMap[r.ticker] = {};
         r.candles.forEach(c => {
           const dateISO = new Date(c.t * 1000).toISOString().split("T")[0];
-          if (!priceMap[dateISO]) priceMap[dateISO] = {};
-          priceMap[dateISO][r.ticker] = c.c;
+          tickerPriceMap[r.ticker][dateISO] = c.c;
         });
       });
 
-      // Arricchisci con buyDateISO e ordina per data acquisto (cronologico)
-      const enriched = stocks
-        .map(s => ({
-          ...s,
-          buyDateISO: (() => {
-            const d = parseBuyDate(s.buyDate);
-            return d ? d.toISOString().split("T")[0] : null;
-          })(),
-        }))
-        .sort((a, b) => {
-          if (!a.buyDateISO) return 1;
-          if (!b.buyDateISO) return -1;
-          return a.buyDateISO.localeCompare(b.buyDateISO);
+      // Per ogni titolo, trova il prezzo più vicino a una data
+      function getPriceAt(ticker, dateISO) {
+        const prices = tickerPriceMap[ticker];
+        if (!prices) return null;
+        if (prices[dateISO]) return prices[dateISO];
+        // Cerca il prezzo più recente disponibile prima di questa data
+        const dates = Object.keys(prices).sort();
+        let last = null;
+        for (const d of dates) {
+          if (d <= dateISO) last = prices[d];
+          else break;
+        }
+        return last;
+      }
+
+      // Arricchisci con buyDateISO e prezzo di acquisto storico
+      const enriched = stocks.map(s => {
+        const buyDateISO = (() => {
+          const d = parseBuyDate(s.buyDate);
+          return d ? d.toISOString().split("T")[0] : null;
+        })();
+        // Prezzo storico alla data di acquisto (in USD)
+        const buyPriceHistorical = buyDateISO
+          ? toUSD(getPriceAt(s.ticker, buyDateISO) || s.buyPrice, s.currency, eurRate)
+          : toUSD(s.buyPrice, s.currency, eurRate);
+
+        return { ...s, buyDateISO, buyPriceHistorical };
+      });
+
+      // Raccoglie tutte le date con almeno un titolo attivo
+      const allDatesSet = new Set();
+      enriched.forEach(s => {
+        if (!s.buyDateISO) return;
+        Object.keys(tickerPriceMap[s.ticker] || {}).forEach(d => {
+          if (d >= s.buyDateISO) allDatesSet.add(d);
         });
+      });
+      const allDates = [...allDatesSet].sort();
 
-      // ── TWR robusto ────────────────────────────────────────────────────────
-      // Approccio: per ogni giorno calcola il valore del portafoglio in USD.
-      // Il TWR è semplicemente: (ValoreOggi / ValoreIeri) - 1
-      // MA quando entra un nuovo titolo, "ValoreIeri" deve includere anche
-      // il valore iniziale del nuovo titolo (al suo prezzo di acquisto),
-      // altrimenti il denominatore è troppo piccolo e il rendimento esplode.
+      // ── Algoritmo TWR corretto ────────────────────────────────────────────
+      // Per ogni giorno:
+      //   1. Calcola il valore attuale del portafoglio (solo titoli attivi)
+      //   2. Calcola il "valore base" = somma dei costi di acquisto storici
+      //   3. TWR% = (valoreAttuale / valoreBase) - 1
       //
-      // Soluzione corretta:
-      // - Teniamo traccia del "valore base" cumulativo del portafoglio
-      // - Quando entra un nuovo titolo, aggiungiamo il suo costo al valore base
-      // - Il TWR = (ValoreOggi / ValoreBase) - 1 — senza reset, senza moltiplicazioni
-      //
-      // Questo è equivalente al TWR ma più stabile numericamente.
+      // Questo evita qualsiasi spike perché non dipende dal giorno precedente.
+      // Il rendimento è sempre relativo al costo di acquisto reale.
 
-      const allDates = Object.keys(priceMap).sort();
-      const lastKnown = {};
       const series = [];
 
-      // "baseValue" cresce ogni volta che entra un nuovo titolo
-      // rappresenta il totale investito cumulativo ai prezzi del giorno di acquisto
-      let portfolioBase = null;    // valore base cumulativo (cresce con nuovi acquisti)
-      let prevPortfolioValue = null;
-      let twrFactor = 1.0;
-      let prevActiveSet = new Set();
-
       allDates.forEach(dateISO => {
-        // Aggiorna lastKnown con i prezzi di oggi
-        enriched.forEach(s => {
-          if (priceMap[dateISO]?.[s.ticker] != null) {
-            lastKnown[s.ticker] = priceMap[dateISO][s.ticker];
-          }
-        });
-
-        // Calcola valore totale oggi in USD (solo titoli già comprati)
         let todayValue = 0;
-        const activeToday = new Set();
+        let baseValue = 0;
+        let activeCount = 0;
+
         enriched.forEach(s => {
-          if (!s.buyDateISO || dateISO >= s.buyDateISO) {
-            const rawPrice = lastKnown[s.ticker];
-            if (rawPrice != null) {
-              todayValue += s.qty * toUSD(rawPrice, s.currency, eurRate);
-              activeToday.add(s.ticker);
-            }
-          }
+          if (!s.buyDateISO || dateISO < s.buyDateISO) return;
+          const rawPrice = getPriceAt(s.ticker, dateISO);
+          if (rawPrice == null) return;
+
+          const priceUSD = toUSD(rawPrice, s.currency, eurRate);
+          todayValue += s.qty * priceUSD;
+          baseValue  += s.qty * s.buyPriceHistorical;
+          activeCount++;
         });
 
-        if (activeToday.size === 0 || todayValue === 0) return;
+        if (activeCount === 0 || baseValue === 0) return;
 
+        const twr = parseFloat(((todayValue / baseValue - 1) * 100).toFixed(2));
         const label = new Date(dateISO + "T12:00:00")
           .toLocaleDateString("it-IT", { day: "2-digit", month: "short" });
 
-        // Nuovi titoli entrati oggi
-        const newEntries = [...activeToday].filter(t => !prevActiveSet.has(t));
-
-        if (prevPortfolioValue === null) {
-          // Primo giorno assoluto — inizializza base
-          portfolioBase = todayValue;
-          twrFactor = 1.0;
-          series.push({ date: dateISO, label, valore: todayValue, twr: 0 });
-        } else if (newEntries.length > 0) {
-          // Entrano nuovi titoli:
-          // 1. Prima calcola il rendimento del giorno sui titoli VECCHI
-          const oldValue = enriched
-            .filter(s => prevActiveSet.has(s.ticker))
-            .reduce((sum, s) => {
-              const p = lastKnown[s.ticker] || 0;
-              return sum + s.qty * toUSD(p, s.currency, eurRate);
-            }, 0);
-
-          if (prevPortfolioValue > 0 && oldValue > 0) {
-            const dayReturn = (oldValue - prevPortfolioValue) / prevPortfolioValue;
-            twrFactor *= (1 + Math.max(-0.15, Math.min(0.15, dayReturn)));
-          }
-
-          // 2. Aggiungi il costo dei nuovi titoli al base
-          // (usa il prezzo di oggi come proxy del prezzo di acquisto se non c'è la candela esatta)
-          newEntries.forEach(t => {
-            const s = enriched.find(x => x.ticker === t);
-            if (!s) return;
-            // Cerca il prezzo nella data di acquisto, altrimenti usa lastKnown
-            const buyDatePrice = priceMap[s.buyDateISO]?.[t] || lastKnown[t] || 0;
-            portfolioBase += s.qty * toUSD(buyDatePrice, s.currency, eurRate);
-          });
-
-          const twrPct = parseFloat(((twrFactor - 1) * 100).toFixed(2));
-          series.push({ date: dateISO, label, valore: todayValue, twr: twrPct });
-        } else {
-          // Giorno normale — nessun nuovo titolo
-          if (prevPortfolioValue > 0) {
-            const dayReturn = (todayValue - prevPortfolioValue) / prevPortfolioValue;
-            twrFactor *= (1 + Math.max(-0.15, Math.min(0.15, dayReturn)));
-          }
-          const twrPct = parseFloat(((twrFactor - 1) * 100).toFixed(2));
-          series.push({ date: dateISO, label, valore: todayValue, twr: twrPct });
-        }
-
-        prevPortfolioValue = todayValue;
-        prevActiveSet = new Set(activeToday);
+        series.push({ date: dateISO, label, valore: todayValue, twr });
       });
 
       setRawSeries(series);
@@ -174,7 +134,7 @@ export function useChart(stocks, eurRate, period = "Inizio") {
     eurRate,
   ]);
 
-  // Slice per periodo + normalizza benchmark
+  // Slice per periodo + normalizza al primo punto del range
   const chartData = useMemo(() => {
     if (!rawSeries.length) return [];
 
@@ -188,13 +148,16 @@ export function useChart(stocks, eurRate, period = "Inizio") {
       base = filtered.length > 1 ? filtered : rawSeries.slice(-days);
     }
 
+    // Normalizza: il primo punto del range = 0%
+    // Converti twr assoluto in twr relativo al periodo selezionato
     const baseTwr = base[0]?.twr ?? 0;
     const bMap = Object.fromEntries(benchmark.map(b => [b.date, b.spy]));
-    const spyBase = bMap[base[0]?.date] ?? benchmark.find(b => b.date >= base[0]?.date)?.spy;
+    const spyBase = bMap[base[0]?.date]
+      ?? benchmark.find(b => b.date >= base[0]?.date)?.spy;
 
     return base.map(p => ({
       ...p,
-      pct: parseFloat((((1 + (p.twr ?? 0) / 100) / (1 + baseTwr / 100) - 1) * 100).toFixed(2)),
+      pct: parseFloat((((1 + p.twr / 100) / (1 + baseTwr / 100) - 1) * 100).toFixed(2)),
       spyPct: (() => {
         const sv = bMap[p.date];
         if (!sv || !spyBase) return null;
