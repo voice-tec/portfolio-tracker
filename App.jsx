@@ -992,7 +992,7 @@ function StockModal({ stock, onClose, notes, setNotes, alerts, setAlerts, handle
 function MacroScenarioSection({ stocks, sym, rate, fmt, pct: fmtPct, col }) {
   const [selected, setSelected] = useState(MACRO_SCENARIOS[0]);
 
-  const totalValue = stocks.reduce((s, x) => s + x.qty * x.currentPrice, 0);
+  const totalValue = stocks.reduce((s, x) => s + x.qty * toUSD(x.currentPrice, x.currency, eurRate), 0);
 
   // Calcola impatto portafoglio per scenario selezionato
   const portfolioImpact = useMemo(() => {
@@ -1186,7 +1186,7 @@ function SimulazioniTab({ stocks, sym, rate, fmt, fmtPct }) {
   const [scenarioData, setScenarioData] = useState({});
   const [loading, setLoading] = useState(false);
 
-  const totalValue   = stocks.reduce((s, x) => s + x.qty * x.currentPrice, 0);
+  const totalValue   = stocks.reduce((s, x) => s + x.qty * toUSD(x.currentPrice, x.currency, eurRate), 0);
   const totalInvested = stocks.reduce((s, x) => s + x.qty * x.buyPrice, 0);
 
   useEffect(() => {
@@ -1788,9 +1788,9 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
               return s + stock.qty * priceUSD;
             }, 0);
 
-            if (oldYesterday > 0) {
+            if (oldYesterday > 0 && oldPartToday > 0) {
               // Rendimento dei titoli già presenti
-              const dayReturn = (oldPartToday - oldYesterday) / oldYesterday;
+              const dayReturn = Math.max(-0.5, Math.min(0.5, (oldPartToday - oldYesterday) / oldYesterday)); // cap ±50% per evitare spike
               twrFactor *= (1 + dayReturn);
             }
             // Altrimenti TWR invariato (primo giorno non calcoliamo)
@@ -2236,7 +2236,7 @@ function ForecastTab({ stocks, fmt, fmtPct, sym, rate }) {
   }, [selected?.ticker]);
 
   const portfolioForecast = useMemo(() => {
-    const totalValue = stocks.reduce((s, st) => s + st.qty * st.currentPrice, 0);
+    const totalValue = stocks.reduce((s, st) => s + st.qty * toUSD(st.currentPrice, st.currency, eurRate), 0);
     if (totalValue === 0) return null;
     let baseSum = 0, pessSum = 0, optSum = 0, covered = 0;
     stocks.forEach(st => {
@@ -3289,7 +3289,25 @@ export default function App() {
         t.endsWith(".MI")||t.endsWith(".AS")||t.endsWith(".PA")||t.endsWith(".DE")||t.endsWith(".SW") ? "EUR" :
         t.endsWith(".L") ? "GBp" : "USD"
       );
-      const ms = result.marketState && result.marketState !== "CLOSED" ? result.marketState : "REGULAR";
+      const msFromTime = (() => {
+        const now = new Date();
+        if (detCurr === "EUR" || detCurr === "GBp") {
+          const cet = new Date(now.toLocaleString("en-US", { timeZone: "Europe/Berlin" }));
+          const m = cet.getHours()*60+cet.getMinutes(), d = cet.getDay();
+          if (d===0||d===6) return "CLOSED";
+          if (m>=540&&m<1050) return "REGULAR";
+          if (m>=1050&&m<1200) return "POST";
+          return "CLOSED";
+        }
+        const ny = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
+        const m = ny.getHours()*60+ny.getMinutes(), d = ny.getDay();
+        if (d===0||d===6) return "CLOSED";
+        if (m>=240&&m<570) return "PRE";
+        if (m>=570&&m<960) return "REGULAR";
+        if (m>=960&&m<1200) return "POST";
+        return "CLOSED";
+      })();
+      const ms = (result.marketState && result.marketState !== "CLOSED") ? result.marketState : msFromTime;
       setStocksRaw(prev => prev.map(s => s.ticker === t
         ? { ...s, currentPrice: result.price, priceReal: true, marketState: ms,
             prevClose: result.prevClose || result.price,
