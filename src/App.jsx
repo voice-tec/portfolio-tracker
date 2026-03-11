@@ -1754,20 +1754,37 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
     }).catch(() => { setVarLoading(false); setChartLoading(false); });
   }, [stocks.map(s => s.ticker + s.qty + s.buyDate).join(",")]);
 
-  // Slice grafico in base al periodo selezionato + merge benchmark
+  // Slice grafico in base al periodo selezionato + benchmark in %
   const chartData = useMemo(() => {
     if (!realChartData.length) return [];
-    if (chartPeriod === "Inizio") {
-      const bMap = Object.fromEntries(benchmarkData.map(b => [b.date, b.spy]));
-      return realChartData.map(p => ({ ...p, spy: bMap[p.date] ?? null }));
-    }
     const sliceMap = { "1M": 30, "3M": 63, "6M": 126, "1A": 252 };
-    const days = sliceMap[chartPeriod] || 30;
-    const cutoff = new Date(Date.now() - days * 86400000).toISOString().split("T")[0];
-    const filtered = realChartData.filter(p => p.date >= cutoff);
-    const base = filtered.length > 1 ? filtered : realChartData.slice(-days);
+    let base;
+    if (chartPeriod === "Inizio") {
+      base = realChartData;
+    } else {
+      const days = sliceMap[chartPeriod] || 30;
+      const cutoff = new Date(Date.now() - days * 86400000).toISOString().split("T")[0];
+      const filtered = realChartData.filter(p => p.date >= cutoff);
+      base = filtered.length > 1 ? filtered : realChartData.slice(-days);
+    }
+    // Normalizza portafoglio in % rispetto al primo valore del range
+    const baseVal = base[0]?.valore;
+    if (!baseVal) return base;
+
+    // Benchmark SPY in % rispetto allo stesso punto di partenza
     const bMap = Object.fromEntries(benchmarkData.map(b => [b.date, b.spy]));
-    return base.map(p => ({ ...p, spy: bMap[p.date] ?? null }));
+    // Trova il valore SPY alla prima data del range
+    const spyBase = bMap[base[0]?.date] ?? benchmarkData.find(b => b.date >= base[0]?.date)?.spy;
+
+    return base.map(p => ({
+      ...p,
+      pct: parseFloat(((p.valore - baseVal) / baseVal * 100).toFixed(2)),
+      spyPct: (() => {
+        const sv = bMap[p.date];
+        if (!sv || !spyBase) return null;
+        return parseFloat(((sv - spyBase) / spyBase * 100).toFixed(2));
+      })(),
+    }));
   }, [realChartData, chartPeriod, benchmarkData]);
 
   // Marker acquisti: mostra sempre tutti gli acquisti nel range visibile
@@ -1855,7 +1872,7 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
       {(() => {
         const firstVal = chartData[0]?.valore;
         const lastVal  = chartData[chartData.length - 1]?.valore;
-        const chartPct = firstVal && lastVal ? ((lastVal - firstVal) / firstVal * 100) : 0;
+        const chartPct = chartData[chartData.length - 1]?.pct ?? (firstVal && lastVal ? ((lastVal - firstVal) / firstVal * 100) : 0);
         const chartPos = chartPct >= 0;
         const lineColor = chartPos ? "#5EC98A" : "#E87040";
         return (
@@ -1901,21 +1918,24 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
                       <stop offset="100%" stopColor={lineColor} stopOpacity={0}/>
                     </linearGradient>
                   </defs>
-                  <XAxis dataKey="label" tick={{ fill: "#2a2d35", fontSize: 9 }} axisLine={false} tickLine={false}
-                    interval="preserveStartEnd" tickMargin={8}/>
+                  <XAxis dataKey="label" hide axisLine={false} tickLine={false}/>
                   <YAxis hide domain={["auto","auto"]}/>
                   <Tooltip
                     contentStyle={{ background: "#0f1117", border: "1px solid #1a1d26", borderRadius: 6, fontSize: 11, color: "#E8E6DF", padding: "6px 12px" }}
-                    formatter={(v, name, props) => [`$${fmt(v)}`, ""]}
-                    labelFormatter={label => `${label}`}
+                    formatter={(v, name) => {
+                      if (name === "pct") return [`${v >= 0 ? "+" : ""}${v?.toFixed(2)}%  ($${fmt(chartData.find(p => p.pct === v)?.valore || 0)})`, "Portafoglio"];
+                      if (name === "spyPct") return [`${v >= 0 ? "+" : ""}${v?.toFixed(2)}%`, "S&P 500"];
+                      return [v, name];
+                    }}
+                    labelFormatter={label => label}
                     labelStyle={{ color: "#555", fontSize: 10, marginBottom: 2 }}
                     cursor={{ stroke: lineColor, strokeWidth: 1, strokeDasharray: "4 2" }}
                   />
-                  <Area type="monotone" dataKey="valore" stroke={lineColor} strokeWidth={1.5}
+                  <Area type="monotone" dataKey="pct" stroke={lineColor} strokeWidth={1.5}
                     fill="url(#gqGrad)" dot={false}
                     activeDot={{ r: 4, fill: lineColor, stroke: "#0D0F14", strokeWidth: 2 }}/>
                   {showBenchmark && (
-                    <Line type="monotone" dataKey="spy" stroke="#F4C542" strokeWidth={1}
+                    <Line type="monotone" dataKey="spyPct" stroke="#F4C542" strokeWidth={1}
                       dot={false} strokeDasharray="4 2"
                       activeDot={{ r: 3, fill: "#F4C542" }}
                       connectNulls={true}/>
