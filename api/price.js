@@ -22,112 +22,124 @@ export default async function handler(req, res) {
     return "CLOSED";
   }
 
-  // Prova a fetchare da Yahoo v7 con un simbolo specifico
+  // ── 1. Yahoo Finance v7 ──────────────────────────────────────────────────────
   async function tryYahoo(sym) {
-    const url = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(sym)}`;
-    const r = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "application/json",
-        "Referer": "https://finance.yahoo.com",
-        "Origin": "https://finance.yahoo.com",
-      }
-    });
-    if (!r.ok) return null;
-    const data = await r.json();
-    const q = data?.quoteResponse?.result?.[0];
-    if (!q?.regularMarketPrice) return null;
-    return q;
+    try {
+      const url = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(sym)}`;
+      const r = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          "Accept": "application/json",
+          "Referer": "https://finance.yahoo.com",
+          "Origin": "https://finance.yahoo.com",
+        }
+      });
+      if (!r.ok) return null;
+      const data = await r.json();
+      const q = data?.quoteResponse?.result?.[0];
+      if (!q?.regularMarketPrice) return null;
+      return q;
+    } catch { return null; }
   }
 
-  // Lista suffissi da provare per ticker europei senza suffisso
-  function getEuropeanVariants(sym) {
-    // Se ha già suffisso → nessuna variante
-    if (sym.includes(".")) return [];
-    return [
-      `${sym}.MI`,  // Borsa Italiana
-      `${sym}.AS`,  // Amsterdam / Euronext
-      `${sym}.L`,   // Londra
-      `${sym}.PA`,  // Parigi
-      `${sym}.DE`,  // Francoforte
-      `${sym}.SW`,  // Svizzera
-      `${sym}.MA`,  // Madrid
-    ];
+  // ── 2. Twelve Data — ottimo per titoli europei ───────────────────────────────
+  async function tryTwelveData(sym) {
+    try {
+      const tdKey = process.env.TWELVE_DATA_API_KEY;
+      if (!tdKey) return null;
+      const url = `https://api.twelvedata.com/quote?symbol=${encodeURIComponent(sym)}&apikey=${tdKey}`;
+      const r = await fetch(url);
+      if (!r.ok) return null;
+      const d = await r.json();
+      // Twelve Data ritorna { code: 400 } se non trova il ticker
+      if (d.code || !d.close || d.close === "0") return null;
+      const price = parseFloat(d.close);
+      const prevClose = parseFloat(d.previous_close) || price;
+      const change = parseFloat(d.change) || 0;
+      const changePct = parseFloat(d.percent_change) || 0;
+      if (!price || isNaN(price)) return null;
+      return { price, prevClose, change, changePct, source: "twelve_data" };
+    } catch { return null; }
+  }
+
+  // ── 3. Finnhub — fallback solo US ────────────────────────────────────────────
+  async function tryFinnhub(sym) {
+    try {
+      const apiKey = process.env.FINNHUB_API_KEY;
+      if (!apiKey) return null;
+      const r = await fetch(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(sym)}&token=${apiKey}`);
+      if (!r.ok) return null;
+      const d = await r.json();
+      if (!d.c || d.c === 0) return null;
+      return { price: d.c, prevClose: d.pc, change: d.d, changePct: d.dp, source: "finnhub" };
+    } catch { return null; }
   }
 
   try {
-    // 1. Prova il simbolo così com'è
-    let q = await tryYahoo(s);
-    let resolvedSymbol = s;
-
-    // 2. Se non trovato e non ha suffisso → prova varianti europee
-    if (!q) {
-      const variants = getEuropeanVariants(s);
-      for (const v of variants) {
-        q = await tryYahoo(v);
-        if (q) { resolvedSymbol = v; break; }
-      }
-    }
-
-    if (q) {
-      const regularPrice = q.regularMarketPrice;
-      const prevClose = q.regularMarketPreviousClose || regularPrice;
-      const yhState = q.marketState || "";
-      const timeState = getMarketStateByTime();
-      const marketState = (yhState && yhState !== "CLOSED") ? yhState : timeState;
+    // Prova Yahoo prima (veloce, nessun limite)
+    const yq = await tryYahoo(s);
+    if (yq) {
+      const regularPrice = yq.regularMarketPrice;
+      const prevClose = yq.regularMarketPreviousClose || regularPrice;
+      const yhState = yq.marketState || "";
+      const marketState = (yhState && yhState !== "CLOSED") ? yhState : getMarketStateByTime();
 
       let preMarket = null;
-      if (q.preMarketPrice && q.preMarketPrice > 0) {
-        preMarket = {
-          price: parseFloat(q.preMarketPrice.toFixed(2)),
-          change: parseFloat((q.preMarketPrice - prevClose).toFixed(2)),
-          changePct: parseFloat(((q.preMarketPrice - prevClose) / prevClose * 100).toFixed(2)),
-        };
-      }
+      if (yq.preMarketPrice > 0) preMarket = {
+        price: parseFloat(yq.preMarketPrice.toFixed(2)),
+        change: parseFloat((yq.preMarketPrice - prevClose).toFixed(2)),
+        changePct: parseFloat(((yq.preMarketPrice - prevClose) / prevClose * 100).toFixed(2)),
+      };
       let afterHours = null;
-      if (q.postMarketPrice && q.postMarketPrice > 0) {
-        afterHours = {
-          price: parseFloat(q.postMarketPrice.toFixed(2)),
-          change: parseFloat((q.postMarketPrice - regularPrice).toFixed(2)),
-          changePct: parseFloat(((q.postMarketPrice - regularPrice) / regularPrice * 100).toFixed(2)),
-        };
-      }
+      if (yq.postMarketPrice > 0) afterHours = {
+        price: parseFloat(yq.postMarketPrice.toFixed(2)),
+        change: parseFloat((yq.postMarketPrice - regularPrice).toFixed(2)),
+        changePct: parseFloat(((yq.postMarketPrice - regularPrice) / regularPrice * 100).toFixed(2)),
+      };
       let effectivePrice = regularPrice;
       if (marketState === "PRE" && preMarket?.price) effectivePrice = preMarket.price;
       else if ((marketState === "POST" || marketState === "POSTPOST") && afterHours?.price) effectivePrice = afterHours.price;
 
       return res.status(200).json({
-        symbol: resolvedSymbol, // Ritorna il simbolo risolto (es. SWDA.AS)
-        originalSymbol: s,
-        price: parseFloat(effectivePrice.toFixed(2)),
+        symbol: s, price: parseFloat(effectivePrice.toFixed(2)),
         regularPrice: parseFloat(regularPrice.toFixed(2)),
-        change: q.regularMarketChange || 0,
-        changePercent: q.regularMarketChangePercent || 0,
-        high: q.regularMarketDayHigh, low: q.regularMarketDayLow,
-        open: q.regularMarketOpen, prevClose,
+        change: yq.regularMarketChange || 0,
+        changePercent: yq.regularMarketChangePercent || 0,
+        high: yq.regularMarketDayHigh, low: yq.regularMarketDayLow,
+        open: yq.regularMarketOpen, prevClose,
         marketState, preMarket, afterHours,
         source: "yahoo_v7",
-        timestamp: new Date().toISOString(),
       });
     }
 
-    // 3. Fallback Finnhub (solo ticker US)
-    const apiKey = process.env.FINNHUB_API_KEY;
-    if (!apiKey) return res.status(404).json({ error: `Ticker "${s}" non trovato` });
-    const finnRes = await fetch(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(s)}&token=${apiKey}`);
-    if (!finnRes.ok) return res.status(404).json({ error: `Ticker "${s}" non trovato` });
-    const finn = await finnRes.json();
-    if (!finn.c || finn.c === 0) return res.status(404).json({ error: `Ticker "${s}" non trovato` });
+    // Fallback: Twelve Data (copre ETF europei, Borsa Italiana, Euronext, ecc.)
+    const td = await tryTwelveData(s);
+    if (td) {
+      return res.status(200).json({
+        symbol: s, price: parseFloat(td.price.toFixed(2)),
+        regularPrice: parseFloat(td.price.toFixed(2)),
+        change: td.change, changePercent: td.changePct,
+        prevClose: td.prevClose,
+        marketState: getMarketStateByTime(),
+        preMarket: null, afterHours: null,
+        source: "twelve_data",
+      });
+    }
 
-    return res.status(200).json({
-      symbol: s, price: finn.c, regularPrice: finn.c,
-      change: finn.d, changePercent: finn.dp,
-      high: finn.h, low: finn.l, open: finn.o, prevClose: finn.pc,
-      marketState: getMarketStateByTime(),
-      preMarket: null, afterHours: null,
-      source: "finnhub",
-      timestamp: new Date().toISOString(),
-    });
+    // Ultimo fallback: Finnhub (solo US)
+    const fh = await tryFinnhub(s);
+    if (fh) {
+      return res.status(200).json({
+        symbol: s, price: fh.price, regularPrice: fh.price,
+        change: fh.change, changePercent: fh.changePct,
+        prevClose: fh.prevClose,
+        marketState: getMarketStateByTime(),
+        preMarket: null, afterHours: null,
+        source: "finnhub",
+      });
+    }
+
+    return res.status(404).json({ error: `Ticker "${s}" non trovato` });
 
   } catch (err) {
     console.error("Price error:", err);
