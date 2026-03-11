@@ -802,8 +802,14 @@ function StockModal({ stock, onClose, notes, setNotes, alerts, setAlerts, handle
   const [newsLoading, setNewsLoading] = useState(true);
   const [localTarget, setLocalTarget] = useState(String(stock.targetPrice || ""));
   const [localStop, setLocalStop] = useState(String(stock.stopLoss || ""));
-  const pnlPct = (stock.currentPrice - stock.buyPrice) / stock.buyPrice * 100;
-  const pnlAbs = (stock.currentPrice - stock.buyPrice) * stock.qty * rate;
+  const _cur = rate && stock.currency === "EUR" ? stock.currentPrice / (rate || 0.92)
+              : stock.currency === "GBp" ? (stock.currentPrice / 100) / ((rate || 0.92) * 0.85)
+              : stock.currentPrice;
+  const _buy = rate && stock.currency === "EUR" ? stock.buyPrice / (rate || 0.92)
+              : stock.currency === "GBp" ? (stock.buyPrice / 100) / ((rate || 0.92) * 0.85)
+              : stock.buyPrice;
+  const pnlPct = _buy > 0 ? (_cur - _buy) / _buy * 100 : 0;
+  const pnlAbs = (_cur - _buy) * stock.qty;
   const isUp = pnlPct >= 0;
 
   useEffect(() => {
@@ -841,7 +847,10 @@ function StockModal({ stock, onClose, notes, setNotes, alerts, setAlerts, handle
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div style={{ textAlign: "right" }}>
-              <div style={{ fontFamily: "'Fraunces', serif", fontSize: 24, fontWeight: 300 }}>{sym}{fmt(stock.currentPrice * rate)}</div>
+              <div style={{ fontFamily: "'Fraunces', serif", fontSize: 24, fontWeight: 300 }}>
+                {stock.currency === "EUR" ? "€" : sym}{fmt(stock.currentPrice)}
+                {stock.currency && stock.currency !== "USD" && <span style={{fontSize:11,color:"#555",marginLeft:4}}>(=${fmt(_cur)})</span>}
+              </div>
               <div style={{ fontSize: 12, color: isUp ? "#5EC98A" : "#E87040" }}>{isUp?"+":""}{sym}{fmt(Math.abs(pnlAbs))} · {fmtPct(pnlPct)}</div>
             </div>
             <button onClick={onClose} style={{ background: "none", border: "1px solid #2a2d35", color: "#555", fontFamily: "inherit", fontSize: 16, padding: "4px 10px", borderRadius: 4, cursor: "pointer" }}>✕</button>
@@ -1649,9 +1658,9 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
         const r = await fetch(`${API_BASE}/api/history?symbol=${encodeURIComponent(s.ticker)}&days=${daysToFetch}`);
         const d = await r.json();
         const bd = parseBuyDate(s.buyDate);
-        return { ticker: s.ticker, qty: s.qty, buyDateISO: bd ? bd.toISOString().split("T")[0] : null, candles: d.candles || [] };
+        return { ticker: s.ticker, qty: s.qty, buyDateISO: bd ? bd.toISOString().split("T")[0] : null, candles: d.candles || [], currency: s.currency || "USD", eurRate };
       } catch {
-        return { ticker: s.ticker, qty: s.qty, buyDateISO: null, candles: [] };
+        return { ticker: s.ticker, qty: s.qty, buyDateISO: null, candles: [], currency: s.currency || "USD", eurRate };
       }
     })).then(results => {
       // Mappa ISO date → prezzi per ogni titolo
@@ -1697,13 +1706,20 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
           }
         });
 
-        // Calcola valore totale del giorno (solo titoli già acquistati)
+        // Calcola valore totale del giorno in USD (solo titoli già acquistati)
         let todayValue = 0;
         const activeToday = new Set();
         results.forEach(r => {
           if (!r.buyDateISO || dateISO >= r.buyDateISO) {
             const price = lastKnown[r.ticker];
-            if (price) { todayValue += r.qty * price; activeToday.add(r.ticker); }
+            if (price) {
+              const er = r.eurRate || 0.92;
+              const priceUSD = r.currency === "EUR" ? price / er
+                             : r.currency === "GBp" ? (price / 100) / (er * 0.85)
+                             : price;
+              todayValue += r.qty * priceUSD;
+              activeToday.add(r.ticker);
+            }
           }
         });
 
@@ -1727,9 +1743,10 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
             let oldPartToday = 0;
             results.forEach(r => {
               if (prevActiveSet.has(r.ticker)) {
-                const py = lastKnown[r.ticker]; // stesso prezzo (potrebbe essere aggiornato)
-                // Per "ieri" usiamo il prevDayValue proporzionalmente
-                oldPartToday += r.qty * (lastKnown[r.ticker] || 0);
+                const p = lastKnown[r.ticker] || 0;
+                const er = r.eurRate || 0.92;
+                const pUSD = r.currency === "EUR" ? p / er : r.currency === "GBp" ? (p / 100) / (er * 0.85) : p;
+                oldPartToday += r.qty * pUSD;
               }
             });
 
@@ -2064,11 +2081,14 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
             </thead>
             <tbody>
               {stocks.map(s => {
-                const pnl = (s.currentPrice - s.buyPrice) * s.qty;
-                const pct = (s.currentPrice - s.buyPrice) / s.buyPrice * 100;
+                const curUSD = toUSD(s.currentPrice, s.currency);
+                const buyUSD = toUSD(s.buyPrice, s.currency);
+                const pnl = (curUSD - buyUSD) * s.qty;
+                const pct = buyUSD > 0 ? (curUSD - buyUSD) / buyUSD * 100 : 0;
                 const tp = s.targetPrice;
                 const sl = s.stopLoss;
                 const isUp = pnl >= 0;
+                const currLabel = s.currency && s.currency !== "USD" ? s.currency : null;
                 return (
                   <tr key={s.id} style={{ borderBottom: "1px solid #0f1117", cursor: "pointer", transition: "background 0.1s" }}
                     onClick={() => setSelectedId(s.id)}
@@ -2078,15 +2098,16 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
                       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                         <span style={{ fontWeight: 500 }}>{s.ticker}</span>
                         {s.priceReal && <MarketBadge state={s.marketState || "CLOSED"} size={7}/>}
+                        {currLabel && <span style={{ fontSize: 7, color: "#7EB8F7", background: "#1a1d26", padding: "1px 4px", borderRadius: 2 }}>{currLabel}</span>}
                         {alerts[s.id] && <span style={{ fontSize: 9 }}>🔔</span>}
                       </div>
                       <div style={{ fontSize: 9, color: "#333", marginTop: 2 }}>{s.sector} · {s.buyDate}</div>
                     </td>
                     <td style={{ padding: "10px 8px 10px 0", color: "#666" }}>{s.qty}</td>
-                    <td style={{ padding: "10px 8px 10px 0", color: "#555" }}>${fmt(s.buyPrice)}</td>
-                    <td style={{ padding: "10px 8px 10px 0", color: "#E8E6DF" }}>${fmt(s.currentPrice)}</td>
-                    <td style={{ padding: "10px 8px 10px 0", color: "#444" }}>€{fmt(s.currentPrice * eurRate)}</td>
-                    <td style={{ padding: "10px 8px 10px 0", color: "#E8E6DF" }}>${fmt(s.qty * s.currentPrice)}</td>
+                    <td style={{ padding: "10px 8px 10px 0", color: "#555" }}>{currLabel ? `${s.currency === "EUR" ? "€" : ""}${fmt(s.buyPrice)}` : `$${fmt(s.buyPrice)}`}</td>
+                    <td style={{ padding: "10px 8px 10px 0", color: "#E8E6DF" }}>{currLabel ? `${s.currency === "EUR" ? "€" : ""}${fmt(s.currentPrice)}` : `$${fmt(s.currentPrice)}`}</td>
+                    <td style={{ padding: "10px 8px 10px 0", color: "#444" }}>€{fmt(curUSD * eurRate)}</td>
+                    <td style={{ padding: "10px 8px 10px 0", color: "#E8E6DF" }}>${fmt(s.qty * curUSD)}</td>
                     <td style={{ padding: "10px 8px 10px 0", color: isUp ? "#5EC98A" : "#E87040" }}>{isUp?"+":""}${fmt(Math.abs(pnl))}</td>
                     <td style={{ padding: "10px 8px 10px 0", color: isUp ? "#5EC98A" : "#E87040", fontWeight: 500 }}>{fmtPct(pct)}</td>
                     <td style={{ padding: "10px 8px 10px 0", fontSize: 10, color: tp ? (s.currentPrice >= tp ? "#5EC98A" : "#555") : "#2a2d35" }}>
@@ -2947,6 +2968,17 @@ export default function App() {
   const rate = 1;
   const [eurRate, setEurRate] = useState(0.92); // live EUR/USD rate
 
+  // Converte il prezzo di uno stock in USD per calcoli uniformi
+  // EUR → divide per eurRate (es. €112 / 0.92 = $121)
+  // GBp (pence) → divide per 100 per avere GBP, poi converti
+  // USD → invariato
+  const toUSD = (price, currency) => {
+    if (!currency || currency === "USD") return price;
+    if (currency === "EUR") return eurRate > 0 ? price / eurRate : price;
+    if (currency === "GBp") return eurRate > 0 ? (price / 100) / (eurRate * 0.85) : price; // GBP/USD approssimato
+    return price;
+  };
+
   // Fetch live EUR rate on mount
   useEffect(() => {
     fetch("https://api.exchangerate-api.com/v4/latest/USD")
@@ -3017,11 +3049,13 @@ export default function App() {
             if (!result) return;
             const livePrice = result.price;
             const ms = result.marketState || "CLOSED";
+            const currency = result.currency || (stock.ticker.endsWith(".MI") || stock.ticker.endsWith(".AS") || stock.ticker.endsWith(".PA") || stock.ticker.endsWith(".DE") || stock.ticker.endsWith(".SW") || stock.ticker.endsWith(".MA") || stock.ticker.endsWith(".BR") ? "EUR" : stock.ticker.endsWith(".L") ? "GBp" : "USD");
             setStocksRaw(prev => prev.map(s => s.id === stock.id
               ? { ...s, currentPrice: livePrice, priceReal: true, marketState: ms,
                   prevClose: result.prevClose || livePrice,
                   change: result.change || 0,
-                  changePct: result.changePct || 0 }
+                  changePct: result.changePct || 0,
+                  currency }
               : s
             ));
             setStockStates(prev => ({ ...prev, [stock.ticker]: ms }));
@@ -3113,13 +3147,13 @@ export default function App() {
   const nextId = useRef(200);
 
   const displayStock = stocks.find(s => s.id === selectedId) || stocks[0];
-  const totalInvested = stocks.reduce((s, x) => s + x.qty * x.buyPrice, 0) * rate;
-  const totalValue    = stocks.reduce((s, x) => s + x.qty * x.currentPrice, 0) * rate;
+  const totalInvested = stocks.reduce((s, x) => s + x.qty * toUSD(x.buyPrice, x.currency), 0);
+  const totalValue    = stocks.reduce((s, x) => s + x.qty * toUSD(x.currentPrice, x.currency), 0);
   const totalPnL      = totalValue - totalInvested;
   const totalPct      = totalInvested > 0 ? (totalPnL / totalInvested) * 100 : 0;
 
   const sectorData = Object.entries(
-    stocks.reduce((acc, s) => { acc[s.sector] = (acc[s.sector] || 0) + s.qty * s.currentPrice * rate; return acc; }, {})
+    stocks.reduce((acc, s) => { acc[s.sector] = (acc[s.sector] || 0) + s.qty * toUSD(s.currentPrice, s.currency); return acc; }, {})
   ).map(([name, value]) => ({ name, value: parseFloat(value.toFixed(2)) }));
 
   const portfolioHistory = stocks[0]?.history.map((_, i) => ({
@@ -3199,7 +3233,13 @@ export default function App() {
     const rawDate = form.buyDate || new Date().toISOString().split("T")[0];
     const dp = rawDate.split("-");
     const buyDateFormatted = dp.length === 3 ? `${dp[2]}/${dp[1]}/${dp[0].slice(2)}` : new Date().toLocaleDateString("it-IT");
-    const ns = { ticker: t, qty: q, buyPrice: p, currentPrice: parseFloat(curPrice.toFixed(2)), history, sector: form.sector || "Altro", priceReal: !!realPrice, buyDate: buyDateFormatted };
+    // Determina valuta dal ticker o dalla risposta API
+    const detectedCurrency = (() => {
+      if (t.endsWith(".MI") || t.endsWith(".AS") || t.endsWith(".PA") || t.endsWith(".DE") || t.endsWith(".SW") || t.endsWith(".MA") || t.endsWith(".BR")) return "EUR";
+      if (t.endsWith(".L")) return "GBp"; // Pence sterline
+      return "USD";
+    })();
+    const ns = { ticker: t, qty: q, buyPrice: p, currentPrice: parseFloat(curPrice.toFixed(2)), history, sector: form.sector || "Altro", priceReal: !!realPrice, buyDate: buyDateFormatted, currency: detectedCurrency };
     // Save to Supabase if logged in
     let dbId = null;
     if (user) {
