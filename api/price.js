@@ -23,91 +23,70 @@ export default async function handler(req, res) {
   }
 
   const YH_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "en-US,en;q=0.9,it;q=0.8",
-    "Accept-Encoding": "gzip, deflate, br",
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+    "Accept": "application/json",
     "Referer": "https://finance.yahoo.com/",
-    "Origin": "https://finance.yahoo.com",
-    "sec-ch-ua": '"Not_A Brand";v="8", "Chromium";v="120"',
-    "sec-fetch-dest": "empty",
-    "sec-fetch-mode": "cors",
-    "sec-fetch-site": "same-site",
   };
 
-  // Prova più endpoint Yahoo con vari host
-  async function tryYahoo(sym) {
-    const endpoints = [
-      `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(sym)}`,
-      `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(sym)}`,
-      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=1d`,
-    ];
-    for (const url of endpoints) {
-      try {
-        const r = await fetch(url, { headers: YH_HEADERS });
-        if (!r.ok) continue;
-        const data = await r.json();
-        // v7 response
-        const q = data?.quoteResponse?.result?.[0];
-        if (q?.regularMarketPrice) return { type: "v7", q };
-        // v8 chart response — estrai prezzo dal chart
-        const chart = data?.chart?.result?.[0];
-        if (chart) {
-          const meta = chart.meta;
-          if (meta?.regularMarketPrice) return { type: "v8", q: {
-            regularMarketPrice: meta.regularMarketPrice,
-            regularMarketPreviousClose: meta.previousClose || meta.chartPreviousClose,
-            regularMarketChange: meta.regularMarketPrice - (meta.previousClose || meta.chartPreviousClose || meta.regularMarketPrice),
-            regularMarketChangePercent: meta.previousClose ? ((meta.regularMarketPrice - meta.previousClose) / meta.previousClose * 100) : 0,
-            marketState: meta.marketState || "CLOSED",
-          }};
-        }
-      } catch { continue; }
-    }
-    return null;
-  }
-
-  // Twelve Data — per ticker europei
-  async function tryTwelveData(sym) {
+  // ── 1. Yahoo v8/chart — funziona per US e EU da Vercel ──────────────────────
+  async function tryYahooV8(sym) {
     try {
-      const tdKey = process.env.TWELVE_DATA_API_KEY;
-      if (!tdKey) return null;
-      // Twelve Data vuole exchange separato per ticker europei
-      // Mappa suffisso → exchange code
-      const exchangeMap = {
-        ".MI": "MIL", ".AS": "AMS", ".PA": "EPA", ".DE": "XETR",
-        ".L": "LSE", ".SW": "SWX", ".MA": "BME", ".BR": "EBR",
-        ".LS": "ELI", ".HE": "HEL", ".ST": "STO",
-      };
-      let apiSym = sym;
-      let exchange = "";
-      for (const [suffix, ex] of Object.entries(exchangeMap)) {
-        if (sym.endsWith(suffix)) {
-          apiSym = sym.replace(suffix, "");
-          exchange = ex;
-          break;
-        }
-      }
-      const params = exchange
-        ? `symbol=${encodeURIComponent(apiSym)}&exchange=${exchange}`
-        : `symbol=${encodeURIComponent(apiSym)}`;
-      const url = `https://api.twelvedata.com/quote?${params}&apikey=${tdKey}`;
-      const r = await fetch(url);
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=2d`;
+      const r = await fetch(url, { headers: YH_HEADERS });
       if (!r.ok) return null;
-      const d = await r.json();
-      if (d.code || !d.close || d.close === "0.00000") return null;
-      const price = parseFloat(d.close);
-      if (!price || isNaN(price)) return null;
+      const data = await r.json();
+      const result = data?.chart?.result?.[0];
+      if (!result?.meta?.regularMarketPrice) return null;
+      const meta = result.meta;
+      const price = meta.regularMarketPrice;
+      const prevClose = meta.previousClose || meta.chartPreviousClose || price;
       return {
-        price,
-        prevClose: parseFloat(d.previous_close) || price,
-        change: parseFloat(d.change) || 0,
-        changePct: parseFloat(d.percent_change) || 0,
+        price, prevClose,
+        change: parseFloat((price - prevClose).toFixed(4)),
+        changePct: parseFloat(((price - prevClose) / prevClose * 100).toFixed(4)),
+        high: meta.regularMarketDayHigh,
+        low: meta.regularMarketDayLow,
+        open: meta.regularMarketOpen,
+        marketState: meta.marketState || getMarketStateByTime(),
+        currency: meta.currency,
       };
     } catch { return null; }
   }
 
-  // Finnhub — solo US
+  // ── 2. Yahoo v7 — funziona meno da Vercel ma proviamo ───────────────────────
+  async function tryYahooV7(sym) {
+    try {
+      const url = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(sym)}`;
+      const r = await fetch(url, { headers: YH_HEADERS });
+      if (!r.ok) return null;
+      const data = await r.json();
+      const q = data?.quoteResponse?.result?.[0];
+      if (!q?.regularMarketPrice) return null;
+      const price = q.regularMarketPrice;
+      const prevClose = q.regularMarketPreviousClose || price;
+      return {
+        price, prevClose,
+        change: q.regularMarketChange || 0,
+        changePct: q.regularMarketChangePercent || 0,
+        high: q.regularMarketDayHigh,
+        low: q.regularMarketDayLow,
+        open: q.regularMarketOpen,
+        marketState: q.marketState || getMarketStateByTime(),
+        preMarket: q.preMarketPrice > 0 ? {
+          price: q.preMarketPrice,
+          change: q.preMarketPrice - prevClose,
+          changePct: (q.preMarketPrice - prevClose) / prevClose * 100,
+        } : null,
+        afterHours: q.postMarketPrice > 0 ? {
+          price: q.postMarketPrice,
+          change: q.postMarketPrice - price,
+          changePct: (q.postMarketPrice - price) / price * 100,
+        } : null,
+      };
+    } catch { return null; }
+  }
+
+  // ── 3. Finnhub — solo US ─────────────────────────────────────────────────────
   async function tryFinnhub(sym) {
     try {
       const apiKey = process.env.FINNHUB_API_KEY;
@@ -116,66 +95,60 @@ export default async function handler(req, res) {
       if (!r.ok) return null;
       const d = await r.json();
       if (!d.c || d.c === 0) return null;
-      return { price: d.c, prevClose: d.pc, change: d.d, changePct: d.dp };
+      return { price: d.c, prevClose: d.pc, change: d.d, changePct: d.dp, marketState: getMarketStateByTime() };
     } catch { return null; }
   }
 
   try {
-    // 1. Yahoo
-    const yh = await tryYahoo(s);
-    if (yh) {
-      const { q } = yh;
-      const regularPrice = q.regularMarketPrice;
-      const prevClose = q.regularMarketPreviousClose || regularPrice;
-      const yhState = q.marketState || "";
-      const marketState = (yhState && yhState !== "CLOSED") ? yhState : getMarketStateByTime();
-      let preMarket = null, afterHours = null;
-      if (q.preMarketPrice > 0) preMarket = {
-        price: parseFloat(q.preMarketPrice.toFixed(2)),
-        change: parseFloat((q.preMarketPrice - prevClose).toFixed(2)),
-        changePct: parseFloat(((q.preMarketPrice - prevClose) / prevClose * 100).toFixed(2)),
-      };
-      if (q.postMarketPrice > 0) afterHours = {
-        price: parseFloat(q.postMarketPrice.toFixed(2)),
-        change: parseFloat((q.postMarketPrice - regularPrice).toFixed(2)),
-        changePct: parseFloat(((q.postMarketPrice - regularPrice) / regularPrice * 100).toFixed(2)),
-      };
-      let effectivePrice = regularPrice;
-      if (marketState === "PRE" && preMarket?.price) effectivePrice = preMarket.price;
-      else if ((marketState === "POST" || marketState === "POSTPOST") && afterHours?.price) effectivePrice = afterHours.price;
+    // Prova v8 prima (funziona per tutti i mercati da Vercel)
+    const v8 = await tryYahooV8(s);
+    if (v8) {
+      const marketState = (v8.marketState && v8.marketState !== "CLOSED") ? v8.marketState : getMarketStateByTime();
       return res.status(200).json({
-        symbol: s, price: parseFloat(effectivePrice.toFixed(4)),
-        regularPrice: parseFloat(regularPrice.toFixed(4)),
-        change: q.regularMarketChange || 0,
-        changePercent: q.regularMarketChangePercent || 0,
-        high: q.regularMarketDayHigh, low: q.regularMarketDayLow,
-        open: q.regularMarketOpen, prevClose,
-        marketState, preMarket, afterHours, source: "yahoo",
+        symbol: s,
+        price: parseFloat(v8.price.toFixed(4)),
+        regularPrice: parseFloat(v8.price.toFixed(4)),
+        change: v8.change,
+        changePercent: v8.changePct,
+        high: v8.high, low: v8.low, open: v8.open,
+        prevClose: v8.prevClose,
+        marketState,
+        preMarket: null, afterHours: null,
+        source: "yahoo_v8",
+        currency: v8.currency,
       });
     }
 
-    // 2. Twelve Data (europei con exchange separato)
-    const td = await tryTwelveData(s);
-    if (td) {
+    // Fallback v7
+    const v7 = await tryYahooV7(s);
+    if (v7) {
+      const marketState = (v7.marketState && v7.marketState !== "CLOSED") ? v7.marketState : getMarketStateByTime();
+      let effectivePrice = v7.price;
+      if (marketState === "PRE" && v7.preMarket?.price) effectivePrice = v7.preMarket.price;
+      else if ((marketState === "POST" || marketState === "POSTPOST") && v7.afterHours?.price) effectivePrice = v7.afterHours.price;
       return res.status(200).json({
-        symbol: s, price: parseFloat(td.price.toFixed(4)),
-        regularPrice: parseFloat(td.price.toFixed(4)),
-        change: td.change, changePercent: td.changePct,
-        prevClose: td.prevClose,
-        marketState: getMarketStateByTime(),
-        preMarket: null, afterHours: null, source: "twelve_data",
+        symbol: s,
+        price: parseFloat(effectivePrice.toFixed(4)),
+        regularPrice: parseFloat(v7.price.toFixed(4)),
+        change: v7.change, changePercent: v7.changePct,
+        high: v7.high, low: v7.low, open: v7.open,
+        prevClose: v7.prevClose,
+        marketState,
+        preMarket: v7.preMarket, afterHours: v7.afterHours,
+        source: "yahoo_v7",
       });
     }
 
-    // 3. Finnhub (US fallback)
+    // Ultimo fallback Finnhub (US only)
     const fh = await tryFinnhub(s);
     if (fh) {
       return res.status(200).json({
         symbol: s, price: fh.price, regularPrice: fh.price,
         change: fh.change, changePercent: fh.changePct,
         prevClose: fh.prevClose,
-        marketState: getMarketStateByTime(),
-        preMarket: null, afterHours: null, source: "finnhub",
+        marketState: fh.marketState,
+        preMarket: null, afterHours: null,
+        source: "finnhub",
       });
     }
 
