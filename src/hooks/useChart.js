@@ -36,8 +36,10 @@ export function useChart(stocks, eurRate, period = "Inizio") {
       stockResults.forEach(r => {
         tickerPriceMap[r.ticker] = {};
         r.candles.forEach(c => {
-          const dateISO = new Date(c.t * 1000).toISOString().split("T")[0];
-          tickerPriceMap[r.ticker][dateISO] = c.c;
+          // API ritorna { date: "YYYY-MM-DD", price: number }
+          const dateISO = c.date || new Date(c.t * 1000).toISOString().split("T")[0];
+          const price = c.price ?? c.c;
+          if (dateISO && price != null) tickerPriceMap[r.ticker][dateISO] = price;
         });
       });
 
@@ -165,8 +167,8 @@ export function useChart(stocks, eurRate, period = "Inizio") {
       // Benchmark SPY
       if (spyResult?.candles?.length) {
         setBenchmark(spyResult.candles.map(c => ({
-          date: new Date(c.t * 1000).toISOString().split("T")[0],
-          spy: c.c,
+          date: c.date || new Date(c.t * 1000).toISOString().split("T")[0],
+          spy: c.price ?? c.c,
         })));
       }
 
