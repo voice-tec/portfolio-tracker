@@ -1374,6 +1374,24 @@ function SimulazioniTab({ stocks, sym, rate, fmt, fmtPct }) {
 // ─── FORECAST TAB ─────────────────────────────────────────────────────────────
 // ─── ALLOCATION CARD ──────────────────────────────────────────────────────────
 const PIE_COLORS = ["#5B8DEF","#26C6DA","#5EC98A","#F4C542","#BF6EEA","#E87040","#F06292","#FF7043","#80CBC4","#FFD54F"];
+// Colore fisso per settore — evita che cambino posizione nell'array
+const SECTOR_COLOR_MAP = {
+  "Tecnologia": "#5B8DEF", "Tech": "#5B8DEF",
+  "ETF": "#26C6DA",
+  "Salute": "#5EC98A", "Healthcare": "#5EC98A",
+  "Finanza": "#F4C542", "Finance": "#F4C542",
+  "Energia": "#E87040", "Energy": "#E87040",
+  "Beni di consumo": "#F06292", "Consumer": "#F06292",
+  "Industriale": "#FF7043", "Industria": "#FF7043",
+  "Telecom": "#BF6EEA",
+  "Immobiliare": "#80CBC4", "Real Estate": "#80CBC4",
+  "Materie prime": "#FFD54F", "Materials": "#FFD54F",
+  "Utilities": "#aaa",
+  "Altro": "#555",
+};
+function getPieColor(name, idx) {
+  return SECTOR_COLOR_MAP[name] || PIE_COLORS[idx % PIE_COLORS.length];
+}
 
 function AllocationCard({ stocks, totalValue, eurRate, fmt }) {
   const [pieTab, setPieTab] = useState("settori");
@@ -1502,8 +1520,8 @@ function AllocationCard({ stocks, totalValue, eurRate, fmt }) {
               dataKey="value" paddingAngle={1.5}
               onMouseEnter={(_, i) => setActiveIndex(i)}
               onMouseLeave={() => setActiveIndex(null)}>
-              {pieData.map((_, i) => (
-                <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]}
+              {pieData.map((entry, i) => (
+                <Cell key={i} fill={getPieColor(entry.name, i)}
                   opacity={activeIndex === null || activeIndex === i ? 1 : 0.3}
                   style={{ cursor: "pointer" }}/>
               ))}
@@ -1540,7 +1558,7 @@ function AllocationCard({ stocks, totalValue, eurRate, fmt }) {
                 onMouseLeave={() => setActiveIndex(null)}
                 style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer",
                   opacity: activeIndex === null || isActive ? 1 : 0.35, transition: "opacity 0.15s" }}>
-                <div style={{ width: 7, height: 7, borderRadius: 2, flexShrink: 0, background: PIE_COLORS[i % PIE_COLORS.length] }}/>
+                <div style={{ width: 7, height: 7, borderRadius: 2, flexShrink: 0, background: getPieColor(item.name, i) }}/>
                 <span style={{ fontSize: 11, color: isActive ? "#E8E6DF" : "#777", flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.name}</span>
                 <span style={{ fontSize: 11, fontWeight: 600, minWidth: 36, textAlign: "right",
                   color: isAlert ? "#E87040" : "#E8E6DF" }}>{pct}%</span>
@@ -1630,16 +1648,22 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
     setChartLoading(true);
 
     // Variazione giornaliera — usa prevClose se disponibile, altrimenti serie storica
-    const hasPrevClose = stocks.some(s => s.prevClose && s.prevClose !== s.currentPrice);
-    const dayPnl = stocks.reduce((sum, s) => {
-      const prev = s.prevClose && s.prevClose !== s.currentPrice ? s.prevClose : null;
-      if (!prev) return sum; // skippa se non abbiamo dato reale
-      return sum + (s.currentPrice - prev) * s.qty;
-    }, 0);
-    const prevTotalValue = stocks.reduce((sum, s) => {
-      const prev = s.prevClose && s.prevClose !== s.currentPrice ? s.prevClose : s.currentPrice;
-      return sum + prev * s.qty;
-    }, 0);
+    // Variazione oggi: usa changePct dall'API live (più affidabile di prevClose)
+    const stocksWithChange = stocks.filter(s => s.prevClose && s.prevClose !== s.currentPrice);
+    const hasPrevClose = stocksWithChange.length > 0;
+    const dayPnl = hasPrevClose
+      ? stocksWithChange.reduce((sum, s) => {
+          const curUSD = toUSD(s.currentPrice, s.currency, eurRate);
+          const preUSD = toUSD(s.prevClose, s.currency, eurRate);
+          return sum + (curUSD - preUSD) * s.qty;
+        }, 0)
+      : 0;
+    const prevTotalValue = hasPrevClose
+      ? stocks.reduce((sum, s) => {
+          const p = s.prevClose && s.prevClose !== s.currentPrice ? s.prevClose : s.currentPrice;
+          return sum + toUSD(p, s.currency, eurRate) * s.qty;
+        }, 0)
+      : 0;
     const dayPct = prevTotalValue > 0 && hasPrevClose ? (dayPnl / prevTotalValue) * 100 : null;
 
     // Calcola giorni da fetchare: dalla prima data di acquisto
@@ -3028,7 +3052,7 @@ export default function App() {
         mapped.forEach(stock => {
           // Fix settore mancante: prima controlla ETF noti, poi Yahoo
           const needsSector = !stock.sector || stock.sector === "Altro" || stock.sector === "—";
-          const KNOWN_ETFS = ["QQQ","SPY","IVV","VOO","VTI","VEA","VWO","XLE","XLF","XLK","XLV","XLI","XLP","XLY","XLB","XLU","XLRE","XLC","GLD","SLV","TLT","IEF","HYG","LQD","ARKK","ARKG","IWM","EEM","UUP","CQQQ","TIPS","BIL","SHY"];
+          const KNOWN_ETFS = ["QQQ","SPY","IVV","VOO","VTI","VEA","VWO","XLE","XLF","XLK","XLV","XLI","XLP","XLY","XLB","XLU","XLRE","XLC","GLD","SLV","TLT","IEF","HYG","LQD","ARKK","ARKG","IWM","EEM","UUP","CQQQ","TIPS","BIL","SHY","SWDA","VWCE","IWDA","CSPX","EUNL","IUSQ","XDWD","VUSA","MEUD","IEMA","AGGH","IBCI","SGLD","IBTM","VGOV","VMID"];
           if (needsSector) {
             if (KNOWN_ETFS.includes(stock.ticker.toUpperCase())) {
               setStocksRaw(prev => prev.map(s => s.id === stock.id ? { ...s, sector: "ETF" } : s));
@@ -3254,11 +3278,19 @@ export default function App() {
     // Auto-refresh prezzo live dopo aggiunta
     fetchRealPrice(t, true).then(result => {
       if (!result) return;
-      setStocksRaw(prev => prev.map(s => s.ticker === t && !s.priceReal
-        ? { ...s, currentPrice: result.price, priceReal: true, marketState: result.marketState || "CLOSED",
-            prevClose: result.prevClose || result.price }
+      const detCurr = result.currency || (
+        t.endsWith(".MI")||t.endsWith(".AS")||t.endsWith(".PA")||t.endsWith(".DE")||t.endsWith(".SW") ? "EUR" :
+        t.endsWith(".L") ? "GBp" : "USD"
+      );
+      const ms = result.marketState && result.marketState !== "CLOSED" ? result.marketState : "REGULAR";
+      setStocksRaw(prev => prev.map(s => s.ticker === t
+        ? { ...s, currentPrice: result.price, priceReal: true, marketState: ms,
+            prevClose: result.prevClose || result.price,
+            change: result.change || 0, changePct: result.changePct || 0,
+            currency: detCurr }
         : s
       ));
+      setStockStates(prev => ({ ...prev, [t]: ms }));
     }).catch(() => {});
   }
 
@@ -3363,15 +3395,30 @@ export default function App() {
         const priceIdx  = cols.findIndex(c => c.includes("prezzo") || c.includes("costo medio"));
         return { ticker: get(tickerIdx) || get(0), qty: parseFloat(get(qtyIdx)) || 0, buyPrice: parseFloat(get(priceIdx)?.replace(",",".")) || 0, sector: "Altro" };
       }
-      // Generic: ticker, qty, buyPrice
-      const tickerIdx = cols.findIndex(c => c.includes("ticker") || c.includes("symbol"));
-      const qtyIdx    = cols.findIndex(c => c.includes("qty") || c.includes("quantity") || c.includes("quantit"));
-      const priceIdx  = cols.findIndex(c => c.includes("price") || c.includes("prezzo") || c.includes("buy"));
+      // Generic: ticker, qty, buyPrice, buy_date, sector
+      const tickerIdx  = cols.findIndex(c => c.includes("ticker") || c.includes("symbol"));
+      const qtyIdx     = cols.findIndex(c => c.includes("qty") || c.includes("quantity") || c.includes("quantit"));
+      const priceIdx   = cols.findIndex(c => c.includes("price") || c.includes("prezzo") || c.includes("buy_price"));
+      const dateIdx    = cols.findIndex(c => c.includes("date") || c.includes("data") || c.includes("buy_date"));
+      const sectorIdx  = cols.findIndex(c => c.includes("sector") || c.includes("settore"));
+      const ticker = get(tickerIdx >= 0 ? tickerIdx : 0).toUpperCase();
+      // Normalizza data: YYYY-MM-DD → dd/mm/yy
+      let buyDate = "";
+      if (dateIdx >= 0) {
+        const raw = get(dateIdx);
+        if (raw.includes("-")) {
+          const dp = raw.split("-");
+          buyDate = dp.length === 3 ? `${dp[2]}/${dp[1]}/${dp[0].slice(2)}` : raw;
+        } else {
+          buyDate = raw;
+        }
+      }
       return {
-        ticker:   get(tickerIdx >= 0 ? tickerIdx : 0).toUpperCase(),
+        ticker,
         qty:      parseFloat(get(qtyIdx >= 0 ? qtyIdx : 1)) || 0,
         buyPrice: parseFloat(get(priceIdx >= 0 ? priceIdx : 2)?.replace(",",".")) || 0,
-        sector:   "Altro"
+        sector:   sectorIdx >= 0 && get(sectorIdx) ? get(sectorIdx) : "Altro",
+        buyDate:  buyDate || new Date().toLocaleDateString("it-IT", { day:"2-digit", month:"2-digit", year:"2-digit" }),
       };
     }).filter(r => r.ticker && r.qty > 0 && r.buyPrice > 0);
   }
@@ -3394,10 +3441,33 @@ export default function App() {
     if (plan === "free" && stocks.length + importPreview.length > PLANS.free.maxStocks) {
       setShowUpgrade(true); return;
     }
-    const imported = await Promise.all(importPreview.map(async (r, i) => {
-      const real = await fetchRealPrice(r.ticker);
-      const history = simulateHistory(real || r.buyPrice);
-      return { id: nextId.current++, ticker: r.ticker, qty: r.qty, buyPrice: r.buyPrice, currentPrice: real || r.buyPrice, history, sector: r.sector, priceReal: !!real, buyDate: new Date().toLocaleDateString("it-IT") };
+    const KNOWN_ETFS_IMPORT = ["QQQ","SPY","IVV","VOO","VTI","VEA","VWO","XLE","XLF","XLK","XLV","XLI","XLP","XLY","XLB","XLU","XLRE","XLC","GLD","SLV","TLT","IEF","HYG","LQD","ARKK","ARKG","IWM","EEM","SWDA","VWCE","IWDA","CSPX","EUNL","IUSQ","XDWD","CQQQ","TIPS","BIL","SHY"];
+    const imported = await Promise.all(importPreview.map(async (r) => {
+      const result = await fetchRealPrice(r.ticker, true);
+      const livePrice = result?.price || null;
+      const detectedCurrency = result?.currency || (
+        r.ticker.endsWith(".MI")||r.ticker.endsWith(".AS")||r.ticker.endsWith(".PA")||r.ticker.endsWith(".DE")||r.ticker.endsWith(".SW") ? "EUR" :
+        r.ticker.endsWith(".L") ? "GBp" : "USD"
+      );
+      // Settore: usa quello dal CSV se non è "Altro", altrimenti auto-detect
+      let sector = r.sector && r.sector !== "Altro" ? r.sector : null;
+      if (!sector) {
+        const base = r.ticker.replace(/\.[A-Z]+$/, "").toUpperCase();
+        if (KNOWN_ETFS_IMPORT.includes(base)) sector = "ETF";
+      }
+      const history = simulateHistory(livePrice || r.buyPrice);
+      return {
+        id: nextId.current++, ticker: r.ticker, qty: r.qty,
+        buyPrice: r.buyPrice, currentPrice: livePrice || r.buyPrice,
+        history, sector: sector || "Altro",
+        priceReal: !!livePrice,
+        marketState: result?.marketState || "CLOSED",
+        prevClose: result?.prevClose || null,
+        change: result?.change || 0,
+        changePct: result?.changePct || 0,
+        currency: detectedCurrency,
+        buyDate: r.buyDate || new Date().toLocaleDateString("it-IT", { day:"2-digit", month:"2-digit", year:"2-digit" }),
+      };
     }));
     setStocks(prev => [...prev, ...imported]);
     setImportPreview([]);
