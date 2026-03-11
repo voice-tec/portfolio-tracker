@@ -2081,8 +2081,8 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
             </thead>
             <tbody>
               {stocks.map(s => {
-                const curUSD = toUSD(s.currentPrice, s.currency);
-                const buyUSD = toUSD(s.buyPrice, s.currency);
+                const curUSD = toUSD(s.currentPrice, s.currency, eurRate);
+                const buyUSD = toUSD(s.buyPrice, s.currency, eurRate);
                 const pnl = (curUSD - buyUSD) * s.qty;
                 const pct = buyUSD > 0 ? (curUSD - buyUSD) / buyUSD * 100 : 0;
                 const tp = s.targetPrice;
@@ -2942,6 +2942,16 @@ function WhatIfTab({ fmt, fmtPct, eurRate }) {
   );
 }
 
+// Converte prezzo in USD usando il tasso EUR/USD corrente
+// EUR → price / eurRate | GBp (pence) → price/100 / (eurRate*0.85) | USD → invariato
+function toUSD(price, currency, eurRate = 0.92) {
+  if (!price) return 0;
+  if (!currency || currency === "USD") return price;
+  if (currency === "EUR") return eurRate > 0 ? price / eurRate : price;
+  if (currency === "GBp") return eurRate > 0 ? (price / 100) / (eurRate * 0.85) : price;
+  return price;
+}
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [userLoading, setUserLoading] = useState(true);
@@ -2968,16 +2978,7 @@ export default function App() {
   const rate = 1;
   const [eurRate, setEurRate] = useState(0.92); // live EUR/USD rate
 
-  // Converte il prezzo di uno stock in USD per calcoli uniformi
-  // EUR → divide per eurRate (es. €112 / 0.92 = $121)
-  // GBp (pence) → divide per 100 per avere GBP, poi converti
-  // USD → invariato
-  const toUSD = (price, currency) => {
-    if (!currency || currency === "USD") return price;
-    if (currency === "EUR") return eurRate > 0 ? price / eurRate : price;
-    if (currency === "GBp") return eurRate > 0 ? (price / 100) / (eurRate * 0.85) : price; // GBP/USD approssimato
-    return price;
-  };
+
 
   // Fetch live EUR rate on mount
   useEffect(() => {
@@ -3147,13 +3148,13 @@ export default function App() {
   const nextId = useRef(200);
 
   const displayStock = stocks.find(s => s.id === selectedId) || stocks[0];
-  const totalInvested = stocks.reduce((s, x) => s + x.qty * toUSD(x.buyPrice, x.currency), 0);
-  const totalValue    = stocks.reduce((s, x) => s + x.qty * toUSD(x.currentPrice, x.currency), 0);
+  const totalInvested = stocks.reduce((s, x) => s + x.qty * toUSD(x.buyPrice, x.currency, eurRate), 0);
+  const totalValue    = stocks.reduce((s, x) => s + x.qty * toUSD(x.currentPrice, x.currency, eurRate), 0);
   const totalPnL      = totalValue - totalInvested;
   const totalPct      = totalInvested > 0 ? (totalPnL / totalInvested) * 100 : 0;
 
   const sectorData = Object.entries(
-    stocks.reduce((acc, s) => { acc[s.sector] = (acc[s.sector] || 0) + s.qty * toUSD(s.currentPrice, s.currency); return acc; }, {})
+    stocks.reduce((acc, s) => { acc[s.sector] = (acc[s.sector] || 0) + s.qty * toUSD(s.currentPrice, s.currency, eurRate); return acc; }, {})
   ).map(([name, value]) => ({ name, value: parseFloat(value.toFixed(2)) }));
 
   const portfolioHistory = stocks[0]?.history.map((_, i) => ({
