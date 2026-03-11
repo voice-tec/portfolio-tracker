@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { PieChart, Pie, Cell } from "recharts";
 import { useETFHoldings } from "../hooks/useETFHoldings";
 import { toUSD } from "../utils/currency";
+import { isKnownETF } from "../utils/etf";
 import { fmt } from "../utils/format";
 
 // ─── COLORI FISSI PER SETTORE ─────────────────────────────────────────────────
@@ -60,9 +61,10 @@ export function AllocationCard({ stocks, eurRate }) {
 
       const etfData = holdings[s.ticker];
       const hasSectorWeights = etfData?.sectorWeights?.length > 0;
+      const isETF = s.sector === "ETF" || isKnownETF(s.ticker);
 
       if (tab === "settori") {
-        if (s.sector === "ETF" && hasSectorWeights) {
+        if (isETF && hasSectorWeights) {
           // Scomponi ETF per settore usando i pesi reali
           etfData.sectorWeights.forEach(sw => {
             const key = sw.sector || "Altro";
@@ -75,7 +77,7 @@ export function AllocationCard({ stocks, eurRate }) {
       } else if (tab === "posizioni") {
         map[s.ticker] = (map[s.ticker] || 0) + posVal;
       } else if (tab === "tipo") {
-        const tipo = s.sector === "ETF" ? "ETF" : s.sector === "Crypto" ? "Crypto" : "Azioni";
+        const tipo = (s.sector === "ETF" || isKnownETF(s.ticker)) ? "ETF" : s.sector === "Crypto" ? "Crypto" : "Azioni";
         map[tipo] = (map[tipo] || 0) + posVal;
       }
     });

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { fetchAnalyst } from "../utils/api";
+import { isKnownETF } from "../utils/etf";
 
 /**
  * Fetcha i settori per ogni ETF in portafoglio.
@@ -11,7 +12,7 @@ export function useETFHoldings(stocks) {
 
   // Lista ETF distinti nel portafoglio
   const etfTickers = useMemo(
-    () => stocks.filter(s => s.sector === "ETF").map(s => s.ticker),
+    () => stocks.filter(s => s.sector === "ETF" || isKnownETF(s.ticker)).map(s => s.ticker),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [stocks.filter(s => s.sector === "ETF").map(s => s.ticker).join(",")]
   );

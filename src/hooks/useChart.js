@@ -101,8 +101,9 @@ export function useChart(stocks, eurRate, period = "Inizio") {
           const newEntries = [...activeToday].filter(t => !prevActiveSet.has(t));
 
           if (newEntries.length > 0) {
-            // Nuovi acquisti: rendimento solo sulla parte vecchia del portafoglio
-            // Valore di OGGI per i titoli già esistenti
+            // Nuovi acquisti: rendimento solo sulla parte vecchia del portafoglio.
+            // prevDayValue contiene SOLO i titoli già attivi ieri (non i nuovi),
+            // quindi oldYesterday = prevDayValue direttamente — nessuna sottrazione necessaria.
             let oldPartToday = 0;
             enriched.forEach(s => {
               if (prevActiveSet.has(s.ticker)) {
@@ -111,20 +112,12 @@ export function useChart(stocks, eurRate, period = "Inizio") {
               }
             });
 
-            // Valore di IERI totale meno il valore di acquisto dei nuovi titoli (in USD)
-            const newEntriesValueAtBuy = newEntries.reduce((sum, t) => {
-              const s = enriched.find(x => x.ticker === t);
-              if (!s) return sum;
-              const rawBuyPrice = priceMap[s.buyDateISO]?.[t] || lastKnown[t] || 0;
-              return sum + s.qty * toUSD(rawBuyPrice, s.currency, eurRate);
-            }, 0);
-
-            const oldYesterday = prevDayValue - newEntriesValueAtBuy;
+            const oldYesterday = prevDayValue; // solo titoli vecchi
 
             if (oldYesterday > 0 && oldPartToday > 0) {
               const dayReturn = (oldPartToday - oldYesterday) / oldYesterday;
-              // Cap ±30% per evitare spike matematici su dati mancanti
-              twrFactor *= (1 + Math.max(-0.3, Math.min(0.3, dayReturn)));
+              // Cap ±20% per evitare spike su gap di mercato o dati mancanti
+              twrFactor *= (1 + Math.max(-0.2, Math.min(0.2, dayReturn)));
             }
           } else {
             // Nessun nuovo titolo: rendimento normale
