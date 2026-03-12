@@ -156,18 +156,23 @@ export function useChart(stocks, eurRate, period = "1A") {
       slice = filtered.length > 1 ? filtered : rawSeries.slice(-days);
     }
 
-    // Benchmark SPY normalizzato al valore portafoglio inizio range
+    // pct normalizzato al periodo: (pctOggi - pctInizio)
+    // così parte sempre da 0% all'inizio del range selezionato
+    const basePct = slice[0]?.pct ?? 0;
+
+    // Benchmark SPY in % normalizzato al primo giorno del range
     const bMap    = Object.fromEntries(benchmark.map(b => [b.date, b.spy]));
     const spyBase = bMap[slice[0]?.date]
       ?? benchmark.find(b => b.date >= slice[0]?.date)?.spy;
-    const valBase = slice[0]?.valore ?? 1;
 
     return slice.map(p => ({
       ...p,
-      spyScaled: (() => {
+      // pct relativo al periodo (0% al primo giorno del range)
+      pct: parseFloat((p.pct - basePct).toFixed(2)),
+      spyPct: (() => {
         const sv = bMap[p.date];
         if (!sv || !spyBase) return null;
-        return parseFloat(((sv / spyBase) * valBase).toFixed(2));
+        return parseFloat(((sv / spyBase - 1) * 100).toFixed(2));
       })(),
     }));
   }, [rawSeries, benchmark, period]);

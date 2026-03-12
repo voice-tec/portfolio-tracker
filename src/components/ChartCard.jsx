@@ -114,8 +114,8 @@ export function ChartCard({ stocks, eurRate }) {
             <Tooltip
               contentStyle={{ background: "#0f1117", border: "1px solid #1a1d26", borderRadius: 6, fontSize: 11, color: "#E8E6DF", padding: "6px 12px" }}
               formatter={(v, name) => {
-                if (name === "valore")    return [`$${fmt(v)}`, "Portafoglio"];
-                if (name === "spyScaled") return [`$${fmt(v)}`, "S&P 500"];
+                if (name === "pct")      return [`${v >= 0 ? "+" : ""}${v?.toFixed(2)}%`, "Portafoglio"];
+                if (name === "spyPct")   return [`${v >= 0 ? "+" : ""}${v?.toFixed(2)}%`, "S&P 500"];
                 return [v, name];
               }}
               labelStyle={{ color: "#555", fontSize: 10, marginBottom: 3 }}
@@ -130,7 +130,7 @@ export function ChartCard({ stocks, eurRate }) {
             )}
 
             {/* Linea portafoglio */}
-            <Area type="monotone" dataKey="valore"
+            <Area type="monotone" dataKey="pct"
               stroke={lineColor} strokeWidth={1.5}
               fill="url(#chartGrad)" dot={false}
               activeDot={{ r: 4, fill: lineColor, stroke: "#0D0F14", strokeWidth: 2 }}
@@ -138,7 +138,7 @@ export function ChartCard({ stocks, eurRate }) {
 
             {/* S&P 500 scalato */}
             {showBenchmark && (
-              <Line type="monotone" dataKey="spyScaled"
+              <Line type="monotone" dataKey="spyPct"
                 stroke="#F4C542" strokeWidth={1}
                 dot={false} strokeDasharray="4 2"
                 activeDot={{ r: 3, fill: "#F4C542" }}
@@ -160,10 +160,9 @@ export function ChartCard({ stocks, eurRate }) {
       {/* ── Legenda ── */}
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap", paddingTop: 10, borderTop: "1px solid #0f1117", marginTop: 6, alignItems: "center" }}>
         {showBenchmark && (() => {
-          const spyLast  = [...chartData].reverse().find(p => p.spyScaled != null)?.spyScaled;
-          const spyFirst = chartData.find(p => p.spyScaled != null)?.spyScaled;
-          if (!spyLast || !spyFirst) return null;
-          const spyPct = ((spyLast / spyFirst - 1) * 100).toFixed(2);
+          const spyLast  = [...chartData].reverse().find(p => p.spyPct != null)?.spyPct;
+          if (spyLast == null) return null;
+          const spyPct = spyLast.toFixed(2);
           return (
             <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10 }}>
               <div style={{ width: 16, height: 1, borderTop: "1px dashed #F4C542" }} />
