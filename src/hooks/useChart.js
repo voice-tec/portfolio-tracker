@@ -60,11 +60,12 @@ export function useChart(stocks, eurRate, period = "1A") {
             const d = parseBuyDate(s.buyDate);
             return d ? d.toISOString().slice(0, 10) : null;
           })();
-          const costUSD = s.qty * toUSD(s.buyPrice, s.currency, eurRate);
+          const costUSD = s.qty * toUSD(parseFloat(s.buyPrice) || 0, s.currency, eurRate);
+          const availDates = Object.keys(priceMap[s.ticker] || {}).sort();
           const firstDate = buyDateISO
-            ? (Object.keys(priceMap[s.ticker] || {}).sort().find(d => d >= buyDateISO) || null)
-            : null;
-          return { ...s, posId: i, buyDateISO, costUSD, firstDate };
+            ? (availDates.find(d => d >= buyDateISO) || null)
+            : availDates[0] || null; // se buyDate manca, parte dalla prima candela disponibile
+          return { ...s, posId: i, buyDateISO, costUSD, firstDate, _qty: parseFloat(s.qty)||0 };
         })
         .sort((a, b) => (a.firstDate || "").localeCompare(b.firstDate || ""));
 
@@ -107,15 +108,15 @@ export function useChart(stocks, eurRate, period = "1A") {
 
         active.forEach(pos => {
           const prezzoOggi    = priceAt(pos.ticker, dateISO);
-          const prezzoAcquisto = toUSD(pos.buyPrice, pos.currency, eurRate);
+          const prezzoAcquisto = toUSD(parseFloat(pos.buyPrice) || 0, pos.currency, eurRate);
           if (prezzoOggi == null || !prezzoAcquisto) { allPrices = false; return; }
 
-          const prezzoOggiUSD = toUSD(prezzoOggi, pos.currency, eurRate);
+          const prezzoOggiUSD = toUSD(parseFloat(prezzoOggi) || 0, pos.currency, eurRate);
           const peso          = pos.costUSD / costoTot;
           const ret_i         = (prezzoOggiUSD / prezzoAcquisto) - 1;
 
           rendimento += peso * ret_i;
-          valoreOggi += pos.qty * prezzoOggiUSD;
+          valoreOggi += (parseFloat(pos.qty)||0) * prezzoOggiUSD;
         });
 
         if (!allPrices || !valoreOggi) return;

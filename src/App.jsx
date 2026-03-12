@@ -2415,7 +2415,7 @@ export default function App() {
   const [importPreview, setImportPreview] = useState([]);
   const [importErr, setImportErr] = useState("");
   const csvInputRef = useRef(null);
-  const [form, setForm] = useState({ ticker: "", qty: "", buyPrice: "", sector: "Altro", buyDate: new Date().toISOString().split("T")[0] });
+  const [form, setForm] = useState({ ticker: "", qty: "", buyPrice: "", sector: "Altro", buyDate: "" });
   const [adding, setAdding] = useState(false);
   const [formErr, setFormErr] = useState("");
   const [compareA, setCompareA] = useState(null);
@@ -2509,7 +2509,7 @@ export default function App() {
     const history = simulateHistory(curPrice);
     if (realPrice) history[history.length - 1].price = realPrice;
     // Converti data da YYYY-MM-DD a dd/mm/yy
-    const rawDate = form.buyDate || new Date().toISOString().split("T")[0];
+    const rawDate = form.buyDate; // obbligatoria — non usare today come fallback
     const dp = rawDate.split("-");
     const buyDateFormatted = dp.length === 3 ? `${dp[2]}/${dp[1]}/${dp[0].slice(2)}` : new Date().toLocaleDateString("it-IT");
     // Determina valuta dal ticker o dalla risposta API
@@ -2527,7 +2527,7 @@ export default function App() {
     const withId = { ...ns, id: dbId || nextId.current++, dbId };
     setStocks(prev => [...prev, withId]);
     setSelectedId(withId.id);
-    setForm({ ticker: "", qty: "", buyPrice: "", sector: "Altro", buyDate: new Date().toISOString().split("T")[0] });
+    setForm({ ticker: "", qty: "", buyPrice: "", sector: "Altro", buyDate: "" });
     setAdding(false); setShowForm(false);
     // Auto-refresh prezzo live dopo aggiunta
     fetchPrice(t, true).then(result => {
