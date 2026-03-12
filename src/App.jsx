@@ -2778,6 +2778,11 @@ export default function App() {
   const sym = "$";
   const rate = 1;
   const eurRate = useEurRate(); // live EUR/USD rate
+  const [swUpdate, setSwUpdate] = useState(false);
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    navigator.serviceWorker.addEventListener("controllerchange", () => setSwUpdate(true));
+  }, []);
   const [showOnboarding, setShowOnboarding] = useState(() => {
     try { return !localStorage.getItem("trackfolio_onboarding_done"); }
     catch { return true; }
@@ -3390,6 +3395,17 @@ export default function App() {
               .mobile-portfolio-header{display:none!important}
             }
           `}</style>
+
+          {/* SW Update banner */}
+          {swUpdate && (
+            <div style={{ background: "#1E4FD8", color: "#fff", padding: "10px 20px", fontSize: 13, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+              <span>🚀 Nuova versione disponibile!</span>
+              <button onClick={() => window.location.reload()}
+                style={{ background: "#fff", color: "#1E4FD8", border: "none", borderRadius: 6, padding: "5px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                Aggiorna
+              </button>
+            </div>
+          )}
 
           {/* Alert toasts */}
           {firedAlerts.length > 0 && (
