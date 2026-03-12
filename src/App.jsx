@@ -252,6 +252,52 @@ function Spinner({ color = "#F4C542", size = 11 }) {
 }
 
 
+// ─── TRACKFOLIO LOGO SVG ──────────────────────────────────────────────────────
+function TrackfolioLogo({ size = 28, showText = true, textColor = "#FFFFFF" }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <svg width={size} height={size * 0.7} viewBox="0 0 40 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="logoGrad" x1="0" y1="28" x2="40" y2="0" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#4B6EF5"/>
+            <stop offset="100%" stopColor="#00D4AA"/>
+          </linearGradient>
+        </defs>
+        {/* Freccia grafico: scende, poi risale con angolo netto */}
+        <polyline
+          points="2,20 14,14 22,18 38,2"
+          stroke="url(#logoGrad)"
+          strokeWidth="3.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          fill="none"
+        />
+        {/* Punta freccia */}
+        <polyline
+          points="30,2 38,2 38,10"
+          stroke="url(#logoGrad)"
+          strokeWidth="3.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          fill="none"
+        />
+      </svg>
+      {showText && (
+        <span style={{
+          fontSize: size * 0.64,
+          fontWeight: 600,
+          color: textColor,
+          letterSpacing: "0.12em",
+          textTransform: "uppercase",
+          fontFamily: "'Geist', sans-serif",
+        }}>
+          Trackfolio
+        </span>
+      )}
+    </div>
+  );
+}
+
 // ─── ONBOARDING MODAL ─────────────────────────────────────────────────────────
 
 function OnboardingIllustration({ slide }) {
@@ -549,7 +595,7 @@ function AuthScreen({ onAuth }) {
       `}</style>
       <div style={{ animation: "fadeUp 0.4s ease", width: "100%", maxWidth: 400 }}>
         <div style={{ textAlign: "center", marginBottom: 36 }}>
-          <div style={{ fontFamily: "'Geist', sans-serif", fontSize: 38, fontWeight: 500, color: "#F4C542", letterSpacing: "-0.02em" }}>Trackfolio</div>
+          <div style={{ marginBottom: 8 }}><TrackfolioLogo size={36} showText={true} textColor="#0A1628" /></div>
         </div>
         <div style={{ background: "#FFFFFF", border: "1px solid #E8EBF4", borderRadius: 12, padding: "30px 28px" }}>
           <div style={{ display: "flex", background: "#EEF2FA", borderRadius: 6, padding: 3, marginBottom: 22 }}>
@@ -3062,7 +3108,7 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: "#F8F9FC", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Geist', sans-serif" }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap'); *{box-sizing:border-box;margin:0;padding:0} @keyframes spin{to{transform:rotate(360deg)}}`}</style>
       <div style={{ textAlign: "center" }}>
-        <div style={{ fontFamily: "'Geist', sans-serif", fontSize: 28, fontWeight: 500, color: "#F4C542", marginBottom: 16 }}>Trackfolio</div>
+        <div style={{ marginBottom: 16 }}><TrackfolioLogo size={28} showText={true} textColor="#0A1628" /></div>
         <span style={{ display: "inline-block", width: 16, height: 16, borderRadius: "50%", border: "2px solid #F4C542", borderTopColor: "transparent", animation: "spin 0.7s linear infinite" }} />
       </div>
     </div>
@@ -3140,9 +3186,9 @@ export default function App() {
           {/* Header */}
           <div style={{ padding: "0 16px 0 20px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #1a2d4a", height: 52, gap: 10, background: "#0A1628" }}>
             {/* Logo */}
-            <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexShrink: 0 }}>
-              <span style={{ fontFamily: "'Geist', sans-serif", fontSize: 19, fontWeight: 500, color: "#F4C542" }}>Trackfolio</span>
-              {plan === "pro" && <span style={{ fontSize: 8, background: "#F4C542", color: "#F8F9FC", padding: "2px 6px", borderRadius: 2, fontWeight: 700, letterSpacing: "0.1em" }}>PRO</span>}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+              <TrackfolioLogo size={22} showText={true} textColor="#FFFFFF" />
+              {plan === "pro" && <span style={{ fontSize: 8, background: "#F4C542", color: "#0A1628", padding: "2px 6px", borderRadius: 2, fontWeight: 700, letterSpacing: "0.1em" }}>PRO</span>}
             </div>
             {/* Desktop tabs */}
             <div style={{ display: "flex", alignItems: "center", gap: 0, overflowX: "auto", flex: 1, justifyContent: "center" }} className="desktop-tabs">
