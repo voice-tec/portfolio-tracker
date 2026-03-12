@@ -3,7 +3,7 @@ import { fetchHistory } from "../utils/api";
 import { toUSD } from "../utils/currency";
 import { parseBuyDate } from "../utils/dates";
 
-const DAYS_MAP = { "1M": 30, "3M": 63, "6M": 126, "1A": 252 };
+const DAYS_MAP = { "1M": 30, "3M": 63, "6M": 126, "1A": 365 };
 
 export function useChart(stocks, eurRate, period = "1A") {
   const [rawSeries, setRawSeries] = useState([]);
@@ -22,7 +22,7 @@ export function useChart(stocks, eurRate, period = "1A") {
           .then(c => ({ ticker, candles: c || [] }))
           .catch(() => ({ ticker, candles: [] }))
       ),
-      fetchHistory("SPY", 365 * 3)
+      fetchHistory("SPY", 1000)
         .then(c => ({ ticker: "SPY", candles: c || [] }))
         .catch(() => ({ ticker: "SPY", candles: [] })),
     ]).then(results => {
@@ -40,6 +40,7 @@ export function useChart(stocks, eurRate, period = "1A") {
         });
       });
 
+      // Prezzo più recente disponibile fino a dateISO
       function priceAt(ticker, dateISO) {
         const m = priceMap[ticker];
         if (!m) return null;
@@ -53,79 +54,64 @@ export function useChart(stocks, eurRate, period = "1A") {
         return last;
       }
 
-      // Posizioni ordinate per data acquisto
-      const positions = stocks
-        .map((s, i) => {
-          const buyDateISO = (() => {
-            const d = parseBuyDate(s.buyDate);
-            return d ? d.toISOString().slice(0, 10) : null;
-          })();
-          const costUSD = s.qty * toUSD(parseFloat(s.buyPrice) || 0, s.currency, eurRate);
-          const availDates = Object.keys(priceMap[s.ticker] || {}).sort();
-          const firstDate = buyDateISO
-            ? (availDates.find(d => d >= buyDateISO) || null)
-            : availDates[0] || null; // se buyDate manca, parte dalla prima candela disponibile
-          return { ...s, posId: i, buyDateISO, costUSD, firstDate, _qty: parseFloat(s.qty)||0 };
-        })
-        .sort((a, b) => (a.firstDate || "").localeCompare(b.firstDate || ""));
+      // Posizioni con buyDateISO e costo in USD
+      const positions = stocks.map((s, i) => {
+        const buyDateISO = (() => {
+          const d = parseBuyDate(s.buyDate);
+          return d ? d.toISOString().slice(0, 10) : null;
+        })();
+        const costUSD = (parseFloat(s.qty) || 0) * toUSD(parseFloat(s.buyPrice) || 0, s.currency, eurRate);
+        // Prima candela disponibile >= buyDate
+        const availDates = Object.keys(priceMap[s.ticker] || {}).sort();
+        const firstDate  = buyDateISO
+          ? (availDates.find(d => d >= buyDateISO) || null)
+          : availDates[0] || null;
+        return { ...s, posId: i, buyDateISO, costUSD, firstDate };
+      });
 
-      // Prima data di acquisto in assoluto
-      const firstBuyDate = positions
-        .map(p => p.firstDate)
-        .filter(Boolean)
-        .sort()[0] || null;
-
-      // Tutte le date disponibili — solo dalla prima data di acquisto in poi
+      // Tutte le date disponibili nei dati storici
       const allDates = [...new Set(
         Object.values(priceMap).flatMap(m => Object.keys(m))
-      )].sort().filter(d => !firstBuyDate || d >= firstBuyDate);
+      )].sort();
 
-      // ── Costruisci serie con rendimento % continuo ────────────────────────
+      // ── Costruisci serie completa (da prima data disponibile a oggi) ──────
+      // Per ogni giorno:
+      //   - considera solo le posizioni già attive (firstDate <= dateISO)
+      //   - se nessuna posizione è attiva → skip (non mostrare nulla)
+      //   - calcola rendimento pesato: Σ(peso_i × ret_i)
+      //     dove ret_i = prezzoOggi/prezzoAcquisto - 1
+      //     e peso_i   = costUSD_i / costoTotale_attivo
       //
-      // Idea: ogni posizione contribuisce con il suo rendimento % individuale
-      // pesato sul suo peso nel portafoglio al momento dell'ingresso.
-      //
-      // rendimentoPortafoglio(giorno) = 
-      //   Σ [ peso_i × rendimento_i(giorno) ]
-      //
-      // dove:
-      //   peso_i = costUSD_i / costoTotale_al_momento_dell_ingresso
-      //   rendimento_i(giorno) = prezzoOggi_i / prezzoAcquisto_i - 1
-      //
-      // Quando entra una nuova posizione, i pesi vengono ricalcolati
-      // ma la curva rimane continua perché il rendimento della nuova
-      // posizione al giorno di ingresso è 0% — non spika mai.
+      // Questo garantisce:
+      //   - 0% esatto al giorno del primo acquisto
+      //   - nessuno spike quando entra nuovo titolo
+      //   - curva continua
 
       const series = [];
 
       allDates.forEach(dateISO => {
-        // Posizioni attive oggi
         const active = positions.filter(p => p.firstDate && dateISO >= p.firstDate);
         if (!active.length) return;
 
-        // Costo totale delle posizioni attive
         const costoTot = active.reduce((s, p) => s + p.costUSD, 0);
         if (!costoTot) return;
 
-        // Rendimento pesato
         let rendimento = 0;
         let valoreOggi = 0;
-        let allPrices  = true;
+        let valid = true;
 
-        active.forEach(pos => {
-          const prezzoOggi    = priceAt(pos.ticker, dateISO);
-          const prezzoAcquisto = toUSD(parseFloat(pos.buyPrice) || 0, pos.currency, eurRate);
-          if (prezzoOggi == null || !prezzoAcquisto) { allPrices = false; return; }
+        for (const pos of active) {
+          const rawPrice       = priceAt(pos.ticker, dateISO);
+          const buyPriceUSD    = toUSD(parseFloat(pos.buyPrice) || 0, pos.currency, eurRate);
+          if (rawPrice == null || !buyPriceUSD) { valid = false; break; }
 
-          const prezzoOggiUSD = toUSD(parseFloat(prezzoOggi) || 0, pos.currency, eurRate);
-          const peso          = pos.costUSD / costoTot;
-          const ret_i         = (prezzoOggiUSD / prezzoAcquisto) - 1;
+          const prezzoOggiUSD  = toUSD(parseFloat(rawPrice), pos.currency, eurRate);
+          const peso           = pos.costUSD / costoTot;
+          rendimento          += peso * (prezzoOggiUSD / buyPriceUSD - 1);
+          valoreOggi          += (parseFloat(pos.qty) || 0) * prezzoOggiUSD;
+        }
 
-          rendimento += peso * ret_i;
-          valoreOggi += (parseFloat(pos.qty)||0) * prezzoOggiUSD;
-        });
-
-        if (!allPrices || !valoreOggi) return;
+        if (!valid || !valoreOggi) return;
 
         const pct   = parseFloat((rendimento * 100).toFixed(2));
         const label = new Date(dateISO + "T12:00:00")
@@ -149,31 +135,36 @@ export function useChart(stocks, eurRate, period = "1A") {
     eurRate,
   ]);
 
+  // ── Slice per periodo ──────────────────────────────────────────────────────
   const chartData = useMemo(() => {
     if (!rawSeries.length) return [];
 
     let slice;
     if (period === "Inizio") {
+      // Tutto lo storico dalla prima data di acquisto
       slice = rawSeries;
     } else {
-      const days   = DAYS_MAP[period] || 252;
+      const days   = DAYS_MAP[period] || 365;
       const cutoff = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+      // Prendi tutti i punti dal cutoff in poi
+      // Se non ci sono abbastanza dati (titolo comprato dopo il cutoff),
+      // mostra comunque dal cutoff — la curva inizierà quando c'è il primo dato
       const filtered = rawSeries.filter(p => p.date >= cutoff);
-      slice = filtered.length > 1 ? filtered : rawSeries.slice(-days);
+      slice = filtered.length > 0 ? filtered : rawSeries;
     }
 
-    // pct normalizzato al periodo: (pctOggi - pctInizio)
-    // così parte sempre da 0% all'inizio del range selezionato
+    if (!slice.length) return [];
+
+    // Normalizza pct al primo punto del range (parte da 0%)
     const basePct = slice[0]?.pct ?? 0;
 
-    // Benchmark SPY in % normalizzato al primo giorno del range
+    // Benchmark SPY normalizzato al primo giorno del range
     const bMap    = Object.fromEntries(benchmark.map(b => [b.date, b.spy]));
     const spyBase = bMap[slice[0]?.date]
       ?? benchmark.find(b => b.date >= slice[0]?.date)?.spy;
 
     return slice.map(p => ({
       ...p,
-      // pct relativo al periodo (0% al primo giorno del range)
       pct: parseFloat((p.pct - basePct).toFixed(2)),
       spyPct: (() => {
         const sv = bMap[p.date];
