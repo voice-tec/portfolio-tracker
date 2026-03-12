@@ -1094,7 +1094,7 @@ function MacroScenarioSection({ stocks, sym, rate, fmt, pct: fmtPct, col, eurRat
   );
 }
 
-function SimulazioniTab({ stocks, sym, rate, fmt, fmtPct }) {
+function SimulazioniTab({ stocks, sym, rate, fmt, fmtPct, eurRate }) {
   const [selectedScenario, setSelectedScenario] = useState(SCENARIOS[0]);
   const [scenarioData, setScenarioData] = useState({});
   const [loading, setLoading] = useState(false);
@@ -3273,7 +3273,7 @@ export default function App() {
 
               {/* SIMULAZIONI */}
               {activeTab === "simulazioni" && (
-                <SimulazioniTab stocks={stocks} sym={sym} rate={rate} fmt={fmt} fmtPct={fmtPct} />
+                <SimulazioniTab stocks={stocks} sym={sym} rate={rate} fmt={fmt} fmtPct={fmtPct} eurRate={eurRate} />
               )}
 
               {activeTab === "whatif" && (
