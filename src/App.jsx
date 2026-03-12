@@ -1565,7 +1565,7 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
         <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#EEF4FF", border: "1px solid #C7D8FF", borderRadius: 20, padding: "6px 16px", fontSize: 11, color: "#1E4FD8", fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 24 }}>
           ✦ Benvenuto su Trackfolio
         </div>
-        <div style={{ fontFamily: "'Geist', sans-serif", fontSize: 42, fontWeight: 400, color: "#0A1628", lineHeight: 1.15, marginBottom: 16, letterSpacing: "-0.02em" }}>
+        <div style={{ fontSize: "clamp(22px, 6vw, 38px)", fontWeight: 700, color: "#0A1628", lineHeight: 1.2, marginBottom: 16, letterSpacing: "-0.01em" }}>
           Il tuo portafoglio,<br/><span style={{ color: "#1E4FD8" }}>sempre sotto controllo</span>
         </div>
         <div style={{ fontSize: 15, color: "#5A6A7E", maxWidth: 480, margin: "0 auto 32px", lineHeight: 1.7 }}>
@@ -2437,7 +2437,7 @@ function WhatIfTab({ fmt, fmtPct, eurRate }) {
           <TickerAutocomplete value={ticker} onChange={v => setTicker(v)} onSelect={t => setTicker(t.ticker)} />
           <div style={{ flex: "0 0 140px" }}>
             <div style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 5 }}>Data acquisto</div>
-            <input type="date" value={date} onChange={e => setDate(e.target.value)} max={new Date().toISOString().split("T")[0]} style={{ colorScheme: "dark" }}/>
+            <input type="date" value={date} onChange={e => setDate(e.target.value)} max={new Date().toISOString().split("T")[0]} style={{ colorScheme: "light" }}/>
           </div>
           <div style={{ flex: "0 0 130px" }}>
             <div style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 5 }}>Importo investito ($)</div>
@@ -3215,7 +3215,7 @@ export default function App() {
                 }
                 <span className="hide-mobile">{marketOpen === null ? "..." : marketOpen ? "Live" : "Chiusi"}</span>
               </button>
-              <button className="add-btn" onClick={() => setShowForm(v => !v)} style={{ fontSize: 11, padding: "6px 12px" }}>{showForm ? "✕" : "+ Aggiungi"}</button>
+              <button className="add-btn" onClick={() => setShowForm(v => !v)} style={{ fontSize: 11, padding: "6px 14px", background: showForm ? "#E87040" : "#1E4FD8" }}>{showForm ? "✕ Chiudi" : "+ Aggiungi"}</button>
               {/* Mobile: user avatar button */}
               <button onClick={() => signOut().then(() => setUser(null))}
                 style={{ background: "#1a2d4a", border: "1px solid #2a4a6a", borderRadius: "50%", width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, color: "#8BA4C0", fontSize: 11, fontFamily: "inherit" }}
@@ -3227,42 +3227,46 @@ export default function App() {
 
           {/* Add form */}
           {showForm && (
-            <div className="fade-up" style={{ padding: "14px 28px", background: "#F8FAFF", borderBottom: "1px solid #E2E8F4", display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
-              <TickerAutocomplete value={form.ticker} onChange={v => setForm(f => ({ ...f, ticker: v }))}
-                onSelect={t => {
-                  const sector = t.sector || "Altro";
-                  setForm(f => ({ ...f, ticker: t.ticker, sector }));
-                }} />
-              <div style={{ flex: 1, minWidth: 120 }}>
-                <div style={{ fontSize: 10, color: "#666", marginBottom: 5, letterSpacing: "0.1em", textTransform: "uppercase" }}>
-                  Settore
-                  {form.sector && form.sector !== "Altro" && <span style={{ color: "#5EC98A", marginLeft: 6 }}>✓ auto</span>}
+            <div className="fade-up" style={{ padding: "16px 20px", background: "#FFFFFF", borderBottom: "1px solid #E2E8F4", boxShadow: "0 4px 16px rgba(10,22,64,0.06)" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 10 }}>
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <div style={{ fontSize: 10, color: "#8A9AB0", marginBottom: 4, letterSpacing: "0.08em", textTransform: "uppercase", fontWeight: 600 }}>Ticker</div>
+                  <TickerAutocomplete value={form.ticker} onChange={v => setForm(f => ({ ...f, ticker: v }))}
+                    onSelect={t => {
+                      const sector = t.sector || "Altro";
+                      setForm(f => ({ ...f, ticker: t.ticker, sector }));
+                    }} />
                 </div>
-                <select value={form.sector} onChange={e => setForm(f => ({ ...f, sector: e.target.value }))}>
-                  {SECTORS.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
+                <div>
+                  <div style={{ fontSize: 10, color: "#8A9AB0", marginBottom: 4, letterSpacing: "0.08em", textTransform: "uppercase", fontWeight: 600 }}>Quantità</div>
+                  <input type="number" placeholder="10" value={form.qty} onChange={e => setForm(f => ({ ...f, qty: e.target.value }))} style={{ colorScheme: "light" }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: "#8A9AB0", marginBottom: 4, letterSpacing: "0.08em", textTransform: "uppercase", fontWeight: 600 }}>Prezzo acquisto</div>
+                  <input type="number" placeholder="175.00" value={form.buyPrice} onChange={e => setForm(f => ({ ...f, buyPrice: e.target.value }))} style={{ colorScheme: "light" }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: "#8A9AB0", marginBottom: 4, letterSpacing: "0.08em", textTransform: "uppercase", fontWeight: 600 }}>Data acquisto</div>
+                  <input type="date" value={form.buyDate} max={new Date().toISOString().split("T")[0]}
+                    onChange={e => setForm(f => ({ ...f, buyDate: e.target.value }))} style={{ colorScheme: "light" }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: "#8A9AB0", marginBottom: 4, letterSpacing: "0.08em", textTransform: "uppercase", fontWeight: 600 }}>
+                    Settore {form.sector && form.sector !== "Altro" && <span style={{ color: "#16A34A" }}>✓</span>}
+                  </div>
+                  <select value={form.sector} onChange={e => setForm(f => ({ ...f, sector: e.target.value }))}>
+                    {SECTORS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
               </div>
-              <div style={{ flex: 1, minWidth: 90 }}>
-                <div style={{ fontSize: 10, color: "#666", marginBottom: 5, letterSpacing: "0.1em", textTransform: "uppercase" }}>Quantità</div>
-                <input type="number" placeholder="10" value={form.qty} onChange={e => setForm(f => ({ ...f, qty: e.target.value }))} />
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <button className="add-btn" onClick={handleAdd} disabled={adding} style={{ flex: 1, justifyContent: "center" }}>
+                  {adding && <Spinner color="#FFFFFF" />}
+                  {adding ? "Recupero prezzo…" : "Aggiungi titolo"}
+                </button>
               </div>
-              <div style={{ flex: 1, minWidth: 120 }}>
-                <div style={{ fontSize: 10, color: "#666", marginBottom: 5, letterSpacing: "0.1em", textTransform: "uppercase" }}>Prezzo Acquisto</div>
-                <input type="number" placeholder="175.00" value={form.buyPrice} onChange={e => setForm(f => ({ ...f, buyPrice: e.target.value }))} />
-              </div>
-              <div style={{ flex: 1, minWidth: 130 }}>
-                <div style={{ fontSize: 10, color: "#666", marginBottom: 5, letterSpacing: "0.1em", textTransform: "uppercase" }}>Data Acquisto</div>
-                <input type="date" value={form.buyDate}
-                  max={new Date().toISOString().split("T")[0]}
-                  onChange={e => setForm(f => ({ ...f, buyDate: e.target.value }))}
-                  style={{ colorScheme: "dark" }}/>
-              </div>
-              <button className="add-btn" onClick={handleAdd} disabled={adding}>
-                {adding && <Spinner color="#F8F9FC" />}
-                {adding ? "Recupero prezzo…" : "Aggiungi"}
-              </button>
-              {plan === "free" && stocks.length >= PLANS.free.maxStocks && <span style={{ fontSize: 11, color: "#E87040", alignSelf: "center" }}>Limite Free: max {PLANS.free.maxStocks} titoli</span>}
-              {formErr && <span style={{ fontSize: 11, color: "#E87040", alignSelf: "center" }}>{formErr}</span>}
+              {plan === "free" && stocks.length >= PLANS.free.maxStocks && <div style={{ fontSize: 11, color: "#E87040", marginTop: 8 }}>Limite Free: max {PLANS.free.maxStocks} titoli</div>}
+              {formErr && <div style={{ fontSize: 11, color: "#E87040", marginTop: 8 }}>{formErr}</div>}
             </div>
           )}
 
@@ -3633,18 +3637,17 @@ export default function App() {
           {/* Mobile bottom navigation */}
           <div className="mobile-nav" style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "#F0F4FA", borderTop: "1px solid #E0E4EE", zIndex: 999, justifyContent: "space-around", alignItems: "center", padding: "6px 0", paddingBottom: "env(safe-area-inset-bottom)" }}>
             {[
-              { id: "overview",    icon: "◈",  label: "Overview" },
-              { id: "confronto",   icon: "📊", label: "Confronto" },
-              { id: "simulazioni", icon: "⚡", label: "Stress" },
-              { id: "whatif",      icon: "🔁", label: "E se?" },
-              { id: "dividendi",   icon: "💰", label: "Divid." },
-              { id: "previsioni",  icon: "🔮", label: "Prev." },
-              { id: "alert",       icon: "🔔", label: "Alert" },
+              { id: "overview",    label: "Home",     svg: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> },
+              { id: "simulazioni", label: "Stress",   svg: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> },
+              { id: "whatif",      label: "E se?",    svg: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> },
+              { id: "dividendi",   label: "Divid.",   svg: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> },
+              { id: "previsioni",  label: "Prev.",    svg: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> },
+              { id: "alert",       label: "Alert",    svg: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> },
             ].map(t => (
               <button key={t.id} onClick={() => setActiveTab(t.id)}
-                style={{ background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "4px 8px", color: activeTab === t.id ? "#F4C542" : "#444", fontFamily: "inherit", transition: "color 0.15s" }}>
-                <span style={{ fontSize: 16 }}>{t.icon}</span>
-                <span style={{ fontSize: 8, letterSpacing: "0.08em", textTransform: "uppercase" }}>{t.label}</span>
+                style={{ background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "6px 10px", color: activeTab === t.id ? "#1E4FD8" : "#94A3B8", fontFamily: "inherit", transition: "color 0.15s", flex: 1 }}>
+                {t.svg}
+                <span style={{ fontSize: 9, letterSpacing: "0.04em", textTransform: "uppercase", fontWeight: activeTab === t.id ? 700 : 400 }}>{t.label}</span>
               </button>
             ))}
           </div>
