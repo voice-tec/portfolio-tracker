@@ -275,7 +275,7 @@ function UpgradeModal({ onClose }) {
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
       <div style={{ background: "#FFFFFF", border: "1px solid #2a2d35", borderRadius: 14, padding: "36px 38px", maxWidth: 480, width: "100%", position: "relative" }}>
         <button onClick={onClose} style={{ position: "absolute", top: 14, right: 18, background: "none", border: "none", color: "#444", cursor: "pointer", fontSize: 18 }}>✕</button>
-        <div style={{ fontFamily: "'Geist', sans-serif", fontSize: 30, fontWeight: 300, marginBottom: 4 }}>Portfolio <span style={{ color: "#F4C542" }}>Pro</span></div>
+        <div style={{ fontFamily: "'Geist', sans-serif", fontSize: 30, fontWeight: 300, marginBottom: 4 }}>Trackfolio <span style={{ color: "#F4C542" }}>Pro</span></div>
         <div style={{ fontSize: 12, color: "#666", marginBottom: 24 }}>Tutto quello che serve per investire con più consapevolezza.</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7, marginBottom: 26 }}>
           {perks.map(([icon, label]) => (
@@ -337,8 +337,7 @@ function AuthScreen({ onAuth }) {
       `}</style>
       <div style={{ animation: "fadeUp 0.4s ease", width: "100%", maxWidth: 400 }}>
         <div style={{ textAlign: "center", marginBottom: 36 }}>
-          <div style={{ fontFamily: "'Geist', sans-serif", fontSize: 38, fontWeight: 500, color: "#F4C542", letterSpacing: "-0.02em" }}>Portfolio</div>
-          <div style={{ fontSize: 9, color: "#D8DCE8", letterSpacing: "0.4em", textTransform: "uppercase", marginTop: 2 }}>Tracker</div>
+          <div style={{ fontFamily: "'Geist', sans-serif", fontSize: 38, fontWeight: 500, color: "#F4C542", letterSpacing: "-0.02em" }}>Trackfolio</div>
         </div>
         <div style={{ background: "#FFFFFF", border: "1px solid #E8EBF4", borderRadius: 12, padding: "30px 28px" }}>
           <div style={{ display: "flex", background: "#EEF2FA", borderRadius: 6, padding: 3, marginBottom: 22 }}>
@@ -356,7 +355,7 @@ function AuthScreen({ onAuth }) {
             {loading && <Spinner color="#F8F9FC" />}
             {mode === "login" ? "Entra nel portafoglio" : "Crea Account"}
           </button>
-          <div style={{ fontSize: 10, color: "#D8DCE8", textAlign: "center", marginTop: 12 }}>Benvenuto su Portfolio Tracker</div>
+          <div style={{ fontSize: 10, color: "#D8DCE8", textAlign: "center", marginTop: 12 }}>Benvenuto su Trackfolio</div>
         </div>
         <div style={{ fontSize: 9, color: "#C8CDD8", textAlign: "center", marginTop: 18, lineHeight: 1.8 }}>
           ⚠️ Strumento a scopo puramente informativo.<br />Non costituisce consulenza finanziaria ai sensi MiFID II.
@@ -1306,7 +1305,7 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
       {/* Welcome hero */}
       <div style={{ textAlign: "center", marginBottom: 52 }}>
         <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#EEF4FF", border: "1px solid #C7D8FF", borderRadius: 20, padding: "6px 16px", fontSize: 11, color: "#1E4FD8", fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 24 }}>
-          ✦ Benvenuto su Portfolio Tracker
+          ✦ Benvenuto su Trackfolio
         </div>
         <div style={{ fontFamily: "'Geist', sans-serif", fontSize: 42, fontWeight: 400, color: "#0A1628", lineHeight: 1.15, marginBottom: 16, letterSpacing: "-0.02em" }}>
           Il tuo portafoglio,<br/><span style={{ color: "#1E4FD8" }}>sempre sotto controllo</span>
@@ -2809,7 +2808,7 @@ export default function App() {
       .footer{margin-top:40px;font-size:10px;color:#ccc;text-align:center;line-height:1.8}
       .positive{color:#16a34a} .negative{color:#dc2626}
     </style></head><body>
-    <h1>Portfolio Report</h1>
+    <h1>Trackfolio Report</h1>
     <div class="sub">Generato il ${date} · ${user?.name || ""}</div>
     <div class="kpi-row">
       <div class="kpi"><div class="kpi-label">Valore Totale</div><div class="kpi-val">${sym}${fmt(totalValue)}</div></div>
@@ -2819,7 +2818,7 @@ export default function App() {
     </div>
     <table><thead><tr><th>Ticker</th><th>Settore</th><th>Q.tà</th><th>P.Acquisto</th><th>P.Attuale</th><th>Valore</th><th>P&L</th><th>P&L%</th></tr></thead>
     <tbody>${rows}</tbody></table>
-    <div class="footer">⚠️ Documento generato da Portfolio Tracker a scopo puramente informativo.<br>Non costituisce consulenza finanziaria ai sensi della normativa MiFID II.<br>Dati con possibile ritardo di 15 minuti.</div>
+    <div class="footer">⚠️ Documento generato da Trackfolio a scopo puramente informativo.<br>Non costituisce consulenza finanziaria ai sensi della normativa MiFID II.<br>Dati con possibile ritardo di 15 minuti.</div>
     </body></html>`;
 
     const win = window.open("", "_blank");
@@ -2843,7 +2842,7 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: "#F8F9FC", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Geist', sans-serif" }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap'); *{box-sizing:border-box;margin:0;padding:0} @keyframes spin{to{transform:rotate(360deg)}}`}</style>
       <div style={{ textAlign: "center" }}>
-        <div style={{ fontFamily: "'Geist', sans-serif", fontSize: 28, fontWeight: 500, color: "#F4C542", marginBottom: 16 }}>Portfolio</div>
+        <div style={{ fontFamily: "'Geist', sans-serif", fontSize: 28, fontWeight: 500, color: "#F4C542", marginBottom: 16 }}>Trackfolio</div>
         <span style={{ display: "inline-block", width: 16, height: 16, borderRadius: "50%", border: "2px solid #F4C542", borderTopColor: "transparent", animation: "spin 0.7s linear infinite" }} />
       </div>
     </div>
@@ -2921,8 +2920,7 @@ export default function App() {
           <div style={{ padding: "0 16px 0 20px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #1a2d4a", height: 52, gap: 10, background: "#0A1628" }}>
             {/* Logo */}
             <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexShrink: 0 }}>
-              <span style={{ fontFamily: "'Geist', sans-serif", fontSize: 19, fontWeight: 500, color: "#F4C542" }}>Portfolio</span>
-              <span className="hide-mobile" style={{ fontSize: 9, color: "#8BA4C0", letterSpacing: "0.2em", textTransform: "uppercase" }}>Tracker</span>
+              <span style={{ fontFamily: "'Geist', sans-serif", fontSize: 19, fontWeight: 500, color: "#F4C542" }}>Trackfolio</span>
               {plan === "pro" && <span style={{ fontSize: 8, background: "#F4C542", color: "#F8F9FC", padding: "2px 6px", borderRadius: 2, fontWeight: 700, letterSpacing: "0.1em" }}>PRO</span>}
             </div>
             {/* Desktop tabs */}
