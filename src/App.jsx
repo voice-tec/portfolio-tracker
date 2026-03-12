@@ -232,14 +232,6 @@ function simulateScenario(scenario, days) {
     return { date: d.toLocaleDateString("it-IT", { day: "2-digit", month: "short", year: "2-digit" }), pct: parseFloat((cumPct * 100).toFixed(2)) };
   });
 }
-async function fetchNews(ticker) {
-  try {
-    const res = await fetch(`${API_BASE}/api/news?symbol=${encodeURIComponent(ticker)}`);
-    if (!res.ok) return [];
-    return await res.json();
-  } catch { return []; }
-}
-
 async function fetchHistoricalPrice(ticker, date) {
   // Fetch price at a specific date using history API
   try {
