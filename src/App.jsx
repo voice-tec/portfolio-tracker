@@ -588,6 +588,7 @@ function AuthScreen({ onAuth }) {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap');
         *{box-sizing:border-box;margin:0;padding:0}
+        html,body{height:100%;height:-webkit-fill-available;overflow-x:hidden;-webkit-tap-highlight-color:transparent}
         input{background:#F8FAFF;border:1px solid #D0D8EC;color:#0A1628;font-family:inherit;font-size:13px;padding:11px 14px;border-radius:6px;outline:none;width:100%}
         input:focus{border-color:#1E4FD8;box-shadow:0 0 0 3px rgba(30,79,216,0.08)} input::placeholder{color:#A0AABF}
         @keyframes spin{to{transform:rotate(360deg)}}
@@ -3334,7 +3335,7 @@ export default function App() {
 
   if (userLoading) return (
     <div style={{ minHeight: "100vh", background: "#F8F9FC", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Geist', sans-serif" }}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap'); *{box-sizing:border-box;margin:0;padding:0} @keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap'); *{box-sizing:border-box;margin:0;padding:0} body{-webkit-tap-highlight-color:transparent} @keyframes spin{to{transform:rotate(360deg)}} @supports(padding-top: env(safe-area-inset-top)){.safe-top{padding-top:env(safe-area-inset-top)!important}}`}</style>
       <div style={{ textAlign: "center" }}>
         <div style={{ marginBottom: 16 }}><TrackfolioLogo size={28} showText={true} textColor="#0A1628" /></div>
         <span style={{ display: "inline-block", width: 16, height: 16, borderRadius: "50%", border: "2px solid #F4C542", borderTopColor: "transparent", animation: "spin 0.7s linear infinite" }} />
@@ -3423,7 +3424,7 @@ export default function App() {
           {showOnboarding && <OnboardingModal onClose={closeOnboarding} />}
 
           {/* Header */}
-          <div style={{ padding: "0 16px 0 20px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #1a2d4a", height: 52, gap: 10, background: "#0A1628" }}>
+          <div style={{ padding: "0 16px 0 20px", paddingTop: "env(safe-area-inset-top)", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #1a2d4a", minHeight: 52, gap: 10, background: "#0A1628", position: "sticky", top: 0, zIndex: 100 }}>
             {/* Logo */}
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
               <TrackfolioLogo size={22} showText={true} textColor="#FFFFFF" />
@@ -3542,7 +3543,7 @@ export default function App() {
           <div style={{ display: "flex", height: "calc(100vh - 52px)", overflow: "hidden" }}>
 
             {/* Main — full width, no sidebar */}
-            <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px" }} className="main-content">
+            <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px", paddingBottom: "calc(80px + env(safe-area-inset-bottom))" }} className="main-content">
 
               {/* OVERVIEW */}
               {activeTab === "overview" && (
@@ -3869,7 +3870,7 @@ export default function App() {
           ) : null}
 
           {/* Mobile portfolio summary */}
-          <div className="mobile-portfolio-header" style={{ padding: "12px 16px", borderBottom: "1px solid #E0E4EE", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div className="mobile-portfolio-header" style={{ padding: "12px 16px", paddingTop: "max(12px, env(safe-area-inset-top))", borderBottom: "1px solid #E0E4EE", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#FFFFFF", position: "sticky", top: 0, zIndex: 100 }}>
             <div>
               <div style={{ fontSize: 8, color: "#D8DCE8", letterSpacing: "0.18em", textTransform: "uppercase" }}>Portafoglio</div>
               <div style={{ fontFamily: "'Geist', sans-serif", fontSize: 20, fontWeight: 300, color: "#0A0E1A" }}>{sym}{fmt(totalValue)}</div>

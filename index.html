@@ -8,35 +8,41 @@
     <!-- PWA -->
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#0A1628" />
+
+    <!-- iOS PWA -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Trackfolio" />
-
-    <!-- Icona per iOS (usa il tuo logo PNG) -->
     <link rel="apple-touch-icon" href="/favicon.png" />
 
-    <!-- SEO -->
-    <meta name="description" content="Trackfolio — Il tuo portafoglio di investimenti, sempre sotto controllo." />
-    <meta name="robots" content="noindex" />
+    <!-- Blocca rotazione via CSS (supporto aggiuntivo) -->
+    <style>
+      @media screen and (orientation: landscape) and (max-width: 900px) {
+        body {
+          transform: rotate(-90deg);
+          transform-origin: left top;
+          width: 100vh;
+          overflow-x: hidden;
+          position: absolute;
+          top: 100%;
+          left: 0;
+        }
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
-
-    <!-- Registra Service Worker -->
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => {
           navigator.serviceWorker.register("/sw.js").then(reg => {
-            // Controlla aggiornamenti ogni 60 secondi
             setInterval(() => reg.update(), 60000);
-
             reg.addEventListener("updatefound", () => {
-              const newWorker = reg.installing;
-              newWorker.addEventListener("statechange", () => {
-                if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
-                  // Nuova versione disponibile — aggiorna silenziosamente
-                  newWorker.postMessage("SKIP_WAITING");
+              const nw = reg.installing;
+              nw.addEventListener("statechange", () => {
+                if (nw.state === "installed" && navigator.serviceWorker.controller) {
+                  nw.postMessage("SKIP_WAITING");
                   window.location.reload();
                 }
               });
