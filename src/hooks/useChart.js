@@ -69,10 +69,16 @@ export function useChart(stocks, eurRate, period = "1A") {
         })
         .sort((a, b) => (a.firstDate || "").localeCompare(b.firstDate || ""));
 
-      // Tutte le date disponibili
+      // Prima data di acquisto in assoluto
+      const firstBuyDate = positions
+        .map(p => p.firstDate)
+        .filter(Boolean)
+        .sort()[0] || null;
+
+      // Tutte le date disponibili — solo dalla prima data di acquisto in poi
       const allDates = [...new Set(
         Object.values(priceMap).flatMap(m => Object.keys(m))
-      )].sort();
+      )].sort().filter(d => !firstBuyDate || d >= firstBuyDate);
 
       // ── Costruisci serie con rendimento % continuo ────────────────────────
       //
