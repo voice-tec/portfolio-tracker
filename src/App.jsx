@@ -600,8 +600,7 @@ function EditModal({ stock, onClose, onSave }) {
 
   function handleSave() {
     // Converti data da YYYY-MM-DD a dd/mm/yy
-    const dp = buyDate.split("-");
-    const buyDateFormatted = dp.length === 3 ? `${dp[2]}/${dp[1]}/${dp[0].slice(2)}` : stock.buyDate;
+    const buyDateFormatted = buyDate; // salva direttamente in YYYY-MM-DD
     onSave({ ...stock, qty: parseFloat(qty)||stock.qty, buyPrice: parseFloat(buyPrice)||stock.buyPrice,
       targetPrice: parseFloat(targetPrice)||null, stopLoss: parseFloat(stopLoss)||null,
       sector, buyDate: buyDateFormatted });
@@ -2501,9 +2500,7 @@ export default function App() {
     const history = simulateHistory(curPrice);
     if (realPrice) history[history.length - 1].price = realPrice;
     // Converti data da YYYY-MM-DD a dd/mm/yy
-    const rawDate = form.buyDate; // obbligatoria — non usare today come fallback
-    const dp = rawDate.split("-");
-    const buyDateFormatted = dp.length === 3 ? `${dp[2]}/${dp[1]}/${dp[0].slice(2)}` : new Date().toLocaleDateString("it-IT");
+    const buyDateFormatted = form.buyDate; // salva direttamente in YYYY-MM-DD
     // Determina valuta dal ticker o dalla risposta API
     const detectedCurrency = (() => {
       if (t.endsWith(".MI") || t.endsWith(".AS") || t.endsWith(".PA") || t.endsWith(".DE") || t.endsWith(".SW") || t.endsWith(".MA") || t.endsWith(".BR")) return "EUR";
