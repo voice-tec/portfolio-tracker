@@ -1,111 +1,111 @@
-// api/screener.js — Fama-French screener, FMP free tier compatible
-const FMP_KEY = process.env.FMP_API_KEY;
-const FMP_BASE = "https://financialmodelingprep.com/api/v3";
+// api/screener.js — Fama-French screener via Finnhub (gratuito)
+const FINNHUB_KEY = process.env.FINNHUB_API_KEY;
+const FH = "https://finnhub.io/api/v1";
 
+// Universe curato — value/small-mid cap USA stile DFA
 const UNIVERSE = [
-  "JPM","BAC","C","WFC","USB","BRK-B","GS","MS","AXP","COF",
-  "XOM","CVX","COP","SLB","HAL","VLO","MPC","EOG","DVN","MRO",
-  "AAON","AIT","BMI","CBT","CNX","BLDR","AWI","APOG","BCO","GFF",
-  "BIG","DDS","KSS","M","ROST","TJX","GPC","LKQ","AN","KMX",
-  "ABC","CAH","MCK","CVS","CI","HUM","MOH","UNH","ELV","CNC",
+  // Financials value
+  "JPM","BAC","C","WFC","USB","TFC","RF","FITB","HBAN","CFG",
+  // Energy value  
+  "XOM","CVX","COP","DVN","MRO","OVV","AR","RRC","SM","CIVI",
+  // Industrials value
+  "GFF","AIT","BMI","CBT","APOG","AWI","BLDR","BCO","CNX","AAON",
+  // Consumer value
+  "DDS","KSS","M","ROST","TJX","GPC","AN","KMX","BBY","PRGO",
+  // Healthcare value
+  "CVS","CI","HUM","MCK","CAH","ABC","MOH","CNC","ELV","UNH",
 ];
+
+async function finnhubGet(path) {
+  const res = await fetch(`${FH}${path}&token=${FINNHUB_KEY}`);
+  if (!res.ok) throw new Error(`Finnhub ${res.status}: ${path}`);
+  return res.json();
+}
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  if (!FMP_KEY) return res.status(500).json({ error: "FMP_API_KEY non configurata", results: [] });
+  if (!FINNHUB_KEY) return res.status(500).json({ error: "FINNHUB_API_KEY non configurata", results: [] });
 
   try {
-    // Test con un singolo ticker prima per verificare la chiave
-    const testRes = await fetch(`${FMP_BASE}/quote/AAPL?apikey=${FMP_KEY}`);
-    const testData = await testRes.json();
+    // Finnhub free: ~30 req/sec — prendiamo 20 titoli
+    const tickers = UNIVERSE.slice(0, 20);
 
-    if (!testRes.ok || !Array.isArray(testData) || testData.length === 0) {
-      const msg = testData?.["Error Message"] || testData?.message || JSON.stringify(testData).slice(0,200);
-      throw new Error(`FMP API error: ${msg}`);
-    }
+    // Fetch quote + basic financials in parallelo a coppie
+    const results = [];
+    const BATCH = 5;
 
-    // Fetch a batch di 10 ticker alla volta (limite free tier)
-    const { exchange = "NYSE" } = req.query;
-    const tickers = UNIVERSE.slice(0, 30);
-    const BATCH = 10;
-    const batches = [];
     for (let i = 0; i < tickers.length; i += BATCH) {
-      batches.push(tickers.slice(i, i + BATCH));
-    }
+      const batch = tickers.slice(i, i + BATCH);
+      const fetches = batch.flatMap(sym => [
+        finnhubGet(`/quote?symbol=${sym}`).catch(() => null),
+        finnhubGet(`/stock/metric?symbol=${sym}&metric=all`).catch(() => null),
+      ]);
+      const data = await Promise.all(fetches);
 
-    const allQuotes = [];
-    for (const batch of batches) {
-      const r = await fetch(`${FMP_BASE}/quote/${batch.join(",")}?apikey=${FMP_KEY}`);
-      if (r.ok) {
-        const data = await r.json();
-        if (Array.isArray(data)) allQuotes.push(...data);
-      }
-    }
+      for (let j = 0; j < batch.length; j++) {
+        const sym   = batch[j];
+        const quote = data[j * 2];
+        const fund  = data[j * 2 + 1];
 
-    if (allQuotes.length === 0) throw new Error("Nessun dato ricevuto. Piano FMP potrebbe non supportare questo endpoint.");
+        if (!quote || !quote.c || quote.c === 0) continue;
 
-    // Calcola score Fama-French dai dati disponibili in /quote
-    const results = allQuotes
-      .filter(q => q.price > 0)
-      .map(q => {
-        const pe       = parseFloat(q.pe || 0);
-        const price    = parseFloat(q.price || 0);
-        const low52    = parseFloat(q.yearLow  || 0);
-        const high52   = parseFloat(q.yearHigh || 0);
-        const mktCap   = parseFloat(q.marketCap || 0);
-        const eps      = parseFloat(q.eps || 0);
-        const change1y = high52 > 0 ? ((price - low52) / low52) * 100 : 0;
+        const price   = quote.c;
+        const high52  = quote["52WeekHigh"] || fund?.metric?.["52WeekHigh"] || 0;
+        const low52   = quote["52WeekLow"]  || fund?.metric?.["52WeekLow"]  || 0;
+        const m       = fund?.metric || {};
 
-        // VALUE: P/E basso
+        const pe   = parseFloat(m.peNormalizedAnnual || m.peTTM || 0);
+        const pb   = parseFloat(m.pbAnnual || m.pbQuarterly || 0);
+        const roe  = parseFloat(m.roeTTM || m.roeAnnual || 0);
+        const roa  = parseFloat(m.roaTTM || m.roaAnnual || 0);
+        const mktCap = parseFloat(m.marketCapitalization || 0) * 1e6; // Finnhub in milioni
+
+        // ── Scores ──────────────────────────────────────────────────────
         const peScore = pe > 0 && pe < 80
-          ? Math.max(0, Math.min(100, Math.round(((40 - pe) / 40) * 100)))
-          : null;
+          ? Math.max(0, Math.min(100, Math.round(((40 - pe) / 40) * 100))) : null;
+        const pbScore = pb > 0
+          ? Math.max(0, Math.min(100, Math.round(((3 - pb) / 3) * 100))) : null;
+        const valueScore = peScore != null && pbScore != null
+          ? Math.round((peScore + pbScore) / 2) : (peScore ?? pbScore ?? null);
 
-        // SIZE: cap piccola = score alto
         const sizeScore = mktCap > 0
-          ? Math.round(Math.max(0, Math.min(100, ((100e9 - mktCap) / 100e9) * 100)))
-          : null;
+          ? Math.round(Math.max(0, Math.min(100, ((100e9 - mktCap) / 100e9) * 100))) : null;
 
-        // MOMENTUM: posizione nel range 52w
+        const roeScore = roe !== 0 ? Math.max(0, Math.min(100, Math.round((roe / 25) * 100))) : null;
+        const roaScore = roa !== 0 ? Math.max(0, Math.min(100, Math.round((roa / 10) * 100))) : null;
+        const profScore = roeScore != null || roaScore != null
+          ? Math.round(((roeScore ?? 0) + (roaScore ?? 0)) / ((roeScore != null ? 1 : 0) + (roaScore != null ? 1 : 0))) : null;
+
         const momentumScore = high52 > low52 && price > 0
-          ? Math.round(((price - low52) / (high52 - low52)) * 100)
-          : null;
+          ? Math.round(((price - low52) / (high52 - low52)) * 100) : null;
 
-        // PROFITABILITY: EPS positivo e crescita come proxy
-        const profScore = eps > 0
-          ? Math.min(100, Math.round((eps / price) * 1000)) // earnings yield proxy
-          : null;
+        const scores = [valueScore, sizeScore, profScore, momentumScore].filter(s => s != null);
+        if (scores.length < 2) continue;
 
-        const scores = [peScore, sizeScore, momentumScore, profScore].filter(s => s != null);
-        const composite = scores.length >= 2
-          ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
-          : 0;
+        const composite = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
 
-        return {
-          symbol:   q.symbol,
-          name:     q.name || q.symbol,
-          sector:   "—",
+        results.push({
+          symbol: sym,
+          name:   sym,
+          sector: "—",
           price,
-          mktCapM:  Math.round(mktCap / 1e6),
-          pe:       pe > 0 ? parseFloat(pe.toFixed(1)) : null,
-          pb:       null,
-          roe:      null,
-          roa:      null,
-          change1d: parseFloat(q.changesPercentage || 0).toFixed(2),
-          scores: {
-            value:         peScore,
-            size:          sizeScore,
-            profitability: profScore,
-            momentum:      momentumScore,
-            composite,
-          },
-        };
-      })
-      .filter(r => r.scores.composite > 10)
-      .sort((a, b) => b.scores.composite - a.scores.composite);
+          mktCapM: Math.round(mktCap / 1e6),
+          pe: pe > 0 ? parseFloat(pe.toFixed(1)) : null,
+          pb: pb > 0 ? parseFloat(pb.toFixed(2)) : null,
+          roe: roe !== 0 ? parseFloat(roe.toFixed(1)) : null,
+          roa: roa !== 0 ? parseFloat(roa.toFixed(1)) : null,
+          change1d: (((quote.c - quote.pc) / quote.pc) * 100).toFixed(2),
+          scores: { value: valueScore, size: sizeScore, profitability: profScore, momentum: momentumScore, composite },
+        });
+      }
 
+      // Pausa tra batch per non superare rate limit
+      if (i + BATCH < tickers.length) await new Promise(r => setTimeout(r, 300));
+    }
+
+    results.sort((a, b) => b.scores.composite - a.scores.composite);
     return res.status(200).json({ results, count: results.length });
 
   } catch (err) {
