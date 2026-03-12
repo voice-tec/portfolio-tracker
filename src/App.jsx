@@ -275,7 +275,7 @@ function UpgradeModal({ onClose }) {
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
       <div style={{ background: "#FFFFFF", border: "1px solid #2a2d35", borderRadius: 14, padding: "36px 38px", maxWidth: 480, width: "100%", position: "relative" }}>
         <button onClick={onClose} style={{ position: "absolute", top: 14, right: 18, background: "none", border: "none", color: "#444", cursor: "pointer", fontSize: 18 }}>✕</button>
-        <div style={{ fontFamily: "'Fraunces', serif", fontSize: 30, fontWeight: 300, marginBottom: 4 }}>Portfolio <span style={{ color: "#F4C542" }}>Pro</span></div>
+        <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 30, fontWeight: 300, marginBottom: 4 }}>Portfolio <span style={{ color: "#F4C542" }}>Pro</span></div>
         <div style={{ fontSize: 12, color: "#666", marginBottom: 24 }}>Tutto quello che serve per investire con più consapevolezza.</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7, marginBottom: 26 }}>
           {perks.map(([icon, label]) => (
@@ -285,7 +285,7 @@ function UpgradeModal({ onClose }) {
           ))}
         </div>
         <div style={{ textAlign: "center", marginBottom: 20 }}>
-          <div style={{ fontFamily: "'Fraunces', serif", fontSize: 38, color: "#F4C542" }}>€12<span style={{ fontSize: 14, color: "#666" }}>/mese</span></div>
+          <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 38, color: "#F4C542" }}>€12<span style={{ fontSize: 14, color: "#666" }}>/mese</span></div>
           <div style={{ fontSize: 11, color: "#444", marginTop: 3 }}>oppure <strong style={{ color: "#444" }}>€99/anno</strong> · Cancella quando vuoi</div>
         </div>
         <button onClick={() => { setPlan("pro"); onClose(); }} style={{ width: "100%", background: "#F4C542", border: "none", color: "#F8F9FC", fontFamily: "inherit", fontSize: 13, fontWeight: 700, padding: "14px", borderRadius: 8, cursor: "pointer" }}>
@@ -326,18 +326,18 @@ function AuthScreen({ onAuth }) {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#EEF2FA", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontFamily: "'DM Mono', monospace", padding: 20 }}>
+    <div style={{ minHeight: "100vh", background: "#EEF2FA", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontFamily: "'Lato', sans-serif", padding: 20 }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&family=Playfair+Display:wght@400;600&display=swap');
         *{box-sizing:border-box;margin:0;padding:0}
-        input{background:#13151c;border:1px solid #2a2d35;color:#E8E6DF;font-family:inherit;font-size:13px;padding:11px 14px;border-radius:6px;outline:none;width:100%}
-        input:focus{border-color:#F4C542} input::placeholder{color:#3a3d45}
+        input{background:#F8FAFF;border:1px solid #D0D8EC;color:#0A1628;font-family:inherit;font-size:13px;padding:11px 14px;border-radius:6px;outline:none;width:100%}
+        input:focus{border-color:#1E4FD8;box-shadow:0 0 0 3px rgba(30,79,216,0.08)} input::placeholder{color:#A0AABF}
         @keyframes spin{to{transform:rotate(360deg)}}
         @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
       `}</style>
       <div style={{ animation: "fadeUp 0.4s ease", width: "100%", maxWidth: 400 }}>
         <div style={{ textAlign: "center", marginBottom: 36 }}>
-          <div style={{ fontFamily: "'Fraunces', serif", fontSize: 38, fontWeight: 300, color: "#F4C542", letterSpacing: "-0.02em" }}>Portfolio</div>
+          <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 38, fontWeight: 300, color: "#F4C542", letterSpacing: "-0.02em" }}>Portfolio</div>
           <div style={{ fontSize: 9, color: "#D8DCE8", letterSpacing: "0.4em", textTransform: "uppercase", marginTop: 2 }}>Tracker</div>
         </div>
         <div style={{ background: "#FFFFFF", border: "1px solid #E8EBF4", borderRadius: 12, padding: "30px 28px" }}>
@@ -352,7 +352,7 @@ function AuthScreen({ onAuth }) {
             <input placeholder="Password" type="password" value={pw} onChange={e => setPw(e.target.value)} onKeyDown={e => e.key === "Enter" && submit()} />
           </div>
           {err && <div style={{ fontSize: 11, color: "#E87040", marginTop: 10 }}>{err}</div>}
-          <button onClick={submit} disabled={loading} style={{ marginTop: 18, width: "100%", background: "#F4C542", border: "none", color: "#F8F9FC", fontFamily: "inherit", fontSize: 12, fontWeight: 700, padding: "13px", borderRadius: 6, cursor: loading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: loading ? 0.7 : 1 }}>
+          <button onClick={submit} disabled={loading} style={{ marginTop: 18, width: "100%", background: "#1E4FD8", border: "none", color: "#FFFFFF", fontFamily: "inherit", fontSize: 12, fontWeight: 700, padding: "13px", borderRadius: 6, cursor: loading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: loading ? 0.7 : 1 }}>
             {loading && <Spinner color="#F8F9FC" />}
             {mode === "login" ? "Entra nel portafoglio" : "Crea Account"}
           </button>
@@ -508,7 +508,7 @@ function WatchlistTab({ eurRate, fmt, fmtPct }) {
   return (
     <div className="fade-up">
       <div style={{ marginBottom: 20 }}>
-        <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300 }}>Watchlist</div>
+        <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 300 }}>Watchlist</div>
         <div style={{ fontSize: 11, color: "#444", marginTop: 2 }}>Titoli da monitorare senza averli in portafoglio</div>
       </div>
 
@@ -541,7 +541,7 @@ function WatchlistTab({ eurRate, fmt, fmtPct }) {
               <div key={item.id} className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px" }}>
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
-                    <span style={{ fontFamily: "'Fraunces', serif", fontSize: 18, fontWeight: 300 }}>{item.ticker}</span>
+                    <span style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, fontWeight: 300 }}>{item.ticker}</span>
                     {item.sector && <span style={{ fontSize: 9, background: "#E8EBF2", color: "#666", padding: "2px 7px", borderRadius: 2 }}>{item.sector}</span>}
                     <span style={{ fontSize: 9, color: "#333" }}>aggiunto {item.addedAt}</span>
                   </div>
@@ -551,7 +551,7 @@ function WatchlistTab({ eurRate, fmt, fmtPct }) {
                   <div style={{ textAlign: "right" }}>
                     {isLoading ? <Spinner /> : price ? (
                       <>
-                        <div style={{ fontFamily: "'Fraunces', serif", fontSize: 16 }}>${fmt(price)}</div>
+                        <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 16 }}>${fmt(price)}</div>
                         <div style={{ fontSize: 10, color: "#444" }}>€{fmt(price * eurRate)}</div>
                       </>
                     ) : <div style={{ fontSize: 11, color: "#444" }}>N/D</div>}
@@ -612,7 +612,7 @@ function EditModal({ stock, onClose, onSave }) {
       <div onClick={e => e.stopPropagation()} style={{ background: "#F8F9FC", border: "1px solid #E8EBF4", borderRadius: 12, width: "100%", maxWidth: 420, padding: "28px 28px 24px", animation: "fadeUp 0.2s ease" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 22 }}>
           <div>
-            <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300 }}>{stock.ticker}</div>
+            <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 300 }}>{stock.ticker}</div>
             <div style={{ fontSize: 10, color: "#444", marginTop: 2 }}>Modifica posizione</div>
           </div>
           <button onClick={onClose} style={{ background: "none", border: "1px solid #2a2d35", color: "#666", fontFamily: "inherit", fontSize: 16, padding: "4px 10px", borderRadius: 4, cursor: "pointer" }}>✕</button>
@@ -753,7 +753,7 @@ function StockModal({ stock, onClose, notes, setNotes, alerts, setAlerts, handle
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ fontFamily: "'Fraunces', serif", fontSize: 28, fontWeight: 300 }}>{stock.ticker}</span>
+              <span style={{ fontFamily: "'Playfair Display', serif", fontSize: 28, fontWeight: 300 }}>{stock.ticker}</span>
               <span style={{ fontSize: 9, padding: "2px 8px", borderRadius: 2, background: "#E8EBF2", color: "#666", letterSpacing: "0.08em", textTransform: "uppercase" }}>{stock.sector}</span>
               {stock.priceReal && <MarketBadge state={stock.marketState || "CLOSED"} size={8}/>}
             </div>
@@ -761,7 +761,7 @@ function StockModal({ stock, onClose, notes, setNotes, alerts, setAlerts, handle
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div style={{ textAlign: "right" }}>
-              <div style={{ fontFamily: "'Fraunces', serif", fontSize: 24, fontWeight: 300 }}>
+              <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 24, fontWeight: 300 }}>
                 {stock.currency === "EUR" ? "€" : sym}{fmt(stock.currentPrice)}
                 {stock.currency && stock.currency !== "USD" && <span style={{fontSize:11,color:"#666",marginLeft:4}}>(=${fmt(_cur)})</span>}
               </div>
@@ -781,7 +781,7 @@ function StockModal({ stock, onClose, notes, setNotes, alerts, setAlerts, handle
           ].map(k => (
             <div key={k.l} style={{ background: "#FFFFFF", border: "1px solid #E8EBF4", borderRadius: 6, padding: "12px 14px" }}>
               <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6 }}>{k.l}</div>
-              <div style={{ fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 300, color: k.c || "#0A0E1A" }}>{k.v}</div>
+              <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 15, fontWeight: 300, color: k.c || "#0A0E1A" }}>{k.v}</div>
             </div>
           ))}
         </div>
@@ -936,7 +936,7 @@ function MacroScenarioSection({ stocks, sym, rate, fmt, pct: fmtPct, col, eurRat
     <div style={{ marginTop: 40 }}>
       {/* Header sezione */}
       <div style={{ marginBottom: 20 }}>
-        <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300 }}>Scenari Macroeconomici</div>
+        <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 300 }}>Scenari Macroeconomici</div>
         <div style={{ fontSize: 11, color: "#444", marginTop: 2 }}>Come reagisce il tuo portafoglio a diversi contesti macro? Cosa comprare in ogni scenario?</div>
       </div>
 
@@ -959,7 +959,7 @@ function MacroScenarioSection({ stocks, sym, rate, fmt, pct: fmtPct, col, eurRat
         </div>
         <div style={{ textAlign: "right" }}>
           <div style={{ fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>S&P 500 medio</div>
-          <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, color: selected.spxImpact >= 0 ? "#5EC98A" : "#E87040" }}>
+          <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, color: selected.spxImpact >= 0 ? "#5EC98A" : "#E87040" }}>
             {selected.spxImpact >= 0 ? "+" : ""}{(selected.spxImpact * 100).toFixed(0)}%
           </div>
         </div>
@@ -974,7 +974,7 @@ function MacroScenarioSection({ stocks, sym, rate, fmt, pct: fmtPct, col, eurRat
         ].map(k => (
           <div key={k.l} className="card">
             <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 7 }}>{k.l}</div>
-            <div style={{ fontFamily: "'Fraunces', serif", fontSize: 20, fontWeight: 300, color: k.c }}>{k.v}</div>
+            <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, fontWeight: 300, color: k.c }}>{k.v}</div>
           </div>
         ))}
       </div>
@@ -1156,7 +1156,7 @@ function SimulazioniTab({ stocks, sym, rate, fmt, fmtPct, eurRate }) {
   return (
     <div className="fade-up">
       <div style={{ marginBottom: 20 }}>
-        <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300 }}>Stress Test Storico</div>
+        <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 300 }}>Stress Test Storico</div>
         <div style={{ fontSize: 11, color: "#444", marginTop: 2 }}>Come sarebbe andato il tuo portafoglio durante le grandi crisi?</div>
       </div>
 
@@ -1178,7 +1178,7 @@ function SimulazioniTab({ stocks, sym, rate, fmt, fmtPct, eurRate }) {
         </div>
         <div style={{ textAlign: "right" }}>
           <div style={{ fontSize: 10, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em" }}>S&P 500</div>
-          <div style={{ fontFamily: "'Fraunces', serif", fontSize: 20, color: selectedScenario.spx >= 0 ? "#5EC98A" : "#E87040" }}>
+          <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, color: selectedScenario.spx >= 0 ? "#5EC98A" : "#E87040" }}>
             {selectedScenario.spx >= 0 ? "+" : ""}{selectedScenario.spx}%
           </div>
         </div>
@@ -1200,7 +1200,7 @@ function SimulazioniTab({ stocks, sym, rate, fmt, fmtPct, eurRate }) {
             ].map(k => (
               <div key={k.l} className="card">
                 <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 7 }}>{k.l}</div>
-                <div style={{ fontFamily: "'Fraunces', serif", fontSize: 20, fontWeight: 300, color: k.c }}>{k.v}</div>
+                <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, fontWeight: 300, color: k.c }}>{k.v}</div>
               </div>
             ))}
           </div>
@@ -1269,7 +1269,7 @@ function SimulazioniTab({ stocks, sym, rate, fmt, fmtPct, eurRate }) {
                 ))}
               </tbody>
             </table>
-            <div style={{ marginTop: 14, padding: "10px 10px", background: "#0a0c10", borderRadius: 4, fontSize: 10, color: "#333" }}>
+            <div style={{ marginTop: 14, padding: "10px 10px", background: "#F0F4FA", borderRadius: 4, fontSize: 10, color: "#333" }}>
               📊 Dati storici reali da Yahoo Finance. I titoli non presenti in quel periodo usano una stima beta-adjusted. Le performance passate non garantiscono risultati futuri. Non costituisce consulenza finanziaria ai sensi MiFID II.
             </div>
           </div>
@@ -1308,7 +1308,7 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
         <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#EEF4FF", border: "1px solid #C7D8FF", borderRadius: 20, padding: "6px 16px", fontSize: 11, color: "#1E4FD8", fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 24 }}>
           ✦ Benvenuto su Portfolio Tracker
         </div>
-        <div style={{ fontFamily: "'Fraunces', serif", fontSize: 42, fontWeight: 300, color: "#0A1628", lineHeight: 1.15, marginBottom: 16, letterSpacing: "-0.02em" }}>
+        <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 42, fontWeight: 300, color: "#0A1628", lineHeight: 1.15, marginBottom: 16, letterSpacing: "-0.02em" }}>
           Il tuo portafoglio,<br/><span style={{ color: "#1E4FD8" }}>sempre sotto controllo</span>
         </div>
         <div style={{ fontSize: 15, color: "#5A6A7E", maxWidth: 480, margin: "0 auto 32px", lineHeight: 1.7 }}>
@@ -1356,7 +1356,7 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
       {/* ── HEADER KPI ── */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
         <div>
-          <div style={{ fontFamily: "'Fraunces', serif", fontSize: 32, fontWeight: 300, lineHeight: 1 }}>
+          <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 32, fontWeight: 300, lineHeight: 1 }}>
             ${fmt(totalValue)}
           </div>
           <div style={{ fontSize: 13, color: "#666", marginTop: 4 }}>€{fmt(totalValue * eurRate)}</div>
@@ -1473,7 +1473,7 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
             <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick={() => setSelectedId(stock.id)}>
               <div>
                 <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 3 }}>{label}</div>
-                <div style={{ fontFamily: "'Fraunces', serif", fontSize: 16 }}>{stock.ticker}</div>
+                <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 16 }}>{stock.ticker}</div>
               </div>
               <div style={{ fontSize: 14, color, fontWeight: 500 }}>
                 {fmtPct((stock.currentPrice - stock.buyPrice) / stock.buyPrice * 100)}
@@ -1564,7 +1564,7 @@ function ForecastTab({ stocks, fmt, fmtPct, sym, rate, eurRate }) {
   return (
     <div className="fade-up">
       <div style={{ marginBottom: 20 }}>
-        <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300 }}>{"🔮 Previsioni 12 mesi"}</div>
+        <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 300 }}>{"🔮 Previsioni 12 mesi"}</div>
         <div style={{ fontSize: 11, color: "#444", marginTop: 2 }}>Analisi storica + proiezione statistica basata su dati reali</div>
       </div>
 
@@ -1581,7 +1581,7 @@ function ForecastTab({ stocks, fmt, fmtPct, sym, rate, eurRate }) {
             ].map(s => (
               <div key={s.l} style={{ textAlign: "center", padding: "12px 8px", background: "#FFFFFF", borderRadius: 6 }}>
                 <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>{s.l}</div>
-                <div style={{ fontFamily: "'Fraunces', serif", fontSize: 24, fontWeight: 300, color: s.c }}>{pct(s.pct)}</div>
+                <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 24, fontWeight: 300, color: s.c }}>{pct(s.pct)}</div>
                 <div style={{ fontSize: 11, color: "#444", marginTop: 4 }}>{sym}{fmt(s.val * rate)}</div>
               </div>
             ))}
@@ -1649,7 +1649,7 @@ function ForecastTab({ stocks, fmt, fmtPct, sym, rate, eurRate }) {
                 return (
                   <div style={{ textAlign: "right" }}>
                     <div style={{ fontSize: 8, color: "#F4C542", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 3 }}>Target analisti</div>
-                    <div style={{ fontFamily: "'Fraunces', serif", fontSize: 20, color: "#F4C542" }}>${fmt(a.targetMean)}</div>
+                    <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, color: "#F4C542" }}>${fmt(a.targetMean)}</div>
                     {upside && <div style={{ fontSize: 10, color: upside > 0 ? "#5EC98A" : "#E87040" }}>{upside > 0 ? "+" : ""}{upside}% upside</div>}
                   </div>
                 );
@@ -1745,7 +1745,7 @@ function ForecastTab({ stocks, fmt, fmtPct, sym, rate, eurRate }) {
                   ].map(t => t.v ? (
                     <div key={t.l} style={{ textAlign: "center", background: "#FFFFFF", borderRadius: 6, padding: "10px 6px" }}>
                       <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>{t.l}</div>
-                      <div style={{ fontFamily: "'Fraunces', serif", fontSize: 18, color: t.c }}>${fmt(t.v)}</div>
+                      <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, color: t.c }}>${fmt(t.v)}</div>
                       {a.currentPrice && (
                         <div style={{ fontSize: 9, color: t.c, marginTop: 2 }}>
                           {(((t.v - a.currentPrice) / a.currentPrice) * 100) > 0 ? "+" : ""}
@@ -1816,7 +1816,7 @@ function ForecastTab({ stocks, fmt, fmtPct, sym, rate, eurRate }) {
                     { l: "Peggior caso",  v: `${d.maxLoss}%`,   c: "#E87040", sub: "minimo storico" },
                   ].map((k, i) => (
                     <div key={k.l} style={{ flex: 1, textAlign: "center", borderRight: i < 4 ? "1px solid #E8EBF4" : "none", padding: "0 8px" }}>
-                      <div style={{ fontFamily: "'Fraunces', serif", fontSize: 20, color: k.c, fontWeight: 300 }}>{k.v}</div>
+                      <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, color: k.c, fontWeight: 300 }}>{k.v}</div>
                       <div style={{ fontSize: 8, color: "#333", marginTop: 3 }}>{k.l}</div>
                       <div style={{ fontSize: 8, color: "#D8DCE8", marginTop: 1 }}>{k.sub}</div>
                     </div>
@@ -1960,7 +1960,7 @@ function DividendiTab({ stocks, fmt, fmtPct, sym, rate }) {
   return (
     <div className="fade-up">
       <div style={{ marginBottom: 20 }}>
-        <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300 }}>💰 Dividendi & Cedole</div>
+        <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 300 }}>💰 Dividendi & Cedole</div>
         <div style={{ fontSize: 11, color: "#444", marginTop: 2 }}>Tracking completo dei dividendi del tuo portafoglio</div>
       </div>
 
@@ -1973,7 +1973,7 @@ function DividendiTab({ stocks, fmt, fmtPct, sym, rate }) {
         ].map(k => (
           <div key={k.l} className="card">
             <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 7 }}>{k.l}</div>
-            <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300, color: k.c }}>{k.v}</div>
+            <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 300, color: k.c }}>{k.v}</div>
             <div style={{ fontSize: 10, color: "#444", marginTop: 3 }}>{k.sub}</div>
           </div>
         ))}
@@ -2170,7 +2170,7 @@ function WhatIfTab({ fmt, fmtPct, eurRate }) {
   return (
     <div className="fade-up">
       <div style={{ marginBottom: 20 }}>
-        <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300 }}>E se avessi comprato…?</div>
+        <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 300 }}>E se avessi comprato…?</div>
         <div style={{ fontSize: 11, color: "#444", marginTop: 2 }}>Scopri quanto varrebbe oggi un investimento passato</div>
       </div>
 
@@ -2218,7 +2218,7 @@ function WhatIfTab({ fmt, fmtPct, eurRate }) {
 
 
             </div>
-            <div style={{ fontFamily: "'Fraunces', serif", fontSize: 44, fontWeight: 300, color: result.pct >= 0 ? "#5EC98A" : "#E87040", lineHeight: 1 }}>
+            <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 44, fontWeight: 300, color: result.pct >= 0 ? "#5EC98A" : "#E87040", lineHeight: 1 }}>
               ${fmt(result.currentValue)}
             </div>
             <div style={{ fontSize: 13, color: "#666", marginTop: 4 }}>€{fmt(result.currentValue * eurRate)}</div>
@@ -2239,7 +2239,7 @@ function WhatIfTab({ fmt, fmtPct, eurRate }) {
             ].map(k => (
               <div key={k.l} className="card" style={{ textAlign: "center" }}>
                 <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6 }}>{k.l}</div>
-                <div style={{ fontFamily: "'Fraunces', serif", fontSize: 16, fontWeight: 300, color: k.c || "#0A0E1A" }}>{k.v}</div>
+                <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 16, fontWeight: 300, color: k.c || "#0A0E1A" }}>{k.v}</div>
               </div>
             ))}
           </div>
@@ -2840,10 +2840,10 @@ export default function App() {
   const currCtx = { currency, sym, rate, eurRate };
 
   if (userLoading) return (
-    <div style={{ minHeight: "100vh", background: "#F8F9FC", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'DM Mono', monospace" }}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600&display=swap'); *{box-sizing:border-box;margin:0;padding:0} @keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    <div style={{ minHeight: "100vh", background: "#F8F9FC", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Lato', sans-serif" }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&family=Playfair+Display:wght@400;600&display=swap'); *{box-sizing:border-box;margin:0;padding:0} @keyframes spin{to{transform:rotate(360deg)}}`}</style>
       <div style={{ textAlign: "center" }}>
-        <div style={{ fontFamily: "'Fraunces', serif", fontSize: 28, fontWeight: 300, color: "#F4C542", marginBottom: 16 }}>Portfolio</div>
+        <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 28, fontWeight: 300, color: "#F4C542", marginBottom: 16 }}>Portfolio</div>
         <span style={{ display: "inline-block", width: 16, height: 16, borderRadius: "50%", border: "2px solid #F4C542", borderTopColor: "transparent", animation: "spin 0.7s linear infinite" }} />
       </div>
     </div>
@@ -2856,7 +2856,7 @@ export default function App() {
       <CurrencyCtx.Provider value={currCtx}>
         <div style={{ minHeight: "100vh", background: "#F8F9FC", color: "#0A0E1A", fontFamily: "'DM Mono', 'Courier New', monospace" }}>
           <style>{`
-            @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600&display=swap');
+            @import url('https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&family=Playfair+Display:wght@400;600&display=swap');
             *{box-sizing:border-box;margin:0;padding:0}
             ::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-track{background:#0D0F14} ::-webkit-scrollbar-thumb{background:#2a2d35;border-radius:2px}
             input,textarea,select{background:#13151c;border:1px solid #2a2d35;color:#E8E6DF;font-family:inherit;font-size:13px;padding:9px 12px;border-radius:4px;outline:none;width:100%}
@@ -2921,7 +2921,7 @@ export default function App() {
           <div style={{ padding: "0 16px 0 20px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #1a2d4a", height: 52, gap: 10, background: "#0A1628" }}>
             {/* Logo */}
             <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexShrink: 0 }}>
-              <span style={{ fontFamily: "'Fraunces', serif", fontSize: 19, fontWeight: 300, color: "#F4C542" }}>Portfolio</span>
+              <span style={{ fontFamily: "'Playfair Display', serif", fontSize: 19, fontWeight: 300, color: "#F4C542" }}>Portfolio</span>
               <span className="hide-mobile" style={{ fontSize: 9, color: "#8BA4C0", letterSpacing: "0.2em", textTransform: "uppercase" }}>Tracker</span>
               {plan === "pro" && <span style={{ fontSize: 8, background: "#F4C542", color: "#F8F9FC", padding: "2px 6px", borderRadius: 2, fontWeight: 700, letterSpacing: "0.1em" }}>PRO</span>}
             </div>
@@ -2962,7 +2962,7 @@ export default function App() {
 
           {/* Add form */}
           {showForm && (
-            <div className="fade-up" style={{ padding: "14px 28px", background: "#0a0c10", borderBottom: "1px solid #E8EBF4", display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+            <div className="fade-up" style={{ padding: "14px 28px", background: "#F8FAFF", borderBottom: "1px solid #E2E8F4", display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
               <TickerAutocomplete value={form.ticker} onChange={v => setForm(f => ({ ...f, ticker: v }))}
                 onSelect={t => {
                   const sector = t.sector || "Altro";
@@ -3003,7 +3003,7 @@ export default function App() {
 
           {/* Import CSV panel */}
           {showImport && (
-            <div className="fade-up" style={{ padding: "16px 28px", background: "#0a0c10", borderBottom: "1px solid #E8EBF4" }}>
+            <div className="fade-up" style={{ padding: "16px 28px", background: "#F8FAFF", borderBottom: "1px solid #E2E8F4" }}>
               <input ref={csvInputRef} type="file" accept=".csv,.txt" style={{ display: "none" }} onChange={handleCSVFile} />
               {importPreview.length === 0 ? (
                 <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
@@ -3053,7 +3053,7 @@ export default function App() {
               {activeTab === "titoli" && (
                 <div className="fade-up">
                   <div style={{ marginBottom: 20 }}>
-                    <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300 }}>I tuoi Titoli</div>
+                    <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 300 }}>I tuoi Titoli</div>
                     <div style={{ fontSize: 11, color: "#444", marginTop: 2 }}>Clicca per vedere dettaglio, grafico e analisi AI</div>
                   </div>
                   {stocks.length === 0 ? (
@@ -3071,7 +3071,7 @@ export default function App() {
                             onMouseLeave={e => e.currentTarget.style.borderColor = "#E8EBF2"}>
                             <div>
                               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
-                                <span style={{ fontFamily: "'Fraunces', serif", fontSize: 18, fontWeight: 300 }}>{s.ticker}</span>
+                                <span style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, fontWeight: 300 }}>{s.ticker}</span>
                                 <span style={{ fontSize: 9, background: "#E8EBF2", color: "#666", padding: "2px 7px", borderRadius: 2 }}>{s.sector}</span>
                                 {s.priceReal && <MarketBadge state={s.marketState || "CLOSED"} size={7}/>}
                                 {alerts[s.id] && <span style={{ fontSize: 9 }}>🔔</span>}
@@ -3085,7 +3085,7 @@ export default function App() {
                               )}
                             </div>
                             <div style={{ textAlign: "right" }}>
-                              <div style={{ fontSize: 16, fontFamily: "'Fraunces', serif" }}>${fmt(s.currentPrice)}</div>
+                              <div style={{ fontSize: 16, fontFamily: "'Playfair Display', serif" }}>${fmt(s.currentPrice)}</div>
                               <div style={{ fontSize: 10, color: "#444" }}>€{fmt(s.currentPrice * eurRate)}</div>
                               <div style={{ fontSize: 12, color: isUp ? "#5EC98A" : "#E87040", fontWeight: 500, marginTop: 2 }}>{isUp?"+":""}${fmt(Math.abs(pnl))} · {fmtPct(pct)}</div>
                             </div>
@@ -3101,7 +3101,7 @@ export default function App() {
               {activeTab === "settori" && (
                 <div className="fade-up">
                   <div style={{ marginBottom: 20 }}>
-                    <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300 }}>Diversificazione</div>
+                    <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 300 }}>Diversificazione</div>
                     <div style={{ fontSize: 11, color: "#444", marginTop: 2 }}>Distribuzione del capitale per settore</div>
                   </div>
                   {stocks.length === 0 ? (
@@ -3120,7 +3120,7 @@ export default function App() {
                               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                                 <div>
                                   <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6 }}>{s.name}</div>
-                                  <div style={{ fontFamily: "'Fraunces', serif", fontSize: 20, fontWeight: 300, color }}>{pct.toFixed(1)}%</div>
+                                  <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, fontWeight: 300, color }}>{pct.toFixed(1)}%</div>
                                   <div style={{ fontSize: 10, color: "#666", marginTop: 3 }}>${fmt(s.value, 0)}</div>
                                 </div>
                                 <div style={{ textAlign: "right" }}>
@@ -3189,7 +3189,7 @@ export default function App() {
               {activeTab === "confronto" && (
                 <div className="fade-up">
                   <div style={{ marginBottom: 20 }}>
-                    <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300 }}>Confronto Titoli</div>
+                    <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 300 }}>Confronto Titoli</div>
                     <div style={{ fontSize: 11, color: "#444", marginTop: 2 }}>Analisi comparativa tra due posizioni</div>
                   </div>
                   <ProGate feat="comparison" h={300}>
@@ -3268,7 +3268,7 @@ export default function App() {
               {activeTab === "alert" && (
                 <div className="fade-up">
                   <div style={{ marginBottom: 20 }}>
-                    <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 300 }}>Alert Prezzi</div>
+                    <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 300 }}>Alert Prezzi</div>
                     <div style={{ fontSize: 11, color: "#444", marginTop: 2 }}>Notifica quando un titolo supera i tuoi target</div>
                   </div>
                   <ProGate feat="alerts" h={200}>
@@ -3304,7 +3304,7 @@ export default function App() {
                         );
                       })}
                     </div>
-                    <div style={{ marginTop:16, padding:"12px 16px", background:"#0a0c10", borderRadius:6, fontSize:9, color:"#D8DCE8", lineHeight:1.8 }}>
+                    <div style={{ marginTop:16, padding:"12px 16px", background:"#F0F4FA", borderRadius:6, fontSize:9, color:"#D8DCE8", lineHeight:1.8 }}>
                       In produzione: notifiche via <strong style={{color:"#333"}}>email</strong> (Resend) e <strong style={{color:"#333"}}>push</strong> (Web Push API) · Alert controllati ogni 60s durante l'orario di borsa
                     </div>
                   </ProGate>
@@ -3357,7 +3357,7 @@ export default function App() {
           <div className="mobile-portfolio-header" style={{ padding: "12px 16px", borderBottom: "1px solid #E0E4EE", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div>
               <div style={{ fontSize: 8, color: "#D8DCE8", letterSpacing: "0.18em", textTransform: "uppercase" }}>Portafoglio</div>
-              <div style={{ fontFamily: "'Fraunces', serif", fontSize: 20, fontWeight: 300, color: "#0A0E1A" }}>{sym}{fmt(totalValue)}</div>
+              <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, fontWeight: 300, color: "#0A0E1A" }}>{sym}{fmt(totalValue)}</div>
             </div>
             <div style={{ textAlign: "right" }}>
               <div style={{ fontSize: 13, color: totalPnL >= 0 ? "#5EC98A" : "#E87040", fontWeight: 500 }}>{totalPnL >= 0 ? "+" : ""}{sym}{fmt(Math.abs(totalPnL))}</div>
@@ -3366,7 +3366,7 @@ export default function App() {
           </div>
 
           {/* Mobile bottom navigation */}
-          <div className="mobile-nav" style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "#0a0c10", borderTop: "1px solid #E0E4EE", zIndex: 999, justifyContent: "space-around", alignItems: "center", padding: "6px 0", paddingBottom: "env(safe-area-inset-bottom)" }}>
+          <div className="mobile-nav" style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "#F0F4FA", borderTop: "1px solid #E0E4EE", zIndex: 999, justifyContent: "space-around", alignItems: "center", padding: "6px 0", paddingBottom: "env(safe-area-inset-bottom)" }}>
             {[
               { id: "overview",    icon: "◈",  label: "Overview" },
               { id: "confronto",   icon: "📊", label: "Confronto" },
