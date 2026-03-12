@@ -1114,6 +1114,32 @@ function StockModal({ stock, onClose, notes, setNotes, alerts, setAlerts, handle
           </div>
         </div>
 
+        {/* 🔔 Alert prezzi */}
+        <div style={{ background: "#FFFFFF", border: "1px solid #E8EBF4", borderRadius: 6, padding: "14px 16px", marginBottom: 14 }}>
+          <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 12 }}>🔔 Alert Prezzi</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 9, color: "#16A34A", marginBottom: 5, fontWeight: 600 }}>↑ Avvisami sopra</div>
+              <input type="number" step="0.01"
+                value={alerts[stock.id]?.above || ""}
+                onChange={e => setAlerts(al => ({ ...al, [stock.id]: { ...(al[stock.id]||{}), above: e.target.value ? parseFloat(e.target.value) : null } }))}
+                placeholder={`Es. ${(stock.currentPrice * 1.1).toFixed(0)}`}
+                style={{ fontSize: 12, padding: "7px 10px", width: "100%", background: "#F8FAFF", border: "1px solid #D0D8EC", borderRadius: 6, outline: "none", colorScheme: "light" }} />
+              {alerts[stock.id]?.above && <div style={{ fontSize: 9, color: "#16A34A", marginTop: 4 }}>✓ Alert attivo a ${alerts[stock.id].above}</div>}
+            </div>
+            <div>
+              <div style={{ fontSize: 9, color: "#E87040", marginBottom: 5, fontWeight: 600 }}>↓ Avvisami sotto</div>
+              <input type="number" step="0.01"
+                value={alerts[stock.id]?.below || ""}
+                onChange={e => setAlerts(al => ({ ...al, [stock.id]: { ...(al[stock.id]||{}), below: e.target.value ? parseFloat(e.target.value) : null } }))}
+                placeholder={`Es. ${(stock.currentPrice * 0.9).toFixed(0)}`}
+                style={{ fontSize: 12, padding: "7px 10px", width: "100%", background: "#F8FAFF", border: "1px solid #D0D8EC", borderRadius: 6, outline: "none", colorScheme: "light" }} />
+              {alerts[stock.id]?.below && <div style={{ fontSize: 9, color: "#E87040", marginTop: 4 }}>✓ Alert attivo a ${alerts[stock.id].below}</div>}
+            </div>
+          </div>
+          <div style={{ fontSize: 10, color: "#8A9AB0", marginTop: 10 }}>Gli alert si attivano al prossimo aggiornamento prezzi mentre hai l'app aperta.</div>
+        </div>
+
         {/* Notes */}
         <div style={{ background: "#FFFFFF", border: "1px solid #E8EBF4", borderRadius: 6, padding: "14px 16px", marginBottom: 14 }}>
           <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8 }}>📝 Note</div>
@@ -1543,6 +1569,203 @@ function SimulazioniTab({ stocks, sym, rate, fmt, fmtPct, eurRate }) {
 // ─── WHAT IF TAB ──────────────────────────────────────────────────────────────
 // ─── DIVIDENDI TAB ────────────────────────────────────────────────────────────
 // ─── FORECAST TAB ─────────────────────────────────────────────────────────────
+
+// ─── SCREENER TAB — Fama-French Factor Screener ───────────────────────────────
+function ScoreBar({ value, color = "#1E4FD8" }) {
+  if (value == null) return <span style={{ color: "#C0C8D8", fontSize: 11 }}>—</span>;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <div style={{ width: 60, height: 5, background: "#EEF2F8", borderRadius: 3, overflow: "hidden" }}>
+        <div style={{ width: `${value}%`, height: "100%", background: color, borderRadius: 3, transition: "width 0.4s" }} />
+      </div>
+      <span style={{ fontSize: 11, color: "#5A6A7E", minWidth: 24 }}>{value}</span>
+    </div>
+  );
+}
+
+function FactorBadge({ label, score, color }) {
+  const c = score == null ? "#C0C8D8" : score >= 70 ? "#16A34A" : score >= 40 ? "#F4A020" : "#E87040";
+  return (
+    <div style={{ textAlign: "center", padding: "6px 8px", background: "#F8FAFF", borderRadius: 6, border: `1px solid ${c}33` }}>
+      <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>{label}</div>
+      <div style={{ fontSize: 14, fontWeight: 700, color: c }}>{score ?? "—"}</div>
+    </div>
+  );
+}
+
+function ScreenerTab({ fmt, onAddTicker }) {
+  const [results, setResults]     = useState([]);
+  const [loading, setLoading]     = useState(false);
+  const [error, setError]         = useState(null);
+  const [exchange, setExchange]   = useState("NASDAQ,NYSE");
+  const [sortBy, setSortBy]       = useState("composite");
+  const [expanded, setExpanded]   = useState(null);
+  const [loaded, setLoaded]       = useState(false);
+
+  async function runScreener() {
+    setLoading(true); setError(null);
+    try {
+      const res = await fetch(`/api/screener?exchange=${exchange}&limit=50`);
+      const data = await res.json();
+      if (data.error && !data.results?.length) throw new Error(data.error);
+      setResults(data.results || []);
+      setLoaded(true);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const sorted = [...results].sort((a, b) => {
+    if (sortBy === "composite") return b.scores.composite - a.scores.composite;
+    if (sortBy === "value")     return (b.scores.value ?? 0) - (a.scores.value ?? 0);
+    if (sortBy === "size")      return (b.scores.size ?? 0) - (a.scores.size ?? 0);
+    if (sortBy === "prof")      return (b.scores.profitability ?? 0) - (a.scores.profitability ?? 0);
+    if (sortBy === "momentum")  return (b.scores.momentum ?? 0) - (a.scores.momentum ?? 0);
+    return 0;
+  });
+
+  const scoreColor = s => s == null ? "#C0C8D8" : s >= 70 ? "#16A34A" : s >= 40 ? "#F4A020" : "#E87040";
+
+  return (
+    <div className="fade-up" style={{ padding: "24px 20px", maxWidth: 1100, margin: "0 auto" }}>
+      {/* Header */}
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ fontSize: 22, fontWeight: 700, color: "#0A1628", marginBottom: 4 }}>
+          🔬 Screener Fama-French
+        </div>
+        <div style={{ fontSize: 13, color: "#5A6A7E", lineHeight: 1.6 }}>
+          Titoli filtrati secondo i 4 fattori di Fama &amp; French: <strong>Value</strong> (P/E, P/B bassi),{" "}
+          <strong>Size</strong> (small/mid cap), <strong>Profitability</strong> (ROE/ROA alti),{" "}
+          <strong>Momentum</strong> (trend 12 mesi). Ispirato all'approccio DFA.
+        </div>
+      </div>
+
+      {/* Filtri */}
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 20 }}>
+        <div>
+          <div style={{ fontSize: 10, color: "#8A9AB0", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>Mercato</div>
+          <select value={exchange} onChange={e => setExchange(e.target.value)}
+            style={{ background: "#F8FAFF", border: "1px solid #D0D8EC", borderRadius: 6, padding: "8px 12px", fontSize: 12, color: "#0A1628", cursor: "pointer" }}>
+            <option value="NASDAQ,NYSE">NASDAQ + NYSE</option>
+            <option value="NASDAQ">Solo NASDAQ</option>
+            <option value="NYSE">Solo NYSE</option>
+            <option value="EURONEXT">Euronext</option>
+          </select>
+        </div>
+        <div>
+          <div style={{ fontSize: 10, color: "#8A9AB0", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>Ordina per</div>
+          <select value={sortBy} onChange={e => setSortBy(e.target.value)}
+            style={{ background: "#F8FAFF", border: "1px solid #D0D8EC", borderRadius: 6, padding: "8px 12px", fontSize: 12, color: "#0A1628", cursor: "pointer" }}>
+            <option value="composite">Score composito</option>
+            <option value="value">Value</option>
+            <option value="size">Size</option>
+            <option value="prof">Profitability</option>
+            <option value="momentum">Momentum</option>
+          </select>
+        </div>
+        <div style={{ alignSelf: "flex-end" }}>
+          <button onClick={runScreener} disabled={loading}
+            style={{ background: "#1E4FD8", border: "none", color: "#fff", borderRadius: 8, padding: "9px 22px", fontSize: 13, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.7 : 1, display: "flex", alignItems: "center", gap: 8 }}>
+            {loading ? <><Spinner color="#fff" size={10} /> Analisi in corso…</> : "🔍 Analizza"}
+          </button>
+        </div>
+      </div>
+
+      {/* Info fattori */}
+      {!loaded && !loading && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, marginBottom: 28 }}>
+          {[
+            { icon: "💰", label: "Value", color: "#1E4FD8", desc: "Aziende con P/E e P/B bassi rispetto al mercato. Storicamente sovraperformano nel lungo periodo." },
+            { icon: "📐", label: "Size", color: "#7C3AED", desc: "Small e mid cap (100M–10B). Le aziende più piccole tendono a crescere più delle large cap." },
+            { icon: "📈", label: "Profitability", color: "#16A34A", desc: "Alto ROE e ROA. Le aziende più redditizie generano rendimenti superiori nel lungo termine." },
+            { icon: "🚀", label: "Momentum", color: "#F4A020", desc: "Posizione relativa nel range 52 settimane. Il trend recente tende a persistere." },
+          ].map(f => (
+            <div key={f.label} style={{ background: "#FFFFFF", border: `1px solid ${f.color}22`, borderRadius: 10, padding: "16px 14px", boxShadow: "0 1px 4px rgba(10,22,64,0.05)" }}>
+              <div style={{ fontSize: 22, marginBottom: 6 }}>{f.icon}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#0A1628", marginBottom: 4 }}>{f.label}</div>
+              <div style={{ fontSize: 11, color: "#5A6A7E", lineHeight: 1.6 }}>{f.desc}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {error && <div style={{ color: "#E87040", fontSize: 13, marginBottom: 16, padding: "10px 14px", background: "#FFF4F0", borderRadius: 8, border: "1px solid #FFCCC0" }}>⚠️ {error}</div>}
+
+      {/* Risultati */}
+      {sorted.length > 0 && (
+        <div>
+          <div style={{ fontSize: 12, color: "#8A9AB0", marginBottom: 12 }}>
+            {sorted.length} titoli trovati · score composito Fama-French
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {sorted.map((r, idx) => (
+              <div key={r.symbol}
+                style={{ background: "#FFFFFF", border: "1px solid #E2E8F4", borderRadius: 10, overflow: "hidden", boxShadow: "0 1px 3px rgba(10,22,64,0.04)", cursor: "pointer" }}
+                onClick={() => setExpanded(expanded === r.symbol ? null : r.symbol)}>
+                {/* Row principale */}
+                <div style={{ display: "grid", gridTemplateColumns: "32px 1fr 80px 60px repeat(4,70px) 80px", alignItems: "center", padding: "12px 16px", gap: 8 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#C0C8D8" }}>#{idx+1}</div>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: "#0A1628" }}>{r.symbol}</div>
+                    <div style={{ fontSize: 11, color: "#8A9AB0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 160 }}>{r.name}</div>
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "#0A1628" }}>${fmt(r.price)}</div>
+                  <div style={{ fontSize: 12, color: parseFloat(r.change1d) >= 0 ? "#16A34A" : "#E87040", fontWeight: 600 }}>
+                    {parseFloat(r.change1d) >= 0 ? "+" : ""}{r.change1d}%
+                  </div>
+                  <ScoreBar value={r.scores.value}       color="#1E4FD8" />
+                  <ScoreBar value={r.scores.size}        color="#7C3AED" />
+                  <ScoreBar value={r.scores.profitability} color="#16A34A" />
+                  <ScoreBar value={r.scores.momentum}    color="#F4A020" />
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 48, height: 48, borderRadius: "50%", background: `${scoreColor(r.scores.composite)}18`, border: `2px solid ${scoreColor(r.scores.composite)}`, fontWeight: 800, fontSize: 15, color: scoreColor(r.scores.composite) }}>
+                    {r.scores.composite}
+                  </div>
+                </div>
+
+                {/* Dettaglio espanso */}
+                {expanded === r.symbol && (
+                  <div style={{ borderTop: "1px solid #EEF2F8", padding: "16px", background: "#F8FAFF" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 16 }}>
+                      <FactorBadge label="Value"         score={r.scores.value} />
+                      <FactorBadge label="Size"          score={r.scores.size} />
+                      <FactorBadge label="Profitability" score={r.scores.profitability} />
+                      <FactorBadge label="Momentum"      score={r.scores.momentum} />
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(100px,1fr))", gap: 8, marginBottom: 14 }}>
+                      {[
+                        { l: "P/E", v: r.pe ?? "—" },
+                        { l: "P/B", v: r.pb ?? "—" },
+                        { l: "ROE", v: r.roe != null ? `${r.roe}%` : "—" },
+                        { l: "ROA", v: r.roa != null ? `${r.roa}%` : "—" },
+                        { l: "Cap (M)", v: `$${r.mktCapM}` },
+                        { l: "Settore", v: r.sector },
+                      ].map(({ l, v }) => (
+                        <div key={l} style={{ background: "#FFFFFF", borderRadius: 6, padding: "8px 10px", border: "1px solid #E8EEF8" }}>
+                          <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>{l}</div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: "#0A1628" }}>{v}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <button onClick={e => { e.stopPropagation(); onAddTicker && onAddTicker(r.symbol); }}
+                      style={{ background: "#1E4FD8", border: "none", color: "#fff", borderRadius: 7, padding: "8px 20px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                      + Aggiungi al portafoglio
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize: 10, color: "#C0C8D8", marginTop: 16, lineHeight: 1.8 }}>
+            📊 Dati fondamentali via Financial Modeling Prep. Score calcolati internamente basati sui principi Fama-French (1992, 1993). Non costituisce consulenza finanziaria.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── OVERVIEW TAB ─────────────────────────────────────────────────────────────
 function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, totalInvested,
   totalPnL, totalPct, sectorData, portfolioHistory, alerts, setSelectedId, setEditId,
@@ -3192,9 +3415,9 @@ export default function App() {
             </div>
             {/* Desktop tabs */}
             <div style={{ display: "flex", alignItems: "center", gap: 0, overflowX: "auto", flex: 1, justifyContent: "center" }} className="desktop-tabs">
-              {["overview","confronto","alert","simulazioni","whatif","dividendi","previsioni"].map(t => (
+              {["overview","confronto","screener","simulazioni","whatif","dividendi","previsioni"].map(t => (
                 <button key={t} className={`tab-btn ${activeTab === t ? "active" : ""}`} onClick={() => setActiveTab(t)}>
-                  {t === "whatif" ? "e se?" : t === "dividendi" ? "💰 dividendi" : t === "previsioni" ? "🔮 previsioni" : t}
+                  {t === "whatif" ? "e se?" : t === "dividendi" ? "💰 dividendi" : t === "previsioni" ? "🔮 previsioni" : t === "screener" ? "🔬 screener" : t}
                 </button>
               ))}
             </div>
@@ -3534,6 +3757,13 @@ export default function App() {
               )}
 
               {/* ALERT */}
+              {activeTab === "screener" && (
+                <ScreenerTab fmt={fmt} onAddTicker={ticker => {
+                  setForm(f => ({ ...f, ticker }));
+                  setShowForm(true);
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }} />
+              )}
               {activeTab === "alert" && (
                 <div className="fade-up">
                   <div style={{ marginBottom: 20 }}>
@@ -3642,7 +3872,7 @@ export default function App() {
               { id: "whatif",      label: "E se?",    svg: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> },
               { id: "dividendi",   label: "Divid.",   svg: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> },
               { id: "previsioni",  label: "Prev.",    svg: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> },
-              { id: "alert",       label: "Alert",    svg: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> },
+              { id: "screener",    label: "Screener", svg: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> },
             ].map(t => (
               <button key={t.id} onClick={() => setActiveTab(t.id)}
                 style={{ background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "6px 10px", color: activeTab === t.id ? "#1E4FD8" : "#94A3B8", fontFamily: "inherit", transition: "color 0.15s", flex: 1 }}>
