@@ -1,113 +1,121 @@
-// api/screener.js — Fama-French factor screener via Financial Modeling Prep
+// api/screener.js — Fama-French screener con lista curata + FMP fundamentals
 const FMP_KEY = process.env.FMP_API_KEY;
 const FMP_BASE = "https://financialmodelingprep.com/api/v3";
-const enc = encodeURIComponent;
+
+// Lista curata di ~60 titoli value/small-mid cap — stile DFA/Dimensional
+// Aggiornabile manualmente. Mix di settori, bias su value e small cap USA.
+const UNIVERSE = {
+  "NASDAQ,NYSE": [
+    // Value large cap
+    "BRK-B","JPM","BAC","C","WFC","USB","TFC","RF","FITB","HBAN",
+    // Small cap value
+    "AROW","BANF","BRKL","CBTX","CFFI","CHCO","CIVB","CZWI","DCOM","EBMT",
+    // Industrials value
+    "AAON","AIT","APOG","AWI","BCPC","BLDR","BMI","CBT","CFX","CNX",
+    // Consumer value
+    "BIG","CATO","DDS","GES","JWN","KSS","M","PIR","PSMT","ROST",
+    // Energy value
+    "AR","CIVI","CTRA","DVN","FANG","MRO","OVV","PXD","RRC","SM",
+    // Healthcare value
+    "ABC","CAH","MCK","MOH","CNC","CVS","HUM","UNH","CI","ELV",
+  ],
+  "NASDAQ": [
+    "AAPL","MSFT","GOOG","META","AMZN","NVDA","INTC","CSCO","QCOM","TXN",
+    "AMAT","LRCX","KLAC","MCHP","ADI","SWKS","MRVL","XLNX","MPWR","WOLF",
+  ],
+  "NYSE": [
+    "JPM","BAC","WFC","C","GS","MS","BLK","AXP","COF","DFS",
+    "XOM","CVX","COP","SLB","HAL","BKR","VLO","MPC","PSX","EOG",
+  ],
+  "EURONEXT": [
+    "AI.PA","AIR.PA","BNP.PA","CA.PA","DG.PA","EN.PA","GLE.PA",
+    "HO.PA","MC.PA","OR.PA","ORA.PA","RI.PA","SAF.PA","SAN.PA","SGO.PA",
+  ],
+};
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  const { exchange = "NASDAQ", limit = 50 } = req.query;
+  const { exchange = "NASDAQ,NYSE", limit = 40 } = req.query;
 
-  if (!FMP_KEY) return res.status(500).json({ error: "FMP_API_KEY non configurata su Vercel", results: [] });
+  if (!FMP_KEY) return res.status(500).json({ error: "FMP_API_KEY non configurata", results: [] });
 
   try {
-    // 1. Stock screener — filtri base Fama-French
-    // FMP vuole un solo exchange per chiamata
-    const exc = exchange.split(",")[0].trim(); // prendi il primo se multipli
-    const url = `${FMP_BASE}/stock-screener?marketCapMoreThan=100000000&marketCapLowerThan=10000000000&betaLowerThan=2&volumeMoreThan=100000&exchange=${enc(exc)}&limit=${Math.min(limit, 100)}&apikey=${FMP_KEY}`;
-    const screenRes = await fetch(url);
-    const screenText = await screenRes.text();
-    let candidates;
-    try { candidates = JSON.parse(screenText); } catch(e) { throw new Error(`FMP parse error: ${screenText.slice(0,200)}`); }
-    if (!screenRes.ok) throw new Error(`FMP screener ${screenRes.status}: ${screenText.slice(0,200)}`);
-    if (!Array.isArray(candidates)) throw new Error(`Risposta inattesa FMP: ${screenText.slice(0,200)}`);
+    // Scegli universe
+    const tickers = (UNIVERSE[exchange] || UNIVERSE["NASDAQ,NYSE"])
+      .slice(0, parseInt(limit));
 
-    if (candidates.length === 0) return res.status(200).json({ results: [], error: "Nessun risultato per questo mercato" });
-
-    // 2. Per ogni candidato, fetch key metrics (P/B, P/E, ROE, ROA)
-    const tickers = candidates.slice(0, 30).map(c => c.symbol).join(",");
-    const [metricsRes, pricesRes] = await Promise.all([
-      fetch(`${FMP_BASE}/key-metrics/${tickers}?period=annual&limit=1&apikey=${FMP_KEY}`),
-      fetch(`${FMP_BASE}/quote/${tickers}?apikey=${FMP_KEY}`),
+    // Fetch quote + key-metrics in parallelo (endpoint gratuiti FMP)
+    const batch = tickers.join(",");
+    const [quoteRes, profileRes] = await Promise.all([
+      fetch(`${FMP_BASE}/quote/${batch}?apikey=${FMP_KEY}`),
+      fetch(`${FMP_BASE}/profile/${batch}?apikey=${FMP_KEY}`),
     ]);
 
-    const metricsRaw = metricsRes.ok ? await metricsRes.json() : [];
-    const quotesRaw  = pricesRes.ok  ? await pricesRes.json() : [];
+    const quotes   = quoteRes.ok   ? await quoteRes.json()   : [];
+    const profiles = profileRes.ok ? await profileRes.json() : [];
 
-    // Index per ticker
-    const metricsMap = {};
-    (Array.isArray(metricsRaw) ? metricsRaw : []).forEach(m => {
-      if (!metricsMap[m.symbol]) metricsMap[m.symbol] = m;
-    });
-    const quotesMap = {};
-    (Array.isArray(quotesRaw) ? quotesRaw : []).forEach(q => {
-      quotesMap[q.symbol] = q;
-    });
+    if (!Array.isArray(quotes) || quotes.length === 0) {
+      throw new Error("Nessun dato ricevuto da FMP. Verifica la chiave API.");
+    }
 
-    // 3. Calcola score Fama-French per ogni titolo
-    const results = candidates.slice(0, 30).map(c => {
-      const m = metricsMap[c.symbol] || {};
-      const q = quotesMap[c.symbol]  || {};
+    const profileMap = {};
+    (Array.isArray(profiles) ? profiles : []).forEach(p => { profileMap[p.symbol] = p; });
 
-      // ── VALUE score (basso P/E e P/B = meglio) ─────────────────────────
-      const pe  = parseFloat(m.peRatioTTM || q.pe || 0);
-      const pb  = parseFloat(m.pbRatioTTM || 0);
-      // Score 0-100: P/E < 15 = ottimo, > 30 = scarso
-      const peScore = pe > 0 ? Math.max(0, Math.min(100, ((30 - pe) / 30) * 100)) : null;
-      const pbScore = pb > 0 ? Math.max(0, Math.min(100, ((3  - pb) / 3)  * 100)) : null;
-      const valueScore = (peScore != null && pbScore != null)
-        ? Math.round((peScore + pbScore) / 2)
-        : (peScore ?? pbScore ?? null);
+    const results = quotes.map(q => {
+      const p = profileMap[q.symbol] || {};
 
-      // ── SIZE score (small cap < 2B = meglio) ───────────────────────────
-      const mktCap = parseFloat(c.marketCap || 0);
-      const sizeScore = mktCap > 0
-        ? Math.round(Math.max(0, Math.min(100, ((10e9 - mktCap) / 10e9) * 100)))
-        : null;
-
-      // ── PROFITABILITY score (ROE + ROA) ────────────────────────────────
-      const roe = parseFloat(m.roeTTM || 0) * 100; // converti in %
-      const roa = parseFloat(m.roaTTM || 0) * 100;
-      const roeScore = Math.max(0, Math.min(100, (roe / 25) * 100));
-      const roaScore = Math.max(0, Math.min(100, (roa / 10) * 100));
-      const profScore = roe !== 0 || roa !== 0
-        ? Math.round((roeScore + roaScore) / 2)
-        : null;
-
-      // ── MOMENTUM score (price vs 52w range) ────────────────────────────
+      const pe  = parseFloat(q.pe || 0);
+      const pb  = parseFloat(p.priceToBookRatio || 0);
+      const roe = parseFloat(p.returnOnEquity || 0) * 100;
+      const roa = parseFloat(p.returnOnAssets  || 0) * 100;
+      const mktCap = parseFloat(q.marketCap || 0);
       const price  = parseFloat(q.price || 0);
       const low52  = parseFloat(q.yearLow  || 0);
       const high52 = parseFloat(q.yearHigh || 0);
-      const momentumScore = (high52 > low52 && price > 0)
+
+      // ── VALUE score ──────────────────────────────────────────────────
+      const peScore = pe > 0 && pe < 100 ? Math.max(0, Math.min(100, Math.round(((30 - pe) / 30) * 100))) : null;
+      const pbScore = pb > 0             ? Math.max(0, Math.min(100, Math.round(((3  - pb) / 3)  * 100))) : null;
+      const valueScore = peScore != null && pbScore != null ? Math.round((peScore + pbScore) / 2)
+                       : peScore ?? pbScore ?? null;
+
+      // ── SIZE score ────────────────────────────────────────────────────
+      const sizeScore = mktCap > 0
+        ? Math.round(Math.max(0, Math.min(100, ((50e9 - mktCap) / 50e9) * 100)))
+        : null;
+
+      // ── PROFITABILITY score ───────────────────────────────────────────
+      const roeScore = Math.max(0, Math.min(100, (roe / 25) * 100));
+      const roaScore = Math.max(0, Math.min(100, (roa / 10) * 100));
+      const profScore = (roe !== 0 || roa !== 0) ? Math.round((roeScore + roaScore) / 2) : null;
+
+      // ── MOMENTUM score ────────────────────────────────────────────────
+      const momentumScore = high52 > low52 && price > 0
         ? Math.round(((price - low52) / (high52 - low52)) * 100)
         : null;
 
-      // ── Score composito ────────────────────────────────────────────────
       const scores = [valueScore, sizeScore, profScore, momentumScore].filter(s => s != null);
-      const composite = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+      const composite = scores.length >= 2
+        ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
+        : 0;
 
       return {
-        symbol:    c.symbol,
-        name:      c.companyName || c.name || c.symbol,
-        sector:    c.sector || "—",
-        price:     price || parseFloat(c.price || 0),
-        mktCapM:   Math.round(mktCap / 1e6),   // in milioni
-        pe:        pe  > 0 ? parseFloat(pe.toFixed(1))  : null,
-        pb:        pb  > 0 ? parseFloat(pb.toFixed(2))  : null,
-        roe:       roe !== 0 ? parseFloat(roe.toFixed(1)) : null,
-        roa:       roa !== 0 ? parseFloat(roa.toFixed(1)) : null,
-        change1d:  parseFloat(q.changesPercentage || 0).toFixed(2),
-        scores: {
-          value:       valueScore,
-          size:        sizeScore,
-          profitability: profScore,
-          momentum:    momentumScore,
-          composite,
-        },
+        symbol:   q.symbol,
+        name:     q.name || p.companyName || q.symbol,
+        sector:   p.sector || q.sector || "—",
+        price,
+        mktCapM:  Math.round(mktCap / 1e6),
+        pe:       pe  > 0 ? parseFloat(pe.toFixed(1))  : null,
+        pb:       pb  > 0 ? parseFloat(pb.toFixed(2))  : null,
+        roe:      roe !== 0 ? parseFloat(roe.toFixed(1)) : null,
+        roa:      roa !== 0 ? parseFloat(roa.toFixed(1)) : null,
+        change1d: parseFloat(q.changesPercentage || 0).toFixed(2),
+        scores: { value: valueScore, size: sizeScore, profitability: profScore, momentum: momentumScore, composite },
       };
     })
-    .filter(r => r.scores.composite > 20)           // filtra titoli senza dati sufficienti
+    .filter(r => r.composite > 0 && r.price > 0)
     .sort((a, b) => b.scores.composite - a.scores.composite);
 
     return res.status(200).json({ results, count: results.length });
