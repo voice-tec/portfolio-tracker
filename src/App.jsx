@@ -902,7 +902,7 @@ function StockModal({ stock, onClose, notes, setNotes, alerts, setAlerts, handle
 
 
 // ─── MACRO SCENARIO TAB ───────────────────────────────────────────────────────
-function MacroScenarioSection({ stocks, sym, rate, fmt, pct: fmtPct, col }) {
+function MacroScenarioSection({ stocks, sym, rate, fmt, pct: fmtPct, col, eurRate }) {
   const [selected, setSelected] = useState(MACRO_SCENARIOS[0]);
 
   const totalValue = stocks.reduce((s, x) => s + x.qty * toUSD(x.currentPrice, x.currency, eurRate), 0);
@@ -1277,7 +1277,7 @@ function SimulazioniTab({ stocks, sym, rate, fmt, fmtPct }) {
       ) : null}
 
       {/* ── SEZIONE MACRO ── */}
-      <MacroScenarioSection stocks={stocks} sym={sym} rate={rate} fmt={fmt} pct={fmtPct} col={v => v >= 0 ? "#5EC98A" : "#E87040"} />
+      <MacroScenarioSection stocks={stocks} sym={sym} rate={rate} fmt={fmt} pct={fmtPct} col={v => v >= 0 ? "#5EC98A" : "#E87040"} eurRate={eurRate} />
     </div>
   );
 }
@@ -1446,7 +1446,7 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
   );
 }
 
-function ForecastTab({ stocks, fmt, fmtPct, sym, rate }) {
+function ForecastTab({ stocks, fmt, fmtPct, sym, rate, eurRate }) {
   const [selected, setSelected] = useState(null);
   const [data, setData] = useState({});
   const [loading, setLoading] = useState(false);
@@ -3283,7 +3283,7 @@ export default function App() {
                 <DividendiTab stocks={stocks} fmt={fmt} fmtPct={fmtPct} sym={sym} rate={rate} />
               )}
               {activeTab === "previsioni" && (
-                <ForecastTab stocks={stocks} fmt={fmt} fmtPct={fmtPct} sym={sym} rate={rate} />
+                <ForecastTab stocks={stocks} fmt={fmt} fmtPct={fmtPct} sym={sym} rate={rate} eurRate={eurRate} />
               )}
 
             </div>
