@@ -53,16 +53,16 @@ export function ChartCard({ stocks, eurRate }) {
 
       {/* ── Valore + % header stile Getquin ── */}
       <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 28, fontWeight: 700, color: "#E8E6DF", letterSpacing: "-0.5px" }}>
+        <div style={{ fontSize: 28, fontWeight: 700, color: "#0A1628", letterSpacing: "-0.5px" }}>
           ${fmt(lastValore)}
         </div>
         <div style={{ fontSize: 12, color: lineColor, marginTop: 2, display: "flex", alignItems: "center", gap: 6 }}>
           <span>{isPositive ? "↑" : "↓"} {Math.abs(lastPct).toFixed(2)}%</span>
-          <span style={{ color: "#444" }}>
+          <span style={{ color: "#5A6A7E" }}>
             ({isPositive ? "+" : ""}${fmt(lastValore - lastCosto)})
           </span>
-          <span style={{ color: "#2a2d35", margin: "0 2px" }}>·</span>
-          <span style={{ color: "#444", fontSize: 11 }}>{period === "Inizio" ? "da inizio" : `ultimi ${period}`}</span>
+          <span style={{ color: "#D8DCE8", margin: "0 2px" }}>·</span>
+          <span style={{ color: "#5A6A7E", fontSize: 11 }}>{period === "Inizio" ? "da inizio" : `ultimi ${period}`}</span>
         </div>
       </div>
 
@@ -71,9 +71,9 @@ export function ChartCard({ stocks, eurRate }) {
         <div style={{ display: "flex", gap: 2 }}>
           {PERIODS.map(p => (
             <button key={p} onClick={() => setPeriod(p)} style={{
-              background: period === p ? "#1a1d26" : "none",
+              background: period === p ? "#E8EBF4" : "none",
               border: "none",
-              color: period === p ? "#E8E6DF" : "#444",
+              color: period === p ? "#0A1628" : "#5A6A7E",
               fontFamily: "inherit", fontSize: 10, padding: "3px 9px",
               borderRadius: 3, cursor: "pointer",
               fontWeight: period === p ? 600 : 400,
@@ -87,8 +87,8 @@ export function ChartCard({ stocks, eurRate }) {
             fontSize: 9, padding: "3px 8px", borderRadius: 3, cursor: "pointer",
             fontFamily: "inherit", border: "1px solid",
             background: showBenchmark ? "#F4C54211" : "none",
-            color: showBenchmark ? "#F4C542" : "#444",
-            borderColor: showBenchmark ? "#F4C54244" : "#2a2d35",
+            color: showBenchmark ? "#F4C542" : "#5A6A7E",
+            borderColor: showBenchmark ? "#F4C54244" : "#D8DCE8",
           }}>
             vs S&P 500
           </button>
@@ -97,7 +97,7 @@ export function ChartCard({ stocks, eurRate }) {
 
       {/* ── Grafico ── */}
       {loading ? (
-        <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, color: "#444", fontSize: 11 }}>
+        <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, color: "#5A6A7E", fontSize: 11 }}>
           <Spinner size={14} color={lineColor} /> Caricamento…
         </div>
       ) : (
@@ -112,20 +112,20 @@ export function ChartCard({ stocks, eurRate }) {
             <XAxis dataKey="label" hide />
             <YAxis hide domain={["auto", "auto"]} />
             <Tooltip
-              contentStyle={{ background: "#0f1117", border: "1px solid #1a1d26", borderRadius: 6, fontSize: 11, color: "#E8E6DF", padding: "6px 12px" }}
+              contentStyle={{ background: "#FFFFFF", border: "1px solid #1a1d26", borderRadius: 6, fontSize: 11, color: "#0A1628", padding: "6px 12px" }}
               formatter={(v, name) => {
                 if (name === "pct")      return [`${v >= 0 ? "+" : ""}${v?.toFixed(2)}%`, "Portafoglio"];
                 if (name === "spyPct")   return [`${v >= 0 ? "+" : ""}${v?.toFixed(2)}%`, "S&P 500"];
                 return [v, name];
               }}
-              labelStyle={{ color: "#555", fontSize: 10, marginBottom: 3 }}
+              labelStyle={{ color: "#5A6A7E", fontSize: 10, marginBottom: 3 }}
               cursor={{ stroke: lineColor, strokeWidth: 1, strokeDasharray: "4 2" }}
             />
 
             {/* Linea break-even (costo acquisto) */}
             {costoBase > 0 && (
               <ReferenceLine y={costoBase}
-                stroke="#2a2d35" strokeDasharray="4 3" strokeWidth={1}
+                stroke="#D8DCE8" strokeDasharray="4 3" strokeWidth={1}
               />
             )}
 
@@ -133,7 +133,7 @@ export function ChartCard({ stocks, eurRate }) {
             <Area type="monotone" dataKey="pct"
               stroke={lineColor} strokeWidth={1.5}
               fill="url(#chartGrad)" dot={false}
-              activeDot={{ r: 4, fill: lineColor, stroke: "#0D0F14", strokeWidth: 2 }}
+              activeDot={{ r: 4, fill: lineColor, stroke: "#F8F9FC", strokeWidth: 2 }}
             />
 
             {/* S&P 500 scalato */}
@@ -177,7 +177,7 @@ export function ChartCard({ stocks, eurRate }) {
           <div key={m.ticker + m.date} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10 }}>
             <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#7EB8F7", flexShrink: 0 }} />
             <span style={{ color: "#7EB8F7" }}>{m.ticker}</span>
-            {m.beforeRange && <span style={{ color: "#333" }}>(prima del periodo)</span>}
+            {m.beforeRange && <span style={{ color: "#3A4A5E" }}>(prima del periodo)</span>}
           </div>
         ))}
       </div>
