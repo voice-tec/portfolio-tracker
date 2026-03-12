@@ -251,6 +251,218 @@ function Spinner({ color = "#F4C542", size = 11 }) {
   return <span style={{ display: "inline-block", width: size, height: size, borderRadius: "50%", border: `1.5px solid ${color}`, borderTopColor: "transparent", animation: "spin 0.7s linear infinite", flexShrink: 0 }} />;
 }
 
+
+// ─── ONBOARDING MODAL ─────────────────────────────────────────────────────────
+
+function OnboardingIllustration({ slide }) {
+  if (slide === 0) return (
+    // Mini grafico animato — Overview
+    <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, #0A1628 0%, #0f2040 100%)", gap: 20, padding: 32 }}>
+      {/* KPI mock */}
+      <div style={{ display: "flex", gap: 24, width: "100%" }}>
+        {[{ l: "Valore", v: "$12,480", c: "#E8E6DF" }, { l: "P&L Totale", v: "+$2,840", c: "#5EC98A" }, { l: "Rendimento", v: "+29.4%", c: "#5EC98A" }].map(k => (
+          <div key={k.l} style={{ flex: 1, background: "rgba(255,255,255,0.05)", borderRadius: 10, padding: "14px 16px", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <div style={{ fontSize: 10, color: "#8BA4C0", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.08em" }}>{k.l}</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: k.c }}>{k.v}</div>
+          </div>
+        ))}
+      </div>
+      {/* SVG grafico stilizzato */}
+      <div style={{ width: "100%", background: "rgba(255,255,255,0.03)", borderRadius: 12, padding: "16px 16px 8px", border: "1px solid rgba(255,255,255,0.06)" }}>
+        <div style={{ fontSize: 10, color: "#8BA4C0", marginBottom: 8 }}>↑ 29.4%  ·  ultimi 1A</div>
+        <svg viewBox="0 0 320 80" style={{ width: "100%", height: 80 }}>
+          <defs>
+            <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#5EC98A" stopOpacity="0.3"/>
+              <stop offset="100%" stopColor="#5EC98A" stopOpacity="0"/>
+            </linearGradient>
+          </defs>
+          <path d="M0,70 C20,68 40,65 60,58 C80,51 100,45 120,38 C140,31 160,35 180,28 C200,21 220,18 240,14 C260,10 280,12 320,8" stroke="#5EC98A" strokeWidth="2" fill="none"/>
+          <path d="M0,70 C20,68 40,65 60,58 C80,51 100,45 120,38 C140,31 160,35 180,28 C200,21 220,18 240,14 C260,10 280,12 320,8 L320,80 L0,80Z" fill="url(#g1)"/>
+        </svg>
+        <div style={{ display: "flex", gap: 16, marginTop: 4 }}>
+          {["Mar","Giu","Set","Dic","Mar"].map(m => <span key={m} style={{ fontSize: 9, color: "#3A4A5E", flex: 1, textAlign: "center" }}>{m}</span>)}
+        </div>
+      </div>
+    </div>
+  );
+
+  if (slide === 1) return (
+    // Simulazioni — scenari storici
+    <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, #1a0800 0%, #2d1000 100%)", gap: 16, padding: 32 }}>
+      <div style={{ fontSize: 11, color: "#E87040", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 4 }}>Scenari Storici</div>
+      {/* Scenario cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, width: "100%" }}>
+        {[
+          { label: "🦠 Covid Crash", val: "-34%", color: "#E87040" },
+          { label: "💥 Crisi 2008", val: "-57%", color: "#E87040" },
+          { label: "🚀 Bull 2017", val: "+19%", color: "#5EC98A" },
+          { label: "📈 Alta Inflazione", val: "-18%", color: "#E87040" },
+          { label: "💸 Tassi Bassi", val: "+24%", color: "#5EC98A" },
+          { label: "📊 Recessione", val: "-22%", color: "#E87040" },
+        ].map(s => (
+          <div key={s.label} style={{ background: "rgba(255,255,255,0.05)", border: `1px solid ${s.color}33`, borderRadius: 8, padding: "10px 8px", textAlign: "center" }}>
+            <div style={{ fontSize: 10, color: "#D8C8B8", marginBottom: 4 }}>{s.label}</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: s.color }}>{s.val}</div>
+          </div>
+        ))}
+      </div>
+      {/* Mini chart */}
+      <div style={{ width: "100%", background: "rgba(255,255,255,0.03)", borderRadius: 10, padding: "12px 16px", border: "1px solid rgba(232,112,64,0.2)" }}>
+        <div style={{ fontSize: 9, color: "#E87040", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.08em" }}>Il tuo portafoglio vs S&P 500</div>
+        <svg viewBox="0 0 320 50" style={{ width: "100%", height: 50 }}>
+          <path d="M0,10 C40,12 80,20 120,28 C160,36 200,42 240,44 C280,46 300,44 320,43" stroke="#E87040" strokeWidth="2" fill="none"/>
+          <path d="M0,8 C40,10 80,18 120,24 C160,30 200,36 240,40 C280,44 300,43 320,42" stroke="#8BA4C0" strokeWidth="1.5" fill="none" strokeDasharray="4 3"/>
+        </svg>
+      </div>
+    </div>
+  );
+
+  // slide === 2 — Previsioni
+  return (
+    <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, #0d0820 0%, #1a0f35 100%)", gap: 16, padding: 32 }}>
+      <div style={{ fontSize: 11, color: "#A78BFA", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 4 }}>Previsioni 12 mesi</div>
+      {/* 3 scenari */}
+      <div style={{ display: "flex", gap: 12, width: "100%" }}>
+        {[
+          { l: "Pessimistico", v: "-2.0%", c: "#E87040", sub: "$2,557" },
+          { l: "Base", v: "+17.8%", c: "#F4C542", sub: "$3,071" },
+          { l: "Ottimistico", v: "+27.9%", c: "#5EC98A", sub: "$3,336" },
+        ].map(s => (
+          <div key={s.l} style={{ flex: 1, background: "rgba(255,255,255,0.05)", border: `1px solid ${s.c}33`, borderRadius: 10, padding: "14px 10px", textAlign: "center" }}>
+            <div style={{ fontSize: 9, color: "#8878AA", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.06em" }}>{s.l}</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: s.c, marginBottom: 2 }}>{s.v}</div>
+            <div style={{ fontSize: 11, color: "#6A5A8A" }}>{s.sub}</div>
+          </div>
+        ))}
+      </div>
+      {/* Cono di proiezione SVG */}
+      <div style={{ width: "100%", background: "rgba(255,255,255,0.03)", borderRadius: 10, padding: "12px 16px", border: "1px solid rgba(167,139,250,0.2)" }}>
+        <svg viewBox="0 0 320 60" style={{ width: "100%", height: 60 }}>
+          {/* storico */}
+          <path d="M0,40 C40,38 80,35 130,32" stroke="#8BA4C0" strokeWidth="1.5" fill="none"/>
+          {/* proiezioni divergenti */}
+          <path d="M130,32 C180,26 240,18 320,10" stroke="#5EC98A" strokeWidth="1.5" fill="none" strokeDasharray="5 3"/>
+          <path d="M130,32 C180,30 240,28 320,26" stroke="#F4C542" strokeWidth="1.5" fill="none" strokeDasharray="5 3"/>
+          <path d="M130,32 C180,34 240,38 320,44" stroke="#E87040" strokeWidth="1.5" fill="none" strokeDasharray="5 3"/>
+          {/* linea verticale separazione */}
+          <line x1="130" y1="5" x2="130" y2="55" stroke="rgba(255,255,255,0.15)" strokeWidth="1" strokeDasharray="3 2"/>
+          <text x="60" y="58" fontSize="8" fill="#4A5A6A">Storico</text>
+          <text x="200" y="58" fontSize="8" fill="#6A5A8A">Proiezione →</text>
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+const ONBOARDING_SLIDES = [
+  {
+    badge: "📊 Overview",
+    title: "Il tuo portafoglio in tempo reale",
+    desc: "Visualizza il valore totale, la performance % nel tempo e confronta il tuo rendimento con l'S&P 500. Il grafico si aggiorna automaticamente ogni giorno di mercato aperto.",
+    color: "#1E4FD8",
+    badge: "📊 Overview",
+    title: "Il tuo portafoglio in tempo reale",
+    desc: "Visualizza il valore totale, la performance % nel tempo e confronta il tuo rendimento con l'S&P 500. Il grafico si aggiorna automaticamente ogni giorno di mercato aperto.",
+    color: "#1E4FD8",
+  },
+  {
+    badge: "🔁 Simulazioni",
+    title: "Testa il tuo portafoglio in scenari storici",
+    desc: "Scopri come avrebbe reagito il tuo portafoglio durante il Covid Crash, la crisi del 2008, o scenari macroeconomici come alta inflazione e tassi alti.",
+    color: "#E87040",
+  },
+  {
+    badge: "🔮 Previsioni",
+    title: "Proiezioni a 12 mesi basate su dati reali",
+    desc: "Analisi statistica con scenario pessimistico, base e ottimistico. Include il target price degli analisti e il rating di consenso per ogni titolo.",
+    color: "#7C3AED",
+  },
+];
+
+function OnboardingModal({ onClose }) {
+  const [slide, setSlide] = useState(0);
+  const current = ONBOARDING_SLIDES[slide];
+  const isLast = slide === ONBOARDING_SLIDES.length - 1;
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(10,22,40,0.7)",
+      zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center",
+      padding: 20, backdropFilter: "blur(4px)"
+    }}>
+      <div style={{
+        background: "#FFFFFF", borderRadius: 20, maxWidth: 680, width: "100%",
+        overflow: "hidden", boxShadow: "0 24px 80px rgba(10,22,64,0.22)",
+        display: "flex", flexDirection: "column"
+      }}>
+        {/* Illustration */}
+        <div style={{ position: "relative", height: 300, overflow: "hidden" }}>
+          <OnboardingIllustration slide={slide} />
+          {/* Badge overlay */}
+          <div style={{
+            position: "absolute", top: 16, left: 16,
+            background: current.color, color: "#fff",
+            fontSize: 11, fontWeight: 700, padding: "5px 12px",
+            borderRadius: 20, letterSpacing: "0.05em"
+          }}>
+            {current.badge}
+          </div>
+          {/* Slide indicators */}
+          <div style={{ position: "absolute", bottom: 16, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 6 }}>
+            {ONBOARDING_SLIDES.map((_, i) => (
+              <button key={i} onClick={() => setSlide(i)} style={{
+                width: i === slide ? 20 : 6, height: 6, borderRadius: 3,
+                background: i === slide ? "#FFFFFF" : "rgba(255,255,255,0.4)",
+                border: "none", cursor: "pointer", padding: 0,
+                transition: "all 0.2s"
+              }} />
+            ))}
+          </div>
+        </div>
+
+        {/* Content */}
+        <div style={{ padding: "28px 32px 24px" }}>
+          <div style={{ fontSize: 20, fontWeight: 700, color: "#0A1628", marginBottom: 10, lineHeight: 1.3 }}>
+            {current.title}
+          </div>
+          <div style={{ fontSize: 14, color: "#5A6A7E", lineHeight: 1.7, marginBottom: 28 }}>
+            {current.desc}
+          </div>
+
+          {/* Actions */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+            <button onClick={onClose} style={{
+              background: "none", border: "none", color: "#A0AABF",
+              fontSize: 13, cursor: "pointer", padding: 0
+            }}>
+              Salta il tour
+            </button>
+            <div style={{ display: "flex", gap: 10 }}>
+              {slide > 0 && (
+                <button onClick={() => setSlide(s => s - 1)} style={{
+                  background: "#F0F4FA", border: "none", color: "#0A1628",
+                  fontSize: 13, fontWeight: 600, padding: "10px 22px",
+                  borderRadius: 8, cursor: "pointer"
+                }}>
+                  ← Indietro
+                </button>
+              )}
+              <button onClick={() => isLast ? onClose() : setSlide(s => s + 1)} style={{
+                background: current.color, border: "none", color: "#fff",
+                fontSize: 13, fontWeight: 700, padding: "10px 26px",
+                borderRadius: 8, cursor: "pointer"
+              }}>
+                {isLast ? "Inizia ora ✦" : "Avanti →"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── PRO GATE ─────────────────────────────────────────────────────────────────
 function ProGate({ feat, children, h = 180 }) {
   const { plan, setShowUpgrade } = usePlan();
@@ -2297,6 +2509,14 @@ export default function App() {
   const sym = "$";
   const rate = 1;
   const eurRate = useEurRate(); // live EUR/USD rate
+  const [showOnboarding, setShowOnboarding] = useState(() => {
+    try { return !localStorage.getItem("trackfolio_onboarding_done"); }
+    catch { return true; }
+  });
+  function closeOnboarding() {
+    try { localStorage.setItem("trackfolio_onboarding_done", "1"); } catch {}
+    setShowOnboarding(false);
+  }
 
 
 
@@ -2915,6 +3135,7 @@ export default function App() {
           )}
 
           {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} />}
+          {showOnboarding && <OnboardingModal onClose={closeOnboarding} />}
 
           {/* Header */}
           <div style={{ padding: "0 16px 0 20px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #1a2d4a", height: 52, gap: 10, background: "#0A1628" }}>
