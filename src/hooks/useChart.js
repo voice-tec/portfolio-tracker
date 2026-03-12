@@ -18,7 +18,7 @@ export function useChart(stocks, eurRate, period = "1A") {
 
     Promise.all([
       ...uniqueTickers.map(ticker =>
-        fetchHistory(ticker, 365 * 3)
+        fetchHistory(ticker, 1000)
           .then(c => ({ ticker, candles: c || [] }))
           .catch(() => ({ ticker, candles: [] }))
       ),
