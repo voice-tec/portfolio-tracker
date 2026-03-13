@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, Tooltip, ReferenceLine } from "recharts";
 import { useChart } from "../hooks/useChart";
 import { parseBuyDate } from "../utils/dates";
@@ -10,11 +10,21 @@ function Spinner({ color = "#5EC98A", size = 11 }) {
 
 const PERIODS = ["1M", "3M", "6M", "1A", "Inizio"];
 
-export function ChartCard({ stocks, eurRate }) {
+export function ChartCard({ stocks, eurRate, onPeriodReturns }) {
+  const prevReturnsRef = useRef(null);
   const [period, setPeriod]           = useState("1A");
   const [showBenchmark, setShowBenchmark] = useState(false);
 
-  const { chartData, loading } = useChart(stocks, eurRate, period);
+  const { chartData, loading, periodReturns } = useChart(stocks, eurRate, period);
+
+  // Notifica il parent quando i periodReturns cambiano
+  useEffect(() => {
+    if (!periodReturns || !onPeriodReturns) return;
+    const key = JSON.stringify(periodReturns);
+    if (prevReturnsRef.current === key) return;
+    prevReturnsRef.current = key;
+    onPeriodReturns(periodReturns);
+  }, [periodReturns]);
 
   const lastPoint  = chartData[chartData.length - 1];
   const lastValore = lastPoint?.valore  ?? 0;
@@ -122,10 +132,12 @@ export function ChartCard({ stocks, eurRate }) {
               cursor={{ stroke: lineColor, strokeWidth: 1, strokeDasharray: "4 2" }}
             />
 
-            {/* Linea break-even (0%) */}
-            <ReferenceLine y={0}
-              stroke="#D8DCE8" strokeDasharray="4 3" strokeWidth={1}
-            />
+            {/* Linea break-even (costo acquisto) */}
+            {costoBase > 0 && (
+              <ReferenceLine y={costoBase}
+                stroke="#D8DCE8" strokeDasharray="4 3" strokeWidth={1}
+              />
+            )}
 
             {/* Linea portafoglio */}
             <Area type="monotone" dataKey="pct"
@@ -147,8 +159,8 @@ export function ChartCard({ stocks, eurRate }) {
             {/* Marker acquisti */}
             {purchaseMarkers.map(m => (
               <ReferenceLine key={m.ticker + m.date} x={m.label}
-                stroke="#7EB8F7" strokeWidth={1.5} strokeDasharray="3 3"
-                label={{ value: `▼ ${m.ticker}`, position: "insideTopLeft", fill: "#7EB8F7", fontSize: 9, fontWeight: 600 }}
+                stroke="#7EB8F733" strokeWidth={1}
+                label={{ value: m.ticker, position: "insideTopRight", fill: "#7EB8F7", fontSize: 8 }}
               />
             ))}
           </ComposedChart>

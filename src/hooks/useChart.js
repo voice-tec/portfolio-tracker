@@ -174,5 +174,33 @@ export function useChart(stocks, eurRate, period = "1A") {
     }));
   }, [rawSeries, benchmark, period]);
 
-  return { chartData, loading };
+  // ── Rendimenti periodali esatti (equivalente pandas resample) ──────────────
+  const periodReturns = useMemo(() => {
+    if (rawSeries.length < 2) return { day: null, month: null, threeMonth: null, year: null };
+    const lastPoint = rawSeries[rawSeries.length - 1];
+    const today = lastPoint.date;
+    const d = new Date(today + "T12:00:00");
+    function valueAt(targetISO) {
+      let last = null;
+      for (const p of rawSeries) { if (p.date <= targetISO) last = p; else break; }
+      return last;
+    }
+    function pctChange(fromPoint) {
+      if (!fromPoint || !fromPoint.valore) return null;
+      return ((lastPoint.valore - fromPoint.valore) / fromPoint.valore) * 100;
+    }
+    const ago1d = new Date(d - 1 * 86400000).toISOString().slice(0, 10);
+    const firstOfThisMonth = new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
+    const prevMonthEnd = rawSeries.filter(p => p.date < firstOfThisMonth).slice(-1)[0];
+    const ago3m = new Date(d - 91 * 86400000).toISOString().slice(0, 10);
+    const ago1y = new Date(d - 365 * 86400000).toISOString().slice(0, 10);
+    return {
+      day:        pctChange(valueAt(ago1d)),
+      month:      pctChange(prevMonthEnd),
+      threeMonth: pctChange(valueAt(ago3m)),
+      year:       pctChange(valueAt(ago1y)),
+    };
+  }, [rawSeries]);
+
+  return { chartData, loading, periodReturns };
 }
