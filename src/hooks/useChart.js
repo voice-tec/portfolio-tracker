@@ -123,15 +123,26 @@ export function useChart(stocks, eurRate) {
     return m;
   }, [spyData]);
 
+  // ── Costo totale investito (qty × buyPrice in USD) ────────────────────────
+  // Usato come base per "Inizio" — così coincide con il P&L dell'header
+  const totalInvested = useMemo(() =>
+    stocks.reduce((s, x) => s + (parseFloat(x.qty) || 0) * toUSD(parseFloat(x.buyPrice) || 0, x.currency, eurRate), 0),
+    [stocks, eurRate]
+  );
+
   // ── buildPeriod: dato un periodo, ritorna chartData e pill ─────────────────
-  // Il punto base è SEMPRE il giorno di trading precedente al cutoff,
-  // esattamente come fa Yahoo/TradingView — non il primo giorno >= cutoff.
+  // "Inizio": base = totalInvested (qty × buyPrice) → coincide con header P&L
+  // Altri periodi: base = punto precedente al cutoff → stesso metodo Yahoo/TradingView
   function buildPeriod(period) {
     if (portfolioSeries.length < 2) return { chartData: [], pill: null };
 
     let slice;
+    let baseValore = null; // null = usa slice[0].valore
+
     if (period === "Inizio") {
       slice = portfolioSeries;
+      // Base = costo di acquisto reale, non il prezzo storico del primo giorno
+      baseValore = totalInvested > 0 ? totalInvested : slice[0].valore;
     } else if (period === "1G") {
       slice = portfolioSeries.slice(-2);
     } else {
@@ -139,7 +150,6 @@ export function useChart(stocks, eurRate) {
       const cutoff = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
       const idx    = portfolioSeries.findIndex(p => p.date >= cutoff);
       if (idx > 0) {
-        // Prende il punto PRIMA del cutoff come base → stesso metodo di Yahoo
         slice = portfolioSeries.slice(idx - 1);
       } else {
         slice = portfolioSeries;
@@ -150,14 +160,14 @@ export function useChart(stocks, eurRate) {
 
     const first    = slice[0];
     const last     = slice[slice.length - 1];
+    const base     = baseValore ?? first.valore; // valore di riferimento per pct
     const spyFirst = spyMap[first.date]
       ?? spyData.find(s => s.date >= first.date)?.price;
 
     const chartData = slice.map(p => ({
       ...p,
-      // pct normalizzata: 0% al primo punto, X% all'ultimo
-      pct: first.valore > 0
-        ? parseFloat(((p.valore - first.valore) / first.valore * 100).toFixed(2))
+      pct: base > 0
+        ? parseFloat(((p.valore - base) / base * 100).toFixed(2))
         : 0,
       spyPct: (() => {
         const sv = spyMap[p.date];
@@ -166,10 +176,9 @@ export function useChart(stocks, eurRate) {
       })(),
     }));
 
-    // pill.pct = esattamente chartData[last].pct = tooltip dell'ultimo punto
     const pill = {
       pct:   chartData[chartData.length - 1].pct,
-      delta: last.valore - first.valore,
+      delta: last.valore - base,
     };
 
     return { chartData, pill };
