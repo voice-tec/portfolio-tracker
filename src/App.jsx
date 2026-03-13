@@ -3510,12 +3510,25 @@ export default function App() {
                     onChange={e => setForm(f => ({ ...f, buyDate: e.target.value }))} style={{ colorScheme: "light" }} />
                 </div>
                 <div>
-                  <div style={{ fontSize: 10, color: "#8A9AB0", marginBottom: 4, letterSpacing: "0.08em", textTransform: "uppercase", fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
-                    Settore {form.sector && form.sector !== "Altro" && <span style={{ color: "#16A34A", fontSize: 9 }}>✓ auto</span>}
+                  <div style={{ fontSize: 10, color: "#8A9AB0", marginBottom: 4, letterSpacing: "0.08em", textTransform: "uppercase", fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+                    Settore
+                    {form.sector && form.sector !== "Altro"
+                      ? <span style={{ color: "#16A34A", fontSize: 9, fontWeight: 700 }}>✓ {form.sector}</span>
+                      : null}
                   </div>
-                  <select value={form.sector} onChange={e => setForm(f => ({ ...f, sector: e.target.value }))}>
-                    {SECTORS.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
+                  {(!form.sector || form.sector === "Altro") ? (
+                    <select value={form.sector} onChange={e => setForm(f => ({ ...f, sector: e.target.value }))}>
+                      {SECTORS.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  ) : (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "12px 14px", background: "#F0FDF4", border: "1.5px solid #16A34A44", borderRadius: 8, fontSize: 13, color: "#16A34A", fontWeight: 600 }}>
+                      <span>{form.sector}</span>
+                      <button onClick={() => setForm(f => ({ ...f, sector: "Altro" }))}
+                        style={{ marginLeft: "auto", background: "none", border: "none", color: "#8A9AB0", cursor: "pointer", fontSize: 11, padding: 0 }}>
+                        cambia
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
