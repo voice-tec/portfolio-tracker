@@ -174,36 +174,36 @@ export function useChart(stocks, eurRate, period = "1A") {
     }));
   }, [rawSeries, benchmark, period]);
 
-  // ── Rendimenti periodali — stesso punto di partenza del grafico ─────────────
-  // Per ogni periodo usa slice[0].valore come base, identico a come il grafico
-  // normalizza la curva. Così pill e tooltip mostrano sempre lo stesso numero.
+  // ── Rendimenti periodali — calcolati per ogni periodo separatamente ──────────
+  // Per ciascun periodo costruisce lo slice esatto come fa chartData,
+  // poi prende pct dell'ultimo punto = identico al tooltip del grafico.
   const periodReturns = useMemo(() => {
-    if (rawSeries.length < 2) return { day: null, month: null, threeMonth: null, year: null };
+    if (rawSeries.length < 2) return { day: null, month: null, threeMonth: null, year: null, all: null };
 
-    const last = rawSeries[rawSeries.length - 1];
-    const d    = new Date(last.date + "T12:00:00");
-
-    // Ritorna il primo punto di rawSeries dal cutoff in poi (= slice[0] del grafico)
-    function firstPointForDays(days) {
-      const cutoff = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+    function returnForDays(days) {
+      const cutoff  = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
       const filtered = rawSeries.filter(p => p.date >= cutoff);
-      return (filtered.length > 0 ? filtered : rawSeries)[0] ?? null;
+      const slice   = filtered.length > 0 ? filtered : rawSeries;
+      if (slice.length < 2) return null;
+      const base = slice[0].valore;
+      const last = slice[slice.length - 1].valore;
+      if (!base) return null;
+      return parseFloat(((last - base) / base * 100).toFixed(2));
     }
 
-    function pct(from) {
-      if (!from?.valore || !last.valore) return null;
-      return parseFloat(((last.valore - from.valore) / from.valore * 100).toFixed(2));
-    }
-
-    // 1G: penultimo punto in rawSeries
-    const prev1d = rawSeries[rawSeries.length - 2] ?? null;
+    // 1G: penultimo → ultimo punto in rawSeries
+    const prev = rawSeries[rawSeries.length - 2];
+    const last = rawSeries[rawSeries.length - 1];
+    const day  = (prev?.valore && last?.valore)
+      ? parseFloat(((last.valore - prev.valore) / prev.valore * 100).toFixed(2))
+      : null;
 
     return {
-      day:        pct(prev1d),
-      month:      pct(firstPointForDays(30)),
-      threeMonth: pct(firstPointForDays(91)),
-      year:       pct(firstPointForDays(365)),
-      all:        pct(rawSeries[0]),
+      day,
+      month:      returnForDays(30),
+      threeMonth: returnForDays(91),
+      year:       returnForDays(365),
+      all:        parseFloat(((last.valore - rawSeries[0].valore) / rawSeries[0].valore * 100).toFixed(2)),
     };
   }, [rawSeries]);
 
