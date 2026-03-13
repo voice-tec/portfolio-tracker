@@ -2090,42 +2090,43 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
   const { dayVar, monthVar } = useMemo(() => {
     if (!stocks.length || !totalValue) return { dayVar: null, monthVar: null };
 
-    // 1G — usa prevClose di ogni titolo
-    let prevTotalValue = 0;
-    let hasPrev = false;
+    // 1G — media pesata di changePct (già calcolato da Yahoo, non toccare)
+    let dayNum = 0, dayDen = 0;
     stocks.forEach(s => {
-      const prev = s.prevClose ?? s.currentPrice;
-      if (prev && s.qty) {
-        prevTotalValue += s.qty * toUSD(prev, s.currency, eurRate);
-        hasPrev = true;
-      }
+      if (s.changePct == null || !s.qty || !s.currentPrice) return;
+      const val = s.qty * toUSD(s.currentPrice, s.currency, eurRate);
+      dayNum += s.changePct * val;
+      dayDen += val;
     });
-    const dayVar = hasPrev && prevTotalValue > 0
-      ? ((totalValue - prevTotalValue) / prevTotalValue) * 100
-      : null;
+    const dayVar = dayDen > 0 ? dayNum / dayDen : null;
 
-    // 1M — stima: P&L proporzionale su 30gg vs totale giorni posseduti
-    let monthVar = null;
-    if (totalInvested > 0) {
-      const now = Date.now();
-      let weightedDailyReturn = 0;
-      let totalWeight = 0;
-      stocks.forEach(s => {
-        const val = s.qty * toUSD(s.currentPrice, s.currency, eurRate);
-        const cost = s.qty * toUSD(s.buyPrice, s.currency, eurRate);
-        if (!cost) return;
-        const buyTs = s.buyDate ? new Date(s.buyDate).getTime() : null;
-        const daysHeld = buyTs ? Math.max(1, (now - buyTs) / 86_400_000) : 30;
-        const totalReturn = (val - cost) / cost;
-        const dailyReturn = totalReturn / daysHeld;
-        weightedDailyReturn += dailyReturn * val;
-        totalWeight += val;
-      });
-      if (totalWeight > 0) monthVar = (weightedDailyReturn / totalWeight) * 30 * 100;
-    }
+    // 1M — usa prevClose per stimare 1 giorno, poi scala × 30 / giorni_medi_posseduti
+    // In realtà la variazione 1M reale è nel grafico (useChart), qui mostriamo
+    // la variazione mensile stimata come: P&L / costo / mesi_posseduti
+    let monthNum = 0, monthDen = 0;
+    const now = Date.now();
+    stocks.forEach(s => {
+      if (!s.qty || !s.currentPrice || !s.buyPrice) return;
+      const val  = s.qty * toUSD(s.currentPrice, s.currency, eurRate);
+      const cost = s.qty * toUSD(s.buyPrice, s.currency, eurRate);
+      if (!cost) return;
+      const buyTs = s.buyDate ? (() => {
+        // Supporta sia ISO "2024-01-01" che "01/01/24"
+        const d = new Date(s.buyDate.includes("/")
+          ? s.buyDate.split("/").reverse().map((v,i) => i===0 ? (parseInt(v) < 100 ? 2000+parseInt(v) : v) : v).join("-")
+          : s.buyDate);
+        return isNaN(d) ? null : d.getTime();
+      })() : null;
+      const monthsHeld = buyTs ? Math.max(1/30, (now - buyTs) / (30 * 86_400_000)) : 1;
+      const totalReturnPct = (val - cost) / cost * 100;
+      const monthlyPct = totalReturnPct / monthsHeld;
+      monthNum += monthlyPct * val;
+      monthDen += val;
+    });
+    const monthVar = monthDen > 0 ? monthNum / monthDen : null;
 
     return { dayVar, monthVar };
-  }, [stocks, totalValue, totalInvested, eurRate]);
+  }, [stocks, totalValue, eurRate]);
 
 
 
