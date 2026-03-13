@@ -589,7 +589,7 @@ function AuthScreen({ onAuth }) {
         @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap');
         *{box-sizing:border-box;margin:0;padding:0}
         html,body{height:100%;height:-webkit-fill-available;overflow-x:hidden;-webkit-tap-highlight-color:transparent}
-        input{background:#F8FAFF;border:1px solid #D0D8EC;color:#0A1628;font-family:inherit;font-size:13px;padding:11px 14px;border-radius:6px;outline:none;width:100%}
+        input{background:#FFFFFF;border:1.5px solid #D0D8EC;color:#0A1628;font-family:inherit;font-size:13px;padding:12px 14px;border-radius:8px;outline:none;width:100%;transition:border-color 0.15s;box-shadow:0 1px 3px rgba(10,22,64,0.06)}input:focus{border-color:#1E4FD8;box-shadow:0 0 0 3px rgba(30,79,216,0.1)}select{background:#FFFFFF;border:1.5px solid #D0D8EC;color:#0A1628;font-family:inherit;font-size:13px;padding:12px 14px;border-radius:8px;outline:none;width:100%;transition:border-color 0.15s;box-shadow:0 1px 3px rgba(10,22,64,0.06);cursor:pointer;-webkit-appearance:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%231E4FD8'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px}
         input:focus{border-color:#1E4FD8;box-shadow:0 0 0 3px rgba(30,79,216,0.08)} input::placeholder{color:#A0AABF}
         @keyframes spin{to{transform:rotate(360deg)}}
         @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
@@ -1837,10 +1837,9 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
       {/* ── HEADER KPI ── */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
         <div>
-          <div style={{ fontFamily: "'Geist', sans-serif", fontSize: 32, fontWeight: 400, lineHeight: 1 }}>
+          <div style={{ fontSize: 34, fontWeight: 800, lineHeight: 1, letterSpacing: "-0.02em", color: "#0A1628" }}>
             ${fmt(totalValue)}
           </div>
-          <div style={{ fontSize: 13, color: "#666", marginTop: 4 }}>€{fmt(totalValue * eurRate)}</div>
           <div style={{ display: "flex", gap: 16, marginTop: 8, flexWrap: "wrap" }}>
             <span style={{ fontSize: 12, color: col(totalPnL) }}>{sign(totalPnL)}${fmt(Math.abs(totalPnL))} totale</span>
             <span style={{ fontSize: 12, color: col(totalPct), fontWeight: 500 }}>{sign(totalPct)}{totalPct.toFixed(2)}%</span>
@@ -1903,13 +1902,25 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
                     onMouseEnter={e => e.currentTarget.style.background = "#FFFFFF"}
                     onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                     <td style={{ padding: "10px 8px 10px 0" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <span style={{ fontWeight: 500 }}>{s.ticker}</span>
-                        {s.priceReal && <MarketBadge state={s.marketState || "CLOSED"} size={7}/>}
-                        {currLabel && <span style={{ fontSize: 7, color: "#7EB8F7", background: "#E8EBF2", padding: "1px 4px", borderRadius: 2 }}>{currLabel}</span>}
-                        {alerts[s.id] && <span style={{ fontSize: 9 }}>🔔</span>}
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <img
+                          src={`https://assets.parqet.com/logos/symbol/${s.ticker}?format=svg`}
+                          onError={e => { e.target.style.display="none"; e.target.nextSibling.style.display="flex"; }}
+                          style={{ width: 28, height: 28, borderRadius: 6, border: "1px solid #E8EBF4", objectFit: "contain", background: "#fff", padding: 2 }}
+                        />
+                        <div style={{ width: 28, height: 28, borderRadius: 6, border: "1px solid #E8EBF4", background: "#F0F4FA", display: "none", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, color: "#1E4FD8" }}>
+                          {s.ticker.slice(0,2)}
+                        </div>
+                        <div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                            <span style={{ fontWeight: 700, fontSize: 13 }}>{s.ticker}</span>
+                            {s.priceReal && <MarketBadge state={s.marketState || "CLOSED"} size={7}/>}
+                            {currLabel && <span style={{ fontSize: 7, color: "#7EB8F7", background: "#E8EBF2", padding: "1px 4px", borderRadius: 2 }}>{currLabel}</span>}
+                            {alerts[s.id] && <span style={{ fontSize: 9 }}>🔔</span>}
+                          </div>
+                          <div style={{ fontSize: 10, color: "#8A9AB0", marginTop: 1 }}>{s.sector} · {s.buyDate}</div>
+                        </div>
                       </div>
-                      <div style={{ fontSize: 9, color: "#333", marginTop: 2 }}>{s.sector} · {s.buyDate}</div>
                     </td>
                     <td style={{ padding: "10px 8px 10px 0", color: "#666" }}>{s.qty}</td>
                     <td style={{ padding: "10px 8px 10px 0", color: "#666" }}>{currLabel ? `${s.currency === "EUR" ? "€" : ""}${fmt(s.buyPrice)}` : `$${fmt(s.buyPrice)}`}</td>
@@ -3472,9 +3483,17 @@ export default function App() {
                 <div style={{ gridColumn: "1 / -1" }}>
                   <div style={{ fontSize: 10, color: "#8A9AB0", marginBottom: 4, letterSpacing: "0.08em", textTransform: "uppercase", fontWeight: 600 }}>Ticker</div>
                   <TickerAutocomplete value={form.ticker} onChange={v => setForm(f => ({ ...f, ticker: v }))}
-                    onSelect={t => {
+                    onSelect={async t => {
                       const sector = t.sector || "Altro";
                       setForm(f => ({ ...f, ticker: t.ticker, sector }));
+                      // Prova a prendere il settore reale da Finnhub via /api/price
+                      try {
+                        const r = await fetch(`/api/price?ticker=${t.ticker}&info=1`);
+                        const d = await r.json();
+                        if (d.sector && d.sector !== "Altro") {
+                          setForm(f => ({ ...f, ticker: t.ticker, sector: d.sector }));
+                        }
+                      } catch {}
                     }} />
                 </div>
                 <div>
@@ -3491,8 +3510,8 @@ export default function App() {
                     onChange={e => setForm(f => ({ ...f, buyDate: e.target.value }))} style={{ colorScheme: "light" }} />
                 </div>
                 <div>
-                  <div style={{ fontSize: 10, color: "#8A9AB0", marginBottom: 4, letterSpacing: "0.08em", textTransform: "uppercase", fontWeight: 600 }}>
-                    Settore {form.sector && form.sector !== "Altro" && <span style={{ color: "#16A34A" }}>✓</span>}
+                  <div style={{ fontSize: 10, color: "#8A9AB0", marginBottom: 4, letterSpacing: "0.08em", textTransform: "uppercase", fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                    Settore {form.sector && form.sector !== "Altro" && <span style={{ color: "#16A34A", fontSize: 9 }}>✓ auto</span>}
                   </div>
                   <select value={form.sector} onChange={e => setForm(f => ({ ...f, sector: e.target.value }))}>
                     {SECTORS.map(s => <option key={s} value={s}>{s}</option>)}

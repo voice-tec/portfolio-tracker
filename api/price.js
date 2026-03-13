@@ -9,23 +9,13 @@ export default async function handler(req, res) {
   if (!symbol) return res.status(400).json({ error: "Missing symbol" });
   const s = symbol.toUpperCase();
 
-  function getMarketStateByTime(currency) {
+  function getMarketStateByTime() {
     const now = new Date();
-    // Mercati europei
-    if (currency === "EUR" || currency === "GBp") {
-      const cetTime = new Date(now.toLocaleString("en-US", { timeZone: "Europe/Berlin" }));
-      const h = cetTime.getHours(), m = cetTime.getMinutes(), d = cetTime.getDay();
-      const mins = h * 60 + m;
-      if (d === 0 || d === 6) return "CLOSED";
-      if (mins >= 540 && mins < 1050) return "REGULAR"; // 09:00–17:30
-      if (mins >= 1050 && mins < 1200) return "POST";   // 17:30–20:00
-      return "CLOSED";
-    }
-    // Mercati US (default)
     const nyTime = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
-    const h = nyTime.getHours(), m = nyTime.getMinutes(), d = nyTime.getDay();
+    const h = nyTime.getHours(), m = nyTime.getMinutes();
     const mins = h * 60 + m;
-    if (d === 0 || d === 6) return "CLOSED";
+    const day = nyTime.getDay();
+    if (day === 0 || day === 6) return "CLOSED";
     if (mins >= 240 && mins < 570)  return "PRE";
     if (mins >= 570 && mins < 960)  return "REGULAR";
     if (mins >= 960 && mins < 1200) return "POST";
@@ -113,8 +103,7 @@ export default async function handler(req, res) {
     // Prova v8 prima (funziona per tutti i mercati da Vercel)
     const v8 = await tryYahooV8(s);
     if (v8) {
-      const detectedCurrency = v8.currency || (s.endsWith(".MI")||s.endsWith(".AS")||s.endsWith(".PA")||s.endsWith(".DE")||s.endsWith(".SW") ? "EUR" : s.endsWith(".L") ? "GBp" : "USD");
-      const marketState = (v8.marketState && v8.marketState !== "CLOSED") ? v8.marketState : getMarketStateByTime(detectedCurrency);
+      const marketState = (v8.marketState && v8.marketState !== "CLOSED") ? v8.marketState : getMarketStateByTime();
       return res.status(200).json({
         symbol: s,
         price: parseFloat(v8.price.toFixed(4)),
@@ -133,8 +122,7 @@ export default async function handler(req, res) {
     // Fallback v7
     const v7 = await tryYahooV7(s);
     if (v7) {
-      const detCurrV7 = v7.currency || (s.endsWith(".MI")||s.endsWith(".AS")||s.endsWith(".PA")||s.endsWith(".DE")||s.endsWith(".SW") ? "EUR" : s.endsWith(".L") ? "GBp" : "USD");
-      const marketState = (v7.marketState && v7.marketState !== "CLOSED") ? v7.marketState : getMarketStateByTime(detCurrV7);
+      const marketState = (v7.marketState && v7.marketState !== "CLOSED") ? v7.marketState : getMarketStateByTime();
       let effectivePrice = v7.price;
       if (marketState === "PRE" && v7.preMarket?.price) effectivePrice = v7.preMarket.price;
       else if ((marketState === "POST" || marketState === "POSTPOST") && v7.afterHours?.price) effectivePrice = v7.afterHours.price;
@@ -162,6 +150,38 @@ export default async function handler(req, res) {
         preMarket: null, afterHours: null,
         source: "finnhub",
       });
+    }
+
+    // Se richiesto solo il profilo (settore)
+    if (req.query.info === "1") {
+      try {
+        const apiKey = process.env.FINNHUB_API_KEY;
+        if (apiKey) {
+          const pr = await fetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${encodeURIComponent(s)}&token=${apiKey}`);
+          if (pr.ok) {
+            const pd = await pr.json();
+            if (pd.finnhubIndustry) {
+              // Mappa Finnhub industry -> settori Trackfolio
+              const map = {
+                "Technology": "Tecnologia", "Software": "Tecnologia", "Semiconductors": "Tecnologia",
+                "Banks": "Finanza", "Insurance": "Finanza", "Capital Markets": "Finanza",
+                "Oil, Gas & Consumable Fuels": "Energia", "Energy Equipment": "Energia",
+                "Healthcare": "Salute", "Pharmaceuticals": "Salute", "Biotechnology": "Salute",
+                "Retail": "Consumo", "Consumer": "Consumo", "Automobiles": "Consumo",
+                "Industrials": "Industriale", "Aerospace": "Industriale", "Machinery": "Industriale",
+                "Real Estate": "Immobiliare", "REITs": "Immobiliare",
+                "Utilities": "Utilities",
+                "Materials": "Materiali",
+                "Communication": "Comunicazione", "Media": "Comunicazione",
+              };
+              const industry = pd.finnhubIndustry || "";
+              const sector = Object.entries(map).find(([k]) => industry.includes(k))?.[1] || "Altro";
+              return res.status(200).json({ sector, name: pd.name, industry });
+            }
+          }
+        }
+      } catch {}
+      return res.status(200).json({ sector: "Altro" });
     }
 
     return res.status(404).json({ error: `Ticker "${s}" non trovato` });
