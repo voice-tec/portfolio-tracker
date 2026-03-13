@@ -557,7 +557,7 @@ function UpgradeModal({ onClose }) {
 
 // ─── AUTH SCREEN ──────────────────────────────────────────────────────────────
 function AuthScreen({ onAuth }) {
-  const [mode, setMode] = useState("login");
+  const [mode, setMode] = useState("register");
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
   const [name, setName] = useState("");
@@ -583,41 +583,174 @@ function AuthScreen({ onAuth }) {
     setLoading(false);
   }
 
+  const features = [
+    { icon: "📈", text: "Grafico performance con confronto S&P 500" },
+    { icon: "🎯", text: "Analisi settori e alert concentrazione" },
+    { icon: "🔔", text: "Alert prezzi su target e stop-loss" },
+    { icon: "🔮", text: "Simulazioni scenari macro e previsioni AI" },
+    { icon: "📰", text: "News e rating analisti in tempo reale" },
+  ];
+
   return (
-    <div style={{ minHeight: "100vh", background: "#EEF2FA", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontFamily: "'Geist', sans-serif", padding: 20 }}>
+    <div style={{ minHeight: "100vh", display: "flex", fontFamily: "'Geist', sans-serif" }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&display=swap');
         *{box-sizing:border-box;margin:0;padding:0}
-        html,body{height:100%;height:-webkit-fill-available;overflow-x:hidden;-webkit-tap-highlight-color:transparent}
-        input{background:#FFFFFF;border:1.5px solid #D0D8EC;color:#0A1628;font-family:inherit;font-size:13px;padding:12px 14px;border-radius:8px;outline:none;width:100%;transition:border-color 0.15s;box-shadow:0 1px 3px rgba(10,22,64,0.06)}input:focus{border-color:#1E4FD8;box-shadow:0 0 0 3px rgba(30,79,216,0.1)}select{background:#FFFFFF;border:1.5px solid #D0D8EC;color:#0A1628;font-family:inherit;font-size:13px;padding:12px 14px;border-radius:8px;outline:none;width:100%;transition:border-color 0.15s;box-shadow:0 1px 3px rgba(10,22,64,0.06);cursor:pointer;-webkit-appearance:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%231E4FD8'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px}
-        input:focus{border-color:#1E4FD8;box-shadow:0 0 0 3px rgba(30,79,216,0.08)} input::placeholder{color:#A0AABF}
-        @keyframes spin{to{transform:rotate(360deg)}} @keyframes fadeIn{from{opacity:0}to{opacity:1}} @keyframes slideUp{from{opacity:0;transform:translateY(40px)}to{opacity:1;transform:translateY(0)}} @keyframes slideInRight{from{opacity:0;transform:translateX(30px)}to{opacity:1;transform:translateX(0)}} @keyframes popIn{from{opacity:0;transform:scale(0.7)}to{opacity:1;transform:scale(1)}}
-        @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+        html,body{height:100%;overflow-x:hidden;-webkit-tap-highlight-color:transparent}
+        .auth-input{background:#F8FAFF;border:1.5px solid #E0E8F4;color:#0A1628;font-family:inherit;font-size:13px;padding:12px 14px;border-radius:10px;outline:none;width:100%;transition:all 0.15s;box-shadow:none}
+        .auth-input:focus{border-color:#4361ee;background:#fff;box-shadow:0 0 0 3px rgba(67,97,238,0.08)}
+        .auth-input::placeholder{color:#A0AABF}
+        @keyframes spin{to{transform:rotate(360deg)}}
+        @keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes floatIn{from{opacity:0;transform:translateX(-12px)}to{opacity:1;transform:translateX(0)}}
       `}</style>
-      <div style={{ animation: "fadeUp 0.4s ease", width: "100%", maxWidth: 400 }}>
-        <div style={{ textAlign: "center", marginBottom: 36 }}>
-          <div style={{ marginBottom: 8 }}><TrackfolioLogo size={36} showText={true} textColor="#0A1628" /></div>
+
+      {/* ── SINISTRA: Marketing ── */}
+      <div style={{
+        flex: 1, display: "none",
+        background: "linear-gradient(145deg, #0f1f5c 0%, #1a3a8f 50%, #0d3d62 100%)",
+        padding: "60px 52px", flexDirection: "column", justifyContent: "space-between",
+        position: "relative", overflow: "hidden",
+        ["@media(min-width:768px)"]: { display: "flex" }
+      }}
+        className="auth-left"
+      >
+        <style>{`.auth-left{display:flex!important}@media(max-width:767px){.auth-left{display:none!important}}`}</style>
+
+        {/* Bolle decorative */}
+        <div style={{ position: "absolute", top: -80, right: -80, width: 320, height: 320, borderRadius: "50%", background: "rgba(99,130,255,0.12)" }} />
+        <div style={{ position: "absolute", bottom: 60, left: -60, width: 240, height: 240, borderRadius: "50%", background: "rgba(6,214,160,0.08)" }} />
+        <div style={{ position: "absolute", top: "45%", right: "10%", width: 160, height: 160, borderRadius: "50%", background: "rgba(244,197,66,0.06)" }} />
+
+        {/* Logo */}
+        <div style={{ position: "relative" }}>
+          <TrackfolioLogo size={32} showText={true} textColor="#ffffff" />
         </div>
-        <div style={{ background: "#FFFFFF", border: "1px solid #E8EBF4", borderRadius: 12, padding: "30px 28px" }}>
-          <div style={{ display: "flex", background: "#EEF2FA", borderRadius: 6, padding: 3, marginBottom: 22 }}>
-            {[["login","Accedi"],["register","Registrati"]].map(([m, label]) => (
-              <button key={m} onClick={() => { setMode(m); setErr(""); }} style={{ flex: 1, background: mode === m ? "#E8EBF2" : "transparent", border: "none", color: mode === m ? "#0A0E1A" : "#444", fontFamily: "inherit", fontSize: 11, padding: "8px", borderRadius: 4, cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.1em", transition: "all 0.15s" }}>{label}</button>
+
+        {/* Copy centrale */}
+        <div style={{ position: "relative" }}>
+          <div style={{ fontSize: 11, color: "rgba(99,130,255,0.9)", fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 20 }}>
+            Il tuo portfolio, sotto controllo
+          </div>
+          <h2 style={{ fontSize: "clamp(26px, 3vw, 38px)", fontWeight: 800, color: "#ffffff", lineHeight: 1.15, letterSpacing: "-0.02em", marginBottom: 20 }}>
+            Investi con<br />
+            <span style={{ background: "linear-gradient(90deg, #6382ff, #06d6a0)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>
+              dati reali
+            </span>
+          </h2>
+          <p style={{ fontSize: 14, color: "rgba(255,255,255,0.55)", lineHeight: 1.75, marginBottom: 36, maxWidth: 340 }}>
+            Trackfolio aggrega prezzi live, storico e analisi in un'unica dashboard. Niente fogli Excel, niente confusione.
+          </p>
+
+          {/* Feature list */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
+            {features.map(({ icon, text }, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, animation: `floatIn 0.4s ease ${i * 0.07}s both` }}>
+                <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(255,255,255,0.08)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, flexShrink: 0 }}>
+                  {icon}
+                </div>
+                <span style={{ fontSize: 13, color: "rgba(255,255,255,0.72)", lineHeight: 1.4 }}>{text}</span>
+              </div>
             ))}
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {mode === "register" && <input placeholder="Nome" value={name} onChange={e => setName(e.target.value)} />}
-            <input placeholder="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} />
-            <input placeholder="Password" type="password" value={pw} onChange={e => setPw(e.target.value)} onKeyDown={e => e.key === "Enter" && submit()} />
-          </div>
-          {err && <div style={{ fontSize: 11, color: "#E87040", marginTop: 10 }}>{err}</div>}
-          <button onClick={submit} disabled={loading} style={{ marginTop: 18, width: "100%", background: "#1E4FD8", border: "none", color: "#FFFFFF", fontFamily: "inherit", fontSize: 12, fontWeight: 700, padding: "13px", borderRadius: 6, cursor: loading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: loading ? 0.7 : 1 }}>
-            {loading && <Spinner color="#F8F9FC" />}
-            {mode === "login" ? "Entra nel portafoglio" : "Crea Account"}
-          </button>
-          <div style={{ fontSize: 10, color: "#D8DCE8", textAlign: "center", marginTop: 12 }}>Benvenuto su Trackfolio</div>
         </div>
-        <div style={{ fontSize: 9, color: "#C8CDD8", textAlign: "center", marginTop: 18, lineHeight: 1.8 }}>
+
+        {/* Footer */}
+        <div style={{ position: "relative", fontSize: 10, color: "rgba(255,255,255,0.25)", lineHeight: 1.7 }}>
           ⚠️ Strumento a scopo puramente informativo.<br />Non costituisce consulenza finanziaria ai sensi MiFID II.
+        </div>
+      </div>
+
+      {/* ── DESTRA: Form ── */}
+      <div style={{
+        width: "100%", maxWidth: 480, background: "#ffffff",
+        display: "flex", flexDirection: "column", justifyContent: "center",
+        padding: "48px 40px", position: "relative",
+      }}>
+        <div style={{ animation: "fadeUp 0.4s ease", width: "100%", maxWidth: 360, margin: "0 auto" }}>
+
+          {/* Logo mobile */}
+          <div style={{ marginBottom: 32 }} className="auth-logo-mobile">
+            <style>{`.auth-logo-mobile{display:block}@media(min-width:768px){.auth-logo-mobile{display:none}}`}</style>
+            <TrackfolioLogo size={28} showText={true} textColor="#0A1628" />
+          </div>
+
+          {/* Titolo */}
+          <div style={{ marginBottom: 28 }}>
+            <h1 style={{ fontSize: 24, fontWeight: 800, color: "#0A1628", letterSpacing: "-0.02em", marginBottom: 6 }}>
+              {mode === "register" ? "Crea il tuo account" : "Bentornato"}
+            </h1>
+            <p style={{ fontSize: 13, color: "#8A9AB0" }}>
+              {mode === "register"
+                ? "Inizia a tracciare il tuo portafoglio gratuitamente."
+                : "Accedi per vedere il tuo portafoglio."}
+            </p>
+          </div>
+
+          {/* Tab switcher */}
+          <div style={{ display: "flex", background: "#F4F6FB", borderRadius: 10, padding: 4, marginBottom: 24, gap: 4 }}>
+            {[["register", "Registrati"], ["login", "Accedi"]].map(([m, label]) => (
+              <button key={m} onClick={() => { setMode(m); setErr(""); }} style={{
+                flex: 1, background: mode === m ? "#ffffff" : "transparent",
+                border: "none", color: mode === m ? "#0A1628" : "#8A9AB0",
+                fontFamily: "inherit", fontSize: 12, padding: "9px", borderRadius: 7,
+                cursor: "pointer", fontWeight: mode === m ? 600 : 400,
+                boxShadow: mode === m ? "0 1px 4px rgba(0,0,0,0.08)" : "none",
+                transition: "all 0.15s",
+              }}>{label}</button>
+            ))}
+          </div>
+
+          {/* Campi */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 6 }}>
+            {mode === "register" && (
+              <input className="auth-input" placeholder="Il tuo nome" value={name} onChange={e => setName(e.target.value)} />
+            )}
+            <input className="auth-input" placeholder="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} />
+            <input className="auth-input" placeholder="Password" type="password" value={pw} onChange={e => setPw(e.target.value)} onKeyDown={e => e.key === "Enter" && submit()} />
+          </div>
+
+          {err && (
+            <div style={{ fontSize: 11, color: "#ef4444", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 6, padding: "8px 12px", marginTop: 8, marginBottom: 4 }}>
+              {err}
+            </div>
+          )}
+
+          {/* CTA */}
+          <button onClick={submit} disabled={loading} style={{
+            marginTop: 18, width: "100%",
+            background: "linear-gradient(135deg, #4361ee, #3a0ca3)",
+            border: "none", color: "#fff", fontFamily: "inherit",
+            fontSize: 14, fontWeight: 700, padding: "14px", borderRadius: 10,
+            cursor: loading ? "not-allowed" : "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+            opacity: loading ? 0.75 : 1,
+            boxShadow: "0 4px 16px rgba(67,97,238,0.3)",
+            transition: "opacity 0.15s",
+          }}>
+            {loading && <Spinner color="#fff" />}
+            {mode === "register" ? "Crea account gratuito →" : "Entra nel portafoglio →"}
+          </button>
+
+          {/* Switch link */}
+          <div style={{ textAlign: "center", marginTop: 20, fontSize: 12, color: "#8A9AB0" }}>
+            {mode === "register" ? "Hai già un account? " : "Non hai un account? "}
+            <button onClick={() => { setMode(mode === "register" ? "login" : "register"); setErr(""); }} style={{ background: "none", border: "none", color: "#4361ee", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", fontSize: 12, padding: 0 }}>
+              {mode === "register" ? "Accedi" : "Registrati"}
+            </button>
+          </div>
+
+          {/* Stats sociali */}
+          {mode === "register" && (
+            <div style={{ display: "flex", gap: 20, justifyContent: "center", marginTop: 28, paddingTop: 24, borderTop: "1px solid #F0F2F7" }}>
+              {[["Gratis", "Per sempre"], ["100%", "Privacy"], ["Live", "Prezzi reali"]].map(([v, l]) => (
+                <div key={l} style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: "#0A1628", letterSpacing: "-0.01em" }}>{v}</div>
+                  <div style={{ fontSize: 10, color: "#A0AABF", marginTop: 2 }}>{l}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
