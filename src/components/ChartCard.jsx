@@ -60,21 +60,6 @@ export function ChartCard({ stocks, eurRate, onPeriodReturns }) {
   return (
     <div className="card" style={{ marginBottom: 16, padding: "20px 20px 12px" }}>
 
-      {/* ── Valore + % header stile Getquin ── */}
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 28, fontWeight: 700, color: "#0A1628", letterSpacing: "-0.5px" }}>
-          ${fmt(lastValore)}
-        </div>
-        <div style={{ fontSize: 12, color: lineColor, marginTop: 2, display: "flex", alignItems: "center", gap: 6 }}>
-          <span>{isPositive ? "↑" : "↓"} {Math.abs(lastPct).toFixed(2)}%</span>
-          <span style={{ color: "#5A6A7E" }}>
-            ({isPositive ? "+" : ""}${fmt(lastValore - lastCosto)})
-          </span>
-          <span style={{ color: "#D8DCE8", margin: "0 2px" }}>·</span>
-          <span style={{ color: "#5A6A7E", fontSize: 11 }}>{period === "Inizio" ? "da inizio" : `ultimi ${period}`}</span>
-        </div>
-      </div>
-
       {/* ── Controls ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
         <div style={{ display: "flex", gap: 2 }}>
@@ -103,6 +88,20 @@ export function ChartCard({ stocks, eurRate, onPeriodReturns }) {
           </button>
         </div>
       </div>
+
+      {/* ── Variazione periodo corrente ── */}
+      {(() => {
+        const varMap = { "1M": periodReturns?.day != null ? periodReturns?.month : null, "3M": periodReturns?.threeMonth, "1A": periodReturns?.year, "Inizio": lastPct, "6M": null };
+        const v = period === "Inizio" ? lastPct : (period === "1M" ? periodReturns?.month : period === "3M" ? periodReturns?.threeMonth : period === "1A" ? periodReturns?.year : null);
+        if (v == null) return null;
+        const c = v >= 0 ? "#5EC98A" : "#E87040";
+        return (
+          <div style={{ fontSize: 11, color: c, marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontWeight: 600 }}>{v >= 0 ? "+" : ""}{v.toFixed(2)}%</span>
+            <span style={{ color: "#5A6A7E" }}>{period === "Inizio" ? "da inizio" : `ultimi ${period}`}</span>
+          </div>
+        );
+      })()}
 
       {/* ── Grafico ── */}
       {loading ? (
