@@ -174,45 +174,49 @@ export function useChart(stocks, eurRate, period = "1A") {
     }));
   }, [rawSeries, benchmark, period]);
 
-  // ── Rendimenti periodali esatti (equivalente pandas resample("M").last()) ────
+  // ── Rendimenti periodali da valore assoluto (non normalizzato) ──────────────
+  // Usa rawSeries.valore (USD) — non tocca pct che è normalizzata per il grafico
   const periodReturns = useMemo(() => {
     if (rawSeries.length < 2) return { day: null, month: null, threeMonth: null, year: null };
 
-    const lastPoint = rawSeries[rawSeries.length - 1];
-    const today = lastPoint.date;
-    const d = new Date(today + "T12:00:00");
+    const last = rawSeries[rawSeries.length - 1];
+    const d    = new Date(last.date + "T12:00:00");
 
-    // Valore più recente disponibile <= targetISO
-    function valueAt(targetISO) {
-      let last = null;
+    // Cerca il punto con data <= targetISO più vicino
+    function pointAt(targetISO) {
+      let found = null;
       for (const p of rawSeries) {
-        if (p.date <= targetISO) last = p;
+        if (p.date <= targetISO) found = p;
         else break;
       }
-      return last;
+      return found;
     }
 
-    function pctChange(fromPoint) {
-      if (!fromPoint || !fromPoint.valore) return null;
-      return ((lastPoint.valore - fromPoint.valore) / fromPoint.valore) * 100;
+    function pct(from) {
+      if (!from?.valore || !last.valore) return null;
+      return parseFloat(((last.valore - from.valore) / from.valore * 100).toFixed(2));
     }
 
-    // 1G — valore del giorno precedente
-    const ago1d = new Date(d - 1 * 86400000).toISOString().slice(0, 10);
+    // 1G: giorno lavorativo precedente (cerca indietro fino a 5 giorni)
+    let prev1d = null;
+    for (let i = rawSeries.length - 2; i >= 0; i--) {
+      prev1d = rawSeries[i];
+      break;
+    }
 
-    // 1M — ultimo valore del mese precedente (resample("M").last())
-    const firstOfThisMonth = new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
-    const prevMonthEnd = rawSeries.filter(p => p.date < firstOfThisMonth).slice(-1)[0];
+    // 1M: punto più vicino a 30 giorni fa
+    const ago1m = new Date(d - 30 * 86400000).toISOString().slice(0, 10);
+    const prevMonthEnd = pointAt(ago1m);
 
     // 3M e 1A
     const ago3m = new Date(d - 91  * 86400000).toISOString().slice(0, 10);
     const ago1y = new Date(d - 365 * 86400000).toISOString().slice(0, 10);
 
     return {
-      day:        pctChange(valueAt(ago1d)),
-      month:      pctChange(prevMonthEnd),
-      threeMonth: pctChange(valueAt(ago3m)),
-      year:       pctChange(valueAt(ago1y)),
+      day:        pct(prev1d),
+      month:      pct(prevMonthEnd),
+      threeMonth: pct(pointAt(ago3m)),
+      year:       pct(pointAt(ago1y)),
     };
   }, [rawSeries]);
 
