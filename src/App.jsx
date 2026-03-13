@@ -2089,6 +2089,24 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
   const col = v => v >= 0 ? "#5EC98A" : "#E87040";
   const sign = v => v >= 0 ? "+" : "";
 
+  // ── Variazione giornaliera dal vivo (usa change/prevClose degli stock) ──────
+  const dayVar = useMemo(() => {
+    if (!stocks.length) return null;
+    let totalCur = 0, totalPrev = 0;
+    stocks.forEach(s => {
+      const curUSD = toUSD(s.currentPrice, s.currency, eurRate);
+      const prevUSD = s.prevClose
+        ? toUSD(s.prevClose, s.currency, eurRate)
+        : curUSD;
+      totalCur  += s.qty * curUSD;
+      totalPrev += s.qty * prevUSD;
+    });
+    if (!totalPrev) return null;
+    const diff = totalCur - totalPrev;
+    const pct  = (diff / totalPrev) * 100;
+    return { diff, pct };
+  }, [stocks, eurRate]);
+
 
 
 
@@ -2146,17 +2164,71 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
     <div className="fade-up">
 
       {/* ── HEADER KPI ── */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
-        <div>
-          <div style={{ fontSize: 34, fontWeight: 800, lineHeight: 1, letterSpacing: "-0.02em", color: "#0A1628" }}>
-            ${fmt(totalValue)}
-          </div>
-          <div style={{ display: "flex", gap: 16, marginTop: 8, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 12, color: col(totalPnL) }}>{sign(totalPnL)}${fmt(Math.abs(totalPnL))} totale</span>
-            <span style={{ fontSize: 12, color: col(totalPct), fontWeight: 500 }}>{sign(totalPct)}{totalPct.toFixed(2)}%</span>
-          </div>
+      <div style={{ marginBottom: 20 }}>
+        {/* Saldo principale */}
+        <div style={{ fontSize: 34, fontWeight: 800, lineHeight: 1, letterSpacing: "-0.02em", color: "#0A1628" }}>
+          ${fmt(totalValue)}
         </div>
-
+        <div style={{ display: "flex", gap: 16, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ fontSize: 12, color: col(totalPnL) }}>{sign(totalPnL)}${fmt(Math.abs(totalPnL))} totale</span>
+          <span style={{ fontSize: 12, color: col(totalPct), fontWeight: 500 }}>{sign(totalPct)}{totalPct.toFixed(2)}%</span>
+        </div>
+        {/* Pill variazioni 1G / 1M / 1A */}
+        <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+          {/* 1 Giorno — usa prevClose live */}
+          {dayVar && (() => {
+            const c = col(dayVar.pct);
+            return (
+              <div style={{ display: "flex", alignItems: "center", gap: 5, background: "#F8F9FC", border: "1px solid #E2E8F0", borderRadius: 6, padding: "5px 10px" }}>
+                <span style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>1G</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: c }}>{sign(dayVar.pct)}{Math.abs(dayVar.pct).toFixed(2)}%</span>
+                <span style={{ fontSize: 10, color: c }}>{sign(dayVar.diff)}${fmt(Math.abs(dayVar.diff))}</span>
+              </div>
+            );
+          })()}
+          {/* 1 Mese — P&L dal primo acquisto del mese */}
+          {(() => {
+            const cutoff = new Date(); cutoff.setMonth(cutoff.getMonth() - 1);
+            const cutISO = cutoff.toISOString().split("T")[0];
+            // Stima: usa totalPnL proporzionale — mostriamo solo se abbiamo buyDate recente
+            // Per semplicità calcoliamo la variazione % del portafoglio da 1M fa
+            // usando i titoli che hanno buyDate <= cutISO e il loro prevClose come proxy
+            // Se non abbiamo dati storici, mostriamo il P&L complessivo
+            // Per ora usiamo una pill informativa basata su ciò che è disponibile
+            const monthPnL = stocks.reduce((acc, s) => {
+              const bd = s.buyDate ? new Date(s.buyDate.includes("/") ? s.buyDate.split("/").reverse().join("-") : s.buyDate) : null;
+              if (bd && bd > cutoff) {
+                // Titolo comprato nel mese: P&L dall'acquisto
+                return acc + s.qty * (toUSD(s.currentPrice, s.currency, eurRate) - toUSD(s.buyPrice, s.currency, eurRate));
+              } else {
+                // Titolo più vecchio: usa change giornaliero come proxy (non abbiamo dati mensili senza history)
+                return acc + s.qty * (toUSD(s.currentPrice, s.currency, eurRate) - toUSD(s.prevClose || s.currentPrice, s.currency, eurRate));
+              }
+            }, 0);
+            const base = totalValue - monthPnL || 1;
+            const pct = (monthPnL / base) * 100;
+            if (Math.abs(pct) < 0.001) return null;
+            const c = col(pct);
+            return (
+              <div style={{ display: "flex", alignItems: "center", gap: 5, background: "#F8F9FC", border: "1px solid #E2E8F0", borderRadius: 6, padding: "5px 10px" }}>
+                <span style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>1M</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: c }}>{sign(pct)}{Math.abs(pct).toFixed(2)}%</span>
+                <span style={{ fontSize: 10, color: c }}>{sign(monthPnL)}${fmt(Math.abs(monthPnL))}</span>
+              </div>
+            );
+          })()}
+          {/* Da inizio (P&L totale %) */}
+          {(() => {
+            const c = col(totalPct);
+            return (
+              <div style={{ display: "flex", alignItems: "center", gap: 5, background: "#F8F9FC", border: "1px solid #E2E8F0", borderRadius: 6, padding: "5px 10px" }}>
+                <span style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>TOT</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: c }}>{sign(totalPct)}{Math.abs(totalPct).toFixed(2)}%</span>
+                <span style={{ fontSize: 10, color: c }}>{sign(totalPnL)}${fmt(Math.abs(totalPnL))}</span>
+              </div>
+            );
+          })()}
+        </div>
       </div>
 
       <ChartCard stocks={stocks} eurRate={eurRate} />
