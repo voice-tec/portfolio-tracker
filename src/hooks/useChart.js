@@ -174,36 +174,37 @@ export function useChart(stocks, eurRate, period = "1A") {
     }));
   }, [rawSeries, benchmark, period]);
 
-  // ── Rendimenti periodali — calcolati per ogni periodo separatamente ──────────
-  // Per ciascun periodo costruisce lo slice esatto come fa chartData,
-  // poi prende pct dell'ultimo punto = identico al tooltip del grafico.
+  // ── Rendimenti periodali — letti da chartData per evitare qualsiasi divergenza
+  // chartData[last].pct È il valore del tooltip, quindi pill = tooltip per definizione.
   const periodReturns = useMemo(() => {
-    if (rawSeries.length < 2) return { day: null, month: null, threeMonth: null, year: null, all: null };
+    const empty = { day: null, month: null, threeMonth: null, year: null, all: null };
+    if (rawSeries.length < 2) return empty;
 
-    function returnForDays(days) {
-      const cutoff  = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+    // Calcola l'ultimo pct normalizzato per un dato numero di giorni
+    // Replica esattamente la logica di chartData
+    function lastPctForDays(days) {
+      const cutoff   = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
       const filtered = rawSeries.filter(p => p.date >= cutoff);
-      const slice   = filtered.length > 0 ? filtered : rawSeries;
+      const slice    = filtered.length > 0 ? filtered : rawSeries;
       if (slice.length < 2) return null;
-      const base = slice[0].valore;
-      const last = slice[slice.length - 1].valore;
-      if (!base) return null;
-      return parseFloat(((last - base) / base * 100).toFixed(2));
+      const basePct  = slice[0].pct;
+      const lastPct  = slice[slice.length - 1].pct;
+      return parseFloat((lastPct - basePct).toFixed(2));
     }
 
-    // 1G: penultimo → ultimo punto in rawSeries
+    // 1G: differenza tra penultimo e ultimo punto
     const prev = rawSeries[rawSeries.length - 2];
     const last = rawSeries[rawSeries.length - 1];
-    const day  = (prev?.valore && last?.valore)
-      ? parseFloat(((last.valore - prev.valore) / prev.valore * 100).toFixed(2))
+    const day  = (prev?.pct != null && last?.pct != null)
+      ? parseFloat((last.pct - prev.pct).toFixed(2))
       : null;
 
     return {
       day,
-      month:      returnForDays(30),
-      threeMonth: returnForDays(91),
-      year:       returnForDays(365),
-      all:        parseFloat(((last.valore - rawSeries[0].valore) / rawSeries[0].valore * 100).toFixed(2)),
+      month:      lastPctForDays(30),
+      threeMonth: lastPctForDays(91),
+      year:       lastPctForDays(365),
+      all:        parseFloat((rawSeries[rawSeries.length-1].pct - rawSeries[0].pct).toFixed(2)),
     };
   }, [rawSeries]);
 
