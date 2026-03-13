@@ -2083,63 +2083,156 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
   totalPnL, totalPct, sectorData, portfolioHistory, alerts, setSelectedId, setEditId,
   handleRemove, setShowForm, marketOpen }) {
 
-  const [periodReturns, setPeriodReturns] = useState(null);
+  const [variations, setVariations] = useState({ day: null, month: null, year: null });
+  const [varLoading, setVarLoading] = useState(false);
 
   const col = v => v >= 0 ? "#5EC98A" : "#E87040";
   const sign = v => v >= 0 ? "+" : "";
-
-  const dayVar   = periodReturns?.day   ?? null;
-  const monthVar = periodReturns?.month ?? null;
 
 
 
 
 
   if (stocks.length === 0) return (
-    <div className="fade-up" style={{ maxWidth: 900, margin: "0 auto", padding: "48px 20px" }}>
-      {/* Welcome hero */}
-      <div style={{ textAlign: "center", marginBottom: 52 }}>
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#EEF4FF", border: "1px solid #C7D8FF", borderRadius: 20, padding: "6px 16px", fontSize: 11, color: "#1E4FD8", fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 24 }}>
-          ✦ Benvenuto su Trackfolio
-        </div>
-        <div style={{ fontSize: "clamp(22px, 6vw, 38px)", fontWeight: 700, color: "#0A1628", lineHeight: 1.2, marginBottom: 16, letterSpacing: "-0.01em" }}>
-          Il tuo portafoglio,<br/><span style={{ color: "#1E4FD8" }}>sempre sotto controllo</span>
-        </div>
-        <div style={{ fontSize: 15, color: "#5A6A7E", maxWidth: 480, margin: "0 auto 32px", lineHeight: 1.7 }}>
-          Traccia i tuoi investimenti, analizza le performance e prendi decisioni più consapevoli.
-        </div>
-        <button className="add-btn" style={{ margin: "0 auto", fontSize: 13, padding: "12px 28px" }} onClick={() => setShowWizard(true)}>
-          + Aggiungi il primo titolo
-        </button>
+    <div style={{ minHeight: "80vh", background: "linear-gradient(135deg, #f0f4ff 0%, #fafbff 40%, #f0faf5 100%)", margin: "-20px", padding: "0 20px 60px", overflow: "hidden", position: "relative" }}>
+
+      {/* Sfondo decorativo */}
+      <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden" }}>
+        <div style={{ position: "absolute", top: -120, right: -80, width: 500, height: 500, borderRadius: "50%", background: "radial-gradient(circle, rgba(99,130,255,0.10) 0%, transparent 70%)" }} />
+        <div style={{ position: "absolute", bottom: -60, left: -100, width: 400, height: 400, borderRadius: "50%", background: "radial-gradient(circle, rgba(16,185,129,0.08) 0%, transparent 70%)" }} />
+        <div style={{ position: "absolute", top: "30%", left: "20%", width: 300, height: 300, borderRadius: "50%", background: "radial-gradient(circle, rgba(244,197,66,0.06) 0%, transparent 70%)" }} />
       </div>
 
-      {/* Feature highlights */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 40 }}>
-        {[
-          { icon: "📈", title: "Grafico performance", desc: "Visualizza il rendimento % del tuo portafoglio nel tempo, con confronto S&P 500.", color: "#EEF4FF", accent: "#1E4FD8" },
-          { icon: "🎯", title: "Analisi settori", desc: "Scopri come è distribuito il tuo portafoglio per settore e ricevi suggerimenti di bilanciamento.", color: "#FFF8EE", accent: "#F4A020" },
-          { icon: "🔔", title: "Alert prezzi", desc: "Imposta soglie di prezzo e ricevi notifiche quando un titolo supera i tuoi livelli target.", color: "#EEFAF3", accent: "#16A34A" },
-          { icon: "🔮", title: "Simulazioni & previsioni", desc: "Simula scenari macroeconomici e proiezioni future per preparare la tua strategia.", color: "#F5EEFF", accent: "#7C3AED" },
-        ].map(({ icon, title, desc, color, accent }) => (
-          <div key={title} style={{ background: color, border: `1px solid ${accent}22`, borderRadius: 12, padding: "20px 18px" }}>
-            <div style={{ fontSize: 28, marginBottom: 10 }}>{icon}</div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#0A1628", marginBottom: 6 }}>{title}</div>
-            <div style={{ fontSize: 12, color: "#5A6A7E", lineHeight: 1.6 }}>{desc}</div>
-          </div>
-        ))}
-      </div>
+      <div style={{ maxWidth: 960, margin: "0 auto", position: "relative" }}>
 
-      {/* How to start */}
-      <div style={{ background: "#F8FAFF", border: "1px solid #D8E4F8", borderRadius: 12, padding: "20px 24px", display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
-        <div style={{ flex: 1, minWidth: 200 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "#0A1628", marginBottom: 4 }}>Come iniziare</div>
-          <div style={{ fontSize: 12, color: "#5A6A7E", lineHeight: 1.7 }}>
-            Clicca <strong>+ Aggiungi</strong> in alto a destra, cerca il ticker del titolo (es. AAPL, QQQ, MSFT), inserisci quantità e prezzo di acquisto. Il grafico si aggiornerà automaticamente.
+        {/* ── HERO ── */}
+        <div style={{ textAlign: "center", padding: "72px 20px 56px" }}>
+
+          {/* Badge */}
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(99,130,255,0.08)", border: "1px solid rgba(99,130,255,0.2)", borderRadius: 100, padding: "5px 14px", fontSize: 11, color: "#4361ee", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 28 }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#4361ee", display: "inline-block" }} />
+            Portfolio Tracker
+          </div>
+
+          {/* Titolo */}
+          <h1 style={{ fontSize: "clamp(32px, 6vw, 58px)", fontWeight: 800, color: "#0A1628", lineHeight: 1.1, letterSpacing: "-0.03em", margin: "0 0 20px" }}>
+            Investi con
+            <span style={{ display: "block", background: "linear-gradient(135deg, #4361ee, #06d6a0)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>
+              chiarezza
+            </span>
+          </h1>
+
+          <p style={{ fontSize: 17, color: "#5A6A7E", maxWidth: 440, margin: "0 auto 36px", lineHeight: 1.7, fontWeight: 400 }}>
+            Traccia ogni posizione, analizza le performance e prendi decisioni più consapevoli.
+          </p>
+
+          <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+            <button onClick={() => setShowWizard(true)} style={{
+              background: "linear-gradient(135deg, #4361ee, #3a0ca3)", color: "#fff",
+              border: "none", borderRadius: 10, padding: "13px 28px", fontSize: 14,
+              fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+              boxShadow: "0 4px 20px rgba(67,97,238,0.35)",
+            }}>
+              + Aggiungi il primo titolo
+            </button>
+            <button onClick={() => setShowWizard(true)} style={{
+              background: "rgba(255,255,255,0.8)", color: "#0A1628",
+              border: "1px solid rgba(0,0,0,0.08)", borderRadius: 10, padding: "13px 24px",
+              fontSize: 14, fontWeight: 500, cursor: "pointer", fontFamily: "inherit",
+              backdropFilter: "blur(8px)",
+            }}>
+              Scopri le funzionalità →
+            </button>
+          </div>
+
+          {/* Ticker live finti */}
+          <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap", marginTop: 36 }}>
+            {[
+              { t: "AAPL",  p: "$213.49", c: "+1.23%", up: true  },
+              { t: "MSFT",  p: "$415.32", c: "+0.87%", up: true  },
+              { t: "NVDA",  p: "$875.20", c: "+2.41%", up: true  },
+              { t: "GOOGL", p: "$175.08", c: "-0.34%", up: false },
+              { t: "SPY",   p: "$523.11", c: "+0.61%", up: true  },
+              { t: "QQQ",   p: "$448.90", c: "+0.95%", up: true  },
+            ].map(({ t, p, c, up }) => (
+              <div key={t} style={{
+                background: "rgba(255,255,255,0.75)", backdropFilter: "blur(8px)",
+                border: "1px solid rgba(0,0,0,0.06)", borderRadius: 8,
+                padding: "7px 14px", display: "flex", alignItems: "center", gap: 10,
+              }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: "#0A1628" }}>{t}</span>
+                <span style={{ fontSize: 11, color: "#5A6A7E" }}>{p}</span>
+                <span style={{ fontSize: 11, fontWeight: 600, color: up ? "#10b981" : "#ef4444" }}>{c}</span>
+              </div>
+            ))}
           </div>
         </div>
-        <button className="add-btn" style={{ flexShrink: 0, fontSize: 12, padding: "10px 22px" }} onClick={() => setShowWizard(true)}>
-          Inizia ora →
-        </button>
+
+        {/* ── GRAFICO FINTO ── */}
+        <div style={{ background: "rgba(255,255,255,0.75)", backdropFilter: "blur(12px)", border: "1px solid rgba(0,0,0,0.07)", borderRadius: 16, padding: "24px 24px 16px", marginBottom: 32, boxShadow: "0 4px 32px rgba(0,0,0,0.06)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+            <div>
+              <div style={{ fontSize: 11, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>Valore portafoglio</div>
+              <div style={{ fontSize: 28, fontWeight: 800, color: "#0A1628", letterSpacing: "-0.02em" }}>$24.831,50</div>
+              <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "rgba(16,185,129,0.1)", color: "#10b981", border: "1px solid rgba(16,185,129,0.2)" }}>1G +1.23%</span>
+                <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "rgba(16,185,129,0.1)", color: "#10b981", border: "1px solid rgba(16,185,129,0.2)" }}>1M +4.87%</span>
+                <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "rgba(16,185,129,0.1)", color: "#10b981", border: "1px solid rgba(16,185,129,0.2)" }}>TOT +18.3%</span>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 4 }}>
+              {["1M","3M","6M","1A","Inizio"].map(p => (
+                <div key={p} style={{ fontSize: 10, padding: "3px 9px", borderRadius: 4, background: p === "1A" ? "#E8EBF4" : "none", color: p === "1A" ? "#0A1628" : "#8A9AB0", fontWeight: p === "1A" ? 600 : 400 }}>{p}</div>
+              ))}
+            </div>
+          </div>
+
+          {/* SVG grafico finto */}
+          <svg viewBox="0 0 800 140" style={{ width: "100%", height: 140, display: "block" }} preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="wGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#4361ee" stopOpacity="0.15" />
+                <stop offset="100%" stopColor="#4361ee" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+            <path d="M0,100 C40,95 60,110 100,90 C140,70 160,80 200,60 C240,40 260,55 300,45 C340,35 370,50 410,40 C450,30 470,45 510,35 C550,25 580,38 620,28 C660,18 700,30 740,20 C760,15 780,18 800,15 L800,140 L0,140 Z" fill="url(#wGrad)" />
+            <path d="M0,100 C40,95 60,110 100,90 C140,70 160,80 200,60 C240,40 260,55 300,45 C340,35 370,50 410,40 C450,30 470,45 510,35 C550,25 580,38 620,28 C660,18 700,30 740,20 C760,15 780,18 800,15" fill="none" stroke="#4361ee" strokeWidth="2" />
+            <line x1="0" y1="100" x2="800" y2="100" stroke="#E8EBF4" strokeWidth="1" strokeDasharray="4 4" />
+          </svg>
+
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
+            {["Mar","Apr","Mag","Giu","Lug","Ago","Set","Ott","Nov","Dic","Gen","Feb"].map(m => (
+              <span key={m} style={{ fontSize: 9, color: "#C0C8D8" }}>{m}</span>
+            ))}
+          </div>
+        </div>
+
+        {/* ── FEATURE CARDS ── */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 14 }}>
+          {[
+            { icon: "📊", title: "Analisi settori", desc: "ETF scomposti per settore con alert concentrazione automatici.", grad: "linear-gradient(135deg, #eef2ff, #e0e7ff)", border: "rgba(99,102,241,0.15)", dot: "#6366f1" },
+            { icon: "🔔", title: "Alert prezzi", desc: "Imposta target e stop-loss. Ricevi notifiche in tempo reale.", grad: "linear-gradient(135deg, #ecfdf5, #d1fae5)", border: "rgba(16,185,129,0.15)", dot: "#10b981" },
+            { icon: "🔮", title: "Simulazioni", desc: "Scenari macro come Covid crash, inflazione alta, bull run.", grad: "linear-gradient(135deg, #fdf4ff, #f3e8ff)", border: "rgba(168,85,247,0.15)", dot: "#a855f7" },
+            { icon: "📰", title: "News & Analisti", desc: "Notizie live e rating analisti per ogni titolo in portafoglio.", grad: "linear-gradient(135deg, #fff7ed, #ffedd5)", border: "rgba(249,115,22,0.15)", dot: "#f97316" },
+          ].map(({ icon, title, desc, grad, border, dot }) => (
+            <div key={title} style={{
+              background: grad, border: `1px solid ${border}`,
+              borderRadius: 14, padding: "22px 20px",
+              transition: "transform 0.18s, box-shadow 0.18s",
+            }}
+              onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-3px)"; e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,0,0,0.08)"; }}
+              onMouseLeave={e => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "none"; }}
+            >
+              <div style={{ fontSize: 26, marginBottom: 12 }}>{icon}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#0A1628", marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ width: 5, height: 5, borderRadius: "50%", background: dot, flexShrink: 0, display: "inline-block" }} />
+                {title}
+              </div>
+              <div style={{ fontSize: 12, color: "#5A6A7E", lineHeight: 1.65 }}>{desc}</div>
+            </div>
+          ))}
+        </div>
+
       </div>
     </div>
   );
@@ -2153,28 +2246,15 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
           <div style={{ fontSize: 34, fontWeight: 800, lineHeight: 1, letterSpacing: "-0.02em", color: "#0A1628" }}>
             ${fmt(totalValue)}
           </div>
-          <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
-            {dayVar !== null && (
-              <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 20, background: col(dayVar) + "18", color: col(dayVar), border: `1px solid ${col(dayVar)}33` }}>
-                1G {sign(dayVar)}{dayVar.toFixed(2)}%
-              </span>
-            )}
-            {monthVar !== null && (
-              <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 20, background: col(monthVar) + "18", color: col(monthVar), border: `1px solid ${col(monthVar)}33` }}>
-                1M {sign(monthVar)}{monthVar.toFixed(2)}%
-              </span>
-            )}
-            <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 20, background: col(totalPct) + "18", color: col(totalPct), border: `1px solid ${col(totalPct)}33` }}>
-              TOT {sign(totalPct)}{totalPct.toFixed(2)}%
-            </span>
-            <span style={{ fontSize: 12, color: "#5A6A7E", marginLeft: 4 }}>
-              {sign(totalPnL)}${fmt(Math.abs(totalPnL))}
-            </span>
+          <div style={{ display: "flex", gap: 16, marginTop: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 12, color: col(totalPnL) }}>{sign(totalPnL)}${fmt(Math.abs(totalPnL))} totale</span>
+            <span style={{ fontSize: 12, color: col(totalPct), fontWeight: 500 }}>{sign(totalPct)}{totalPct.toFixed(2)}%</span>
           </div>
         </div>
+
       </div>
 
-      <ChartCard stocks={stocks} eurRate={eurRate} onPeriodReturns={setPeriodReturns} />
+      <ChartCard stocks={stocks} eurRate={eurRate} />
 
       {/* ── ALLOCAZIONE (torta stile GetQuin) ── */}
       <AllocationCard stocks={stocks} eurRate={eurRate} />
