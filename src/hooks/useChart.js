@@ -151,6 +151,15 @@ export function useChart(stocks, eurRate) {
       const idx    = portfolioSeries.findIndex(p => p.date >= cutoff);
       if (idx > 0) {
         slice = portfolioSeries.slice(idx - 1);
+        // Se il punto base precede il primo acquisto reale, usa totalInvested
+        // (es: 1A quando il portafoglio esiste da meno di un anno)
+        const earliestBuy = stocks
+          .map(s => { const bd = parseBuyDate(s.buyDate); return bd ? bd.toISOString().slice(0,10) : null; })
+          .filter(Boolean)
+          .sort()[0];
+        if (earliestBuy && slice[0].date < earliestBuy) {
+          baseValore = totalInvested > 0 ? totalInvested : slice[0].valore;
+        }
       } else {
         slice = portfolioSeries;
       }
