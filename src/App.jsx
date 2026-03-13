@@ -2106,7 +2106,7 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
         <div style={{ fontSize: 15, color: "#5A6A7E", maxWidth: 480, margin: "0 auto 32px", lineHeight: 1.7 }}>
           Traccia i tuoi investimenti, analizza le performance e prendi decisioni più consapevoli.
         </div>
-        <button className="add-btn" style={{ margin: "0 auto", fontSize: 13, padding: "12px 28px" }} onClick={() => setShowForm(true)}>
+        <button className="add-btn" style={{ margin: "0 auto", fontSize: 13, padding: "12px 28px" }} onClick={() => setShowWizard(true)}>
           + Aggiungi il primo titolo
         </button>
       </div>
@@ -2135,7 +2135,7 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
             Clicca <strong>+ Aggiungi</strong> in alto a destra, cerca il ticker del titolo (es. AAPL, QQQ, MSFT), inserisci quantità e prezzo di acquisto. Il grafico si aggiornerà automaticamente.
           </div>
         </div>
-        <button className="add-btn" style={{ flexShrink: 0, fontSize: 12, padding: "10px 22px" }} onClick={() => setShowForm(true)}>
+        <button className="add-btn" style={{ flexShrink: 0, fontSize: 12, padding: "10px 22px" }} onClick={() => setShowWizard(true)}>
           Inizia ora →
         </button>
       </div>
@@ -2156,28 +2156,7 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
             <span style={{ fontSize: 12, color: col(totalPct), fontWeight: 500 }}>{sign(totalPct)}{totalPct.toFixed(2)}%</span>
           </div>
         </div>
-        {/* Variazioni */}
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          {[
-            { l: "Oggi", v: variations.day },
-            { l: "1 mese", v: variations.month },
-            { l: "1 anno", v: variations.year },
-          ].map(({ l, v }) => (
-            <div key={l} style={{ background: "#FFFFFF", border: "1px solid #E8EBF4", borderRadius: 6, padding: "10px 14px", minWidth: 90, textAlign: "center" }}>
-              <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 5 }}>{l}</div>
-              {varLoading ? (
-                <div style={{ fontSize: 11, color: "#333" }}>…</div>
-              ) : !v || isNaN(v.pct) || isNaN(v.pnl) ? (
-                <div style={{ fontSize: 11, color: "#333" }}>—</div>
-              ) : (
-                <>
-                  <div style={{ fontSize: 13, fontWeight: 500, color: col(v.pct) }}>{sign(v.pct)}{v.pct.toFixed(2)}%</div>
-                  <div style={{ fontSize: 10, color: col(v.pnl) }}>{sign(v.pnl)}${fmt(Math.abs(v.pnl))}</div>
-                </>
-              )}
-            </div>
-          ))}
-        </div>
+
       </div>
 
       <ChartCard stocks={stocks} eurRate={eurRate} />
@@ -2189,11 +2168,11 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
       <div className="card">
         <div style={{ fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 14 }}>Posizioni</div>
         <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, minWidth: 620 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 640 }}>
             <thead>
               <tr style={{ borderBottom: "1px solid #E8EBF4" }}>
                 {["Ticker","Q.tà","Acquisto","Attuale","Val. EUR","Valore","P&L","P&L%","Target","Stop",""].map(h => (
-                  <th key={h} style={{ textAlign: "left", padding: "0 8px 10px 0", fontSize: 8, color: "#444", letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 400 }}>{h}</th>
+                  <th key={h} style={{ textAlign: "left", padding: "0 8px 12px 0", fontSize: 9, color: "#8A9AB0", letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 600 }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -2212,34 +2191,34 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
                     onClick={() => setSelectedId(s.id)}
                     onMouseEnter={e => e.currentTarget.style.background = "#FFFFFF"}
                     onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                    <td style={{ padding: "10px 8px 10px 0" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <td style={{ padding: "14px 12px 14px 0" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                         <img
                           src={`https://assets.parqet.com/logos/symbol/${s.ticker}?format=svg`}
                           onError={e => { e.target.style.display="none"; e.target.nextSibling.style.display="flex"; }}
-                          style={{ width: 28, height: 28, borderRadius: 6, border: "1px solid #E8EBF4", objectFit: "contain", background: "#fff", padding: 2 }}
+                          style={{ width: 36, height: 36, borderRadius: 8, border: "1px solid #E8EBF4", objectFit: "contain", background: "#fff", padding: 3 }}
                         />
-                        <div style={{ width: 28, height: 28, borderRadius: 6, border: "1px solid #E8EBF4", background: "#F0F4FA", display: "none", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, color: "#1E4FD8" }}>
+                        <div style={{ width: 36, height: 36, borderRadius: 8, border: "1px solid #E8EBF4", background: "#F0F4FA", display: "none", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#1E4FD8" }}>
                           {s.ticker.slice(0,2)}
                         </div>
                         <div>
                           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                            <span style={{ fontWeight: 700, fontSize: 13 }}>{s.ticker}</span>
+                            <span style={{ fontWeight: 800, fontSize: 15 }}>{s.ticker}</span>
                             {s.priceReal && <MarketBadge state={s.marketState || "CLOSED"} size={7}/>}
                             {currLabel && <span style={{ fontSize: 7, color: "#7EB8F7", background: "#E8EBF2", padding: "1px 4px", borderRadius: 2 }}>{currLabel}</span>}
                             {alerts[s.id] && <span style={{ fontSize: 9 }}>🔔</span>}
                           </div>
-                          <div style={{ fontSize: 10, color: "#8A9AB0", marginTop: 1 }}>{s.sector} · {s.buyDate}</div>
+                          <div style={{ fontSize: 11, color: "#8A9AB0", marginTop: 2 }}>{s.sector} · {s.buyDate}</div>
                         </div>
                       </div>
                     </td>
-                    <td style={{ padding: "10px 8px 10px 0", color: "#666" }}>{s.qty}</td>
-                    <td style={{ padding: "10px 8px 10px 0", color: "#666" }}>{currLabel ? `${s.currency === "EUR" ? "€" : ""}${fmt(s.buyPrice)}` : `$${fmt(s.buyPrice)}`}</td>
-                    <td style={{ padding: "10px 8px 10px 0", color: "#0A0E1A" }}>{currLabel ? `${s.currency === "EUR" ? "€" : ""}${fmt(s.currentPrice)}` : `$${fmt(s.currentPrice)}`}</td>
-                    <td style={{ padding: "10px 8px 10px 0", color: "#444" }}>€{fmt(curUSD * eurRate)}</td>
-                    <td style={{ padding: "10px 8px 10px 0", color: "#0A0E1A" }}>${fmt(s.qty * curUSD)}</td>
-                    <td style={{ padding: "10px 8px 10px 0", color: isUp ? "#5EC98A" : "#E87040" }}>{isUp?"+":""}${fmt(Math.abs(pnl))}</td>
-                    <td style={{ padding: "10px 8px 10px 0", color: isUp ? "#5EC98A" : "#E87040", fontWeight: 500 }}>{fmtPct(pct)}</td>
+                    <td style={{ padding: "14px 12px 14px 0", color: "#666", fontSize: 13 }}>{s.qty}</td>
+                    <td style={{ padding: "14px 12px 14px 0", color: "#666", fontSize: 13 }}>{currLabel ? `${s.currency === "EUR" ? "€" : ""}${fmt(s.buyPrice)}` : `$${fmt(s.buyPrice)}`}</td>
+                    <td style={{ padding: "14px 12px 14px 0", color: "#0A0E1A", fontSize: 13, fontWeight: 600 }}>{currLabel ? `${s.currency === "EUR" ? "€" : ""}${fmt(s.currentPrice)}` : `$${fmt(s.currentPrice)}`}</td>
+                    <td style={{ padding: "14px 12px 14px 0", color: "#5A6A7E", fontSize: 13 }}>€{fmt(curUSD * eurRate)}</td>
+                    <td style={{ padding: "14px 12px 14px 0", color: "#0A0E1A", fontSize: 13, fontWeight: 600 }}>${fmt(s.qty * curUSD)}</td>
+                    <td style={{ padding: "14px 12px 14px 0", fontSize: 14, fontWeight: 700, color: isUp ? "#16A34A" : "#E87040" }}>{isUp?"+":""}${fmt(Math.abs(pnl))}</td>
+                    <td style={{ padding: "14px 12px 14px 0", fontSize: 14, fontWeight: 800, color: isUp ? "#16A34A" : "#E87040" }}>{fmtPct(pct)}</td>
                     <td style={{ padding: "10px 8px 10px 0", fontSize: 10, color: tp ? (s.currentPrice >= tp ? "#5EC98A" : "#666") : "#D8DCE8" }}>
                       {tp ? `🎯$${fmt(tp)}` : "—"}
                     </td>
@@ -4127,7 +4106,7 @@ export default function App() {
               {activeTab === "screener" && (
                 <ScreenerTab fmt={fmt} onAddTicker={ticker => {
                   setForm(f => ({ ...f, ticker }));
-                  setShowForm(true);
+                  setShowWizard(true);
                   window.scrollTo({ top: 0, behavior: "smooth" });
                 }} />
               )}
@@ -4219,17 +4198,7 @@ export default function App() {
             />
           ) : null}
 
-          {/* Mobile portfolio summary */}
-          <div className="mobile-portfolio-header" style={{ padding: "12px 16px", paddingTop: "max(12px, env(safe-area-inset-top))", borderBottom: "1px solid #E0E4EE", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#FFFFFF", position: "sticky", top: 0, zIndex: 100 }}>
-            <div>
-              <div style={{ fontSize: 8, color: "#D8DCE8", letterSpacing: "0.18em", textTransform: "uppercase" }}>Portafoglio</div>
-              <div style={{ fontFamily: "'Geist', sans-serif", fontSize: 20, fontWeight: 300, color: "#0A0E1A" }}>{sym}{fmt(totalValue)}</div>
-            </div>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 13, color: totalPnL >= 0 ? "#5EC98A" : "#E87040", fontWeight: 500 }}>{totalPnL >= 0 ? "+" : ""}{sym}{fmt(Math.abs(totalPnL))}</div>
-              <div style={{ fontSize: 10, color: totalPct >= 0 ? "#5EC98A" : "#E87040" }}>{fmtPct(totalPct)}</div>
-            </div>
-          </div>
+          {/* Mobile portfolio summary removed - shown in overview */}
 
           {/* Mobile bottom navigation */}
           <div className="mobile-nav" style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "#F0F4FA", borderTop: "1px solid #E0E4EE", zIndex: 999, justifyContent: "space-around", alignItems: "center", padding: "6px 0", paddingBottom: "env(safe-area-inset-bottom)" }}>
