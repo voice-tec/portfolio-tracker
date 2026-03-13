@@ -22,7 +22,7 @@ export default async function handler(req, res) {
   // ── 1. Yahoo Finance ─────────────────────────────────────────────────────────
   async function tryYahooHistory(sym) {
     try {
-      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&period1=${fromTs}&period2=${toTs}`;
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&period1=${fromTs}&period2=${toTs}&events=div%2Csplit&includeAdjustedClose=true`;
       const r = await fetch(url, {
         headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json" }
       });
@@ -30,7 +30,8 @@ export default async function handler(req, res) {
       const data = await r.json();
       const result = data?.chart?.result?.[0];
       if (!result?.timestamp) return null;
-      const closes = result.indicators?.quote?.[0]?.close || [];
+      const closes = result.indicators?.adjclose?.[0]?.adjclose
+        || result.indicators?.quote?.[0]?.close || [];
       const candles = result.timestamp
         .map((ts, i) => ({ ts, price: closes[i] }))
         .filter(c => c.price != null && c.price > 0)
