@@ -17,7 +17,6 @@ export function ChartCard({ stocks, eurRate, onPeriodReturns }) {
 
   const { chartData, loading, periodReturns } = useChart(stocks, eurRate, period);
 
-  // Notifica il parent quando i periodReturns cambiano
   useEffect(() => {
     if (!periodReturns || !onPeriodReturns) return;
     const key = JSON.stringify(periodReturns);
@@ -132,12 +131,10 @@ export function ChartCard({ stocks, eurRate, onPeriodReturns }) {
               cursor={{ stroke: lineColor, strokeWidth: 1, strokeDasharray: "4 2" }}
             />
 
-            {/* Linea break-even (costo acquisto) */}
-            {costoBase > 0 && (
-              <ReferenceLine y={costoBase}
-                stroke="#D8DCE8" strokeDasharray="4 3" strokeWidth={1}
-              />
-            )}
+            {/* Linea break-even a 0% */}
+            <ReferenceLine y={0}
+              stroke="#D8DCE8" strokeDasharray="4 3" strokeWidth={1}
+            />
 
             {/* Linea portafoglio */}
             <Area type="monotone" dataKey="pct"
@@ -159,8 +156,8 @@ export function ChartCard({ stocks, eurRate, onPeriodReturns }) {
             {/* Marker acquisti */}
             {purchaseMarkers.map(m => (
               <ReferenceLine key={m.ticker + m.date} x={m.label}
-                stroke="#7EB8F733" strokeWidth={1}
-                label={{ value: m.ticker, position: "insideTopRight", fill: "#7EB8F7", fontSize: 8 }}
+                stroke="#7EB8F7" strokeWidth={1.5} strokeDasharray="3 3"
+                label={{ value: `▼ ${m.ticker}`, position: "insideTopLeft", fill: "#7EB8F7", fontSize: 9, fontWeight: 600 }}
               />
             ))}
           </ComposedChart>

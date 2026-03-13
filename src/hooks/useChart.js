@@ -174,26 +174,40 @@ export function useChart(stocks, eurRate, period = "1A") {
     }));
   }, [rawSeries, benchmark, period]);
 
-  // ── Rendimenti periodali esatti (equivalente pandas resample) ──────────────
+  // ── Rendimenti periodali esatti (equivalente pandas resample("M").last()) ────
   const periodReturns = useMemo(() => {
     if (rawSeries.length < 2) return { day: null, month: null, threeMonth: null, year: null };
+
     const lastPoint = rawSeries[rawSeries.length - 1];
     const today = lastPoint.date;
     const d = new Date(today + "T12:00:00");
+
+    // Valore più recente disponibile <= targetISO
     function valueAt(targetISO) {
       let last = null;
-      for (const p of rawSeries) { if (p.date <= targetISO) last = p; else break; }
+      for (const p of rawSeries) {
+        if (p.date <= targetISO) last = p;
+        else break;
+      }
       return last;
     }
+
     function pctChange(fromPoint) {
       if (!fromPoint || !fromPoint.valore) return null;
       return ((lastPoint.valore - fromPoint.valore) / fromPoint.valore) * 100;
     }
+
+    // 1G — valore del giorno precedente
     const ago1d = new Date(d - 1 * 86400000).toISOString().slice(0, 10);
+
+    // 1M — ultimo valore del mese precedente (resample("M").last())
     const firstOfThisMonth = new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
     const prevMonthEnd = rawSeries.filter(p => p.date < firstOfThisMonth).slice(-1)[0];
-    const ago3m = new Date(d - 91 * 86400000).toISOString().slice(0, 10);
+
+    // 3M e 1A
+    const ago3m = new Date(d - 91  * 86400000).toISOString().slice(0, 10);
     const ago1y = new Date(d - 365 * 86400000).toISOString().slice(0, 10);
+
     return {
       day:        pctChange(valueAt(ago1d)),
       month:      pctChange(prevMonthEnd),
