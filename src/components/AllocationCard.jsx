@@ -137,13 +137,13 @@ export function AllocationCard({ stocks, eurRate }) {
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
         {/* Torta */}
-        <div style={{ position: "relative", width: 150, height: 150, flexShrink: 0 }}>
-          <PieChart width={150} height={150}>
+        <div style={{ position: "relative", width: 200, height: 200, flexShrink: 0 }}>
+          <PieChart width={200} height={200}>
             <Pie
-              data={pieData} cx={70} cy={70}
-              innerRadius={46} outerRadius={68}
+              data={pieData} cx={100} cy={100}
+              innerRadius={62} outerRadius={90}
               dataKey="value" paddingAngle={1.5}
               onMouseEnter={(_, i) => setActiveIdx(i)}
               onMouseLeave={() => setActiveIdx(null)}
@@ -156,20 +156,20 @@ export function AllocationCard({ stocks, eurRate }) {
             </Pie>
           </PieChart>
           {/* Centro torta */}
-          <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-46%,-50%)", textAlign: "center", pointerEvents: "none", width: 72 }}>
+          <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", textAlign: "center", pointerEvents: "none", width: 100 }}>
             {centerItem ? (
               <>
-                <div style={{ fontSize: 8, color: "#555", lineHeight: 1.2, marginBottom: 1 }}>{centerItem.name}</div>
-                <div style={{ fontFamily: "'Fraunces', serif", fontSize: 12, color: "#E8E6DF" }}>${fmt(centerItem.value)}</div>
-                <div style={{ fontSize: 11, color: "#F4C542", fontWeight: 600 }}>
+                <div style={{ fontSize: 10, color: "#8A9AB0", lineHeight: 1.2, marginBottom: 2 }}>{centerItem.name}</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "#0A1628", letterSpacing: "-0.5px" }}>${fmt(centerItem.value)}</div>
+                <div style={{ fontSize: 13, color: "#F4C542", fontWeight: 600, marginTop: 1 }}>
                   {totalValue > 0 ? ((centerItem.value / totalValue) * 100).toFixed(1) : 0}%
                 </div>
               </>
             ) : (
               <>
-                <div style={{ fontSize: 7, color: "#444", marginBottom: 1 }}>Patrimonio</div>
-                <div style={{ fontFamily: "'Fraunces', serif", fontSize: 12, color: "#E8E6DF" }}>${fmt(totalValue)}</div>
-                <div style={{ fontSize: 8, color: "#555" }}>€{fmt(totalValue * eurRate)}</div>
+                <div style={{ fontSize: 10, color: "#8A9AB0", marginBottom: 3 }}>Patrimonio</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "#0A1628", letterSpacing: "-0.5px" }}>${fmt(totalValue)}</div>
+                <div style={{ fontSize: 11, color: "#5A6A7E", marginTop: 2 }}>€{fmt(totalValue * eurRate)}</div>
               </>
             )}
           </div>
