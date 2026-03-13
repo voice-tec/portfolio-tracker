@@ -65,8 +65,8 @@ function TipItem({ tip }) {
       onClick={() => setOpen(v => !v)}
       style={{
         borderRadius: 6,
-        background: open ? "rgba(220,38,38,0.14)" : "rgba(220,38,38,0.06)",
-        border: `1px solid ${open ? "rgba(220,38,38,0.35)" : "rgba(220,38,38,0.14)"}`,
+        background: open ? "#1e1218" : "#171014",
+        border: `1px solid ${open ? "#c0394d" : "#3a1f28"}`,
         padding: "8px 10px",
         cursor: "pointer",
         transition: "all 0.18s",
@@ -75,19 +75,19 @@ function TipItem({ tip }) {
       }}
     >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-        <span style={{ fontSize: 11, color: "#FECACA", fontWeight: 500, lineHeight: 1.3 }}>
+        <span style={{ fontSize: 11, color: "#E8E6DF", fontWeight: 500, lineHeight: 1.3 }}>
           {tip.label}
         </span>
         <span style={{
-          fontSize: 10, color: "rgba(254,202,202,0.45)", flexShrink: 0,
+          fontSize: 10, color: "#c0394d", flexShrink: 0,
           display: "inline-block", transition: "transform 0.18s",
           transform: open ? "rotate(180deg)" : "rotate(0deg)",
         }}>▾</span>
       </div>
       {open && (
         <div style={{
-          marginTop: 7, fontSize: 10, color: "rgba(254,202,202,0.65)",
-          lineHeight: 1.6, borderTop: "1px solid rgba(220,38,38,0.18)",
+          marginTop: 7, fontSize: 10, color: "#9a8a8e",
+          lineHeight: 1.6, borderTop: "1px solid #2a1a20",
           paddingTop: 7,
         }}>
           {tip.detail}
@@ -102,8 +102,8 @@ function AlertPanel({ alerts, onClose }) {
   return (
     <div style={{
       flex: 1, minWidth: 230, maxWidth: 320,
-      background: "rgba(127,29,29,0.20)",
-      border: "1px solid rgba(220,38,38,0.28)",
+      background: "#120d0f",
+      border: "1px solid #c0394d",
       borderRadius: 10,
       padding: "14px 16px",
     }}>
@@ -111,13 +111,13 @@ function AlertPanel({ alerts, onClose }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
           <span style={{ fontSize: 15 }}>⚠️</span>
-          <span style={{ fontSize: 10, color: "#FCA5A5", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 700 }}>
+          <span style={{ fontSize: 10, color: "#e05a6a", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 700 }}>
             Concentrazione elevata
           </span>
         </div>
         <button onClick={onClose} style={{
           background: "none", border: "none",
-          color: "rgba(252,165,165,0.35)", cursor: "pointer",
+          color: "#4a2a30", cursor: "pointer",
           fontSize: 15, padding: 0, lineHeight: 1,
         }}>✕</button>
       </div>
@@ -129,12 +129,12 @@ function AlertPanel({ alerts, onClose }) {
           <div key={a.sector} style={{ marginBottom: 16 }}>
             {/* Nome + % */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 7 }}>
-              <span style={{ fontSize: 13, color: "#FECACA", fontWeight: 600 }}>{a.sector}</span>
+              <span style={{ fontSize: 13, color: "#E8E6DF", fontWeight: 600 }}>{a.sector}</span>
               <span style={{ fontSize: 16, color: barColor, fontWeight: 700 }}>{a.pct}%</span>
             </div>
 
             {/* Barra */}
-            <div style={{ height: 6, background: "rgba(220,38,38,0.15)", borderRadius: 3, marginBottom: 12, overflow: "hidden" }}>
+            <div style={{ height: 6, background: "#1e1218", borderRadius: 3, marginBottom: 12, overflow: "hidden" }}>
               <div style={{
                 height: "100%",
                 width: `${Math.min(pct, 100)}%`,
@@ -144,7 +144,7 @@ function AlertPanel({ alerts, onClose }) {
             </div>
 
             {/* Etichetta */}
-            <div style={{ fontSize: 9, color: "rgba(252,165,165,0.4)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+            <div style={{ fontSize: 9, color: "#4a2a30", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
               Suggerimenti — tocca per espandere
             </div>
 
