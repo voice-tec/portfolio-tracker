@@ -49,7 +49,22 @@ export function ChartCard({ stocks, eurRate }) {
   }, [chartData, stocks]);
 
   return (
-    <div className="card" style={{ marginBottom: 16, padding: "14px 20px 12px" }}>
+    <div className="card" style={{ marginBottom: 16, padding: "20px 20px 12px" }}>
+
+      {/* ── Valore + % header stile Getquin ── */}
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 28, fontWeight: 700, color: "#0A1628", letterSpacing: "-0.5px" }}>
+          ${fmt(lastValore)}
+        </div>
+        <div style={{ fontSize: 12, color: lineColor, marginTop: 2, display: "flex", alignItems: "center", gap: 6 }}>
+          <span>{isPositive ? "↑" : "↓"} {Math.abs(lastPct).toFixed(2)}%</span>
+          <span style={{ color: "#5A6A7E" }}>
+            ({isPositive ? "+" : ""}${fmt(lastValore - lastCosto)})
+          </span>
+          <span style={{ color: "#D8DCE8", margin: "0 2px" }}>·</span>
+          <span style={{ color: "#5A6A7E", fontSize: 11 }}>{period === "Inizio" ? "da inizio" : `ultimi ${period}`}</span>
+        </div>
+      </div>
 
       {/* ── Controls ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
@@ -107,12 +122,10 @@ export function ChartCard({ stocks, eurRate }) {
               cursor={{ stroke: lineColor, strokeWidth: 1, strokeDasharray: "4 2" }}
             />
 
-            {/* Linea break-even (costo acquisto) */}
-            {costoBase > 0 && (
-              <ReferenceLine y={costoBase}
-                stroke="#D8DCE8" strokeDasharray="4 3" strokeWidth={1}
-              />
-            )}
+            {/* Linea break-even (0%) */}
+            <ReferenceLine y={0}
+              stroke="#D8DCE8" strokeDasharray="4 3" strokeWidth={1}
+            />
 
             {/* Linea portafoglio */}
             <Area type="monotone" dataKey="pct"
@@ -134,8 +147,8 @@ export function ChartCard({ stocks, eurRate }) {
             {/* Marker acquisti */}
             {purchaseMarkers.map(m => (
               <ReferenceLine key={m.ticker + m.date} x={m.label}
-                stroke="#7EB8F733" strokeWidth={1}
-                label={{ value: m.ticker, position: "insideTopRight", fill: "#7EB8F7", fontSize: 8 }}
+                stroke="#7EB8F7" strokeWidth={1.5} strokeDasharray="3 3"
+                label={{ value: `▼ ${m.ticker}`, position: "insideTopLeft", fill: "#7EB8F7", fontSize: 9, fontWeight: 600 }}
               />
             ))}
           </ComposedChart>

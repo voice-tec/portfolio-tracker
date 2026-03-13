@@ -2083,29 +2083,49 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
   totalPnL, totalPct, sectorData, portfolioHistory, alerts, setSelectedId, setEditId,
   handleRemove, setShowForm, marketOpen }) {
 
-  const [variations, setVariations] = useState({ day: null, month: null, year: null });
-  const [varLoading, setVarLoading] = useState(false);
-
   const col = v => v >= 0 ? "#5EC98A" : "#E87040";
   const sign = v => v >= 0 ? "+" : "";
 
-  // ── Variazione giornaliera dal vivo (usa change/prevClose degli stock) ──────
-  const dayVar = useMemo(() => {
-    if (!stocks.length) return null;
-    let totalCur = 0, totalPrev = 0;
+  // ── Pill variazioni ────────────────────────────────────────────────────────
+  const { dayVar, monthVar } = useMemo(() => {
+    if (!stocks.length || !totalValue) return { dayVar: null, monthVar: null };
+
+    // 1G — usa prevClose di ogni titolo
+    let prevTotalValue = 0;
+    let hasPrev = false;
     stocks.forEach(s => {
-      const curUSD = toUSD(s.currentPrice, s.currency, eurRate);
-      const prevUSD = s.prevClose
-        ? toUSD(s.prevClose, s.currency, eurRate)
-        : curUSD;
-      totalCur  += s.qty * curUSD;
-      totalPrev += s.qty * prevUSD;
+      const prev = s.prevClose ?? s.currentPrice;
+      if (prev && s.qty) {
+        prevTotalValue += s.qty * toUSD(prev, s.currency, eurRate);
+        hasPrev = true;
+      }
     });
-    if (!totalPrev) return null;
-    const diff = totalCur - totalPrev;
-    const pct  = (diff / totalPrev) * 100;
-    return { diff, pct };
-  }, [stocks, eurRate]);
+    const dayVar = hasPrev && prevTotalValue > 0
+      ? ((totalValue - prevTotalValue) / prevTotalValue) * 100
+      : null;
+
+    // 1M — stima: P&L proporzionale su 30gg vs totale giorni posseduti
+    let monthVar = null;
+    if (totalInvested > 0) {
+      const now = Date.now();
+      let weightedDailyReturn = 0;
+      let totalWeight = 0;
+      stocks.forEach(s => {
+        const val = s.qty * toUSD(s.currentPrice, s.currency, eurRate);
+        const cost = s.qty * toUSD(s.buyPrice, s.currency, eurRate);
+        if (!cost) return;
+        const buyTs = s.buyDate ? new Date(s.buyDate).getTime() : null;
+        const daysHeld = buyTs ? Math.max(1, (now - buyTs) / 86_400_000) : 30;
+        const totalReturn = (val - cost) / cost;
+        const dailyReturn = totalReturn / daysHeld;
+        weightedDailyReturn += dailyReturn * val;
+        totalWeight += val;
+      });
+      if (totalWeight > 0) monthVar = (weightedDailyReturn / totalWeight) * 30 * 100;
+    }
+
+    return { dayVar, monthVar };
+  }, [stocks, totalValue, totalInvested, eurRate]);
 
 
 
@@ -2164,70 +2184,41 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
     <div className="fade-up">
 
       {/* ── HEADER KPI ── */}
-      <div style={{ marginBottom: 20 }}>
-        {/* Saldo principale */}
-        <div style={{ fontSize: 34, fontWeight: 800, lineHeight: 1, letterSpacing: "-0.02em", color: "#0A1628" }}>
-          ${fmt(totalValue)}
-        </div>
-        <div style={{ display: "flex", gap: 16, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
-          <span style={{ fontSize: 12, color: col(totalPnL) }}>{sign(totalPnL)}${fmt(Math.abs(totalPnL))} totale</span>
-          <span style={{ fontSize: 12, color: col(totalPct), fontWeight: 500 }}>{sign(totalPct)}{totalPct.toFixed(2)}%</span>
-        </div>
-        {/* Pill variazioni 1G / 1M / 1A */}
-        <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-          {/* 1 Giorno — usa prevClose live */}
-          {dayVar && (() => {
-            const c = col(dayVar.pct);
-            return (
-              <div style={{ display: "flex", alignItems: "center", gap: 5, background: "#F8F9FC", border: "1px solid #E2E8F0", borderRadius: 6, padding: "5px 10px" }}>
-                <span style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>1G</span>
-                <span style={{ fontSize: 12, fontWeight: 700, color: c }}>{sign(dayVar.pct)}{Math.abs(dayVar.pct).toFixed(2)}%</span>
-                <span style={{ fontSize: 10, color: c }}>{sign(dayVar.diff)}${fmt(Math.abs(dayVar.diff))}</span>
-              </div>
-            );
-          })()}
-          {/* 1 Mese — P&L dal primo acquisto del mese */}
-          {(() => {
-            const cutoff = new Date(); cutoff.setMonth(cutoff.getMonth() - 1);
-            const cutISO = cutoff.toISOString().split("T")[0];
-            // Stima: usa totalPnL proporzionale — mostriamo solo se abbiamo buyDate recente
-            // Per semplicità calcoliamo la variazione % del portafoglio da 1M fa
-            // usando i titoli che hanno buyDate <= cutISO e il loro prevClose come proxy
-            // Se non abbiamo dati storici, mostriamo il P&L complessivo
-            // Per ora usiamo una pill informativa basata su ciò che è disponibile
-            const monthPnL = stocks.reduce((acc, s) => {
-              const bd = s.buyDate ? new Date(s.buyDate.includes("/") ? s.buyDate.split("/").reverse().join("-") : s.buyDate) : null;
-              if (bd && bd > cutoff) {
-                // Titolo comprato nel mese: P&L dall'acquisto
-                return acc + s.qty * (toUSD(s.currentPrice, s.currency, eurRate) - toUSD(s.buyPrice, s.currency, eurRate));
-              } else {
-                // Titolo più vecchio: usa change giornaliero come proxy (non abbiamo dati mensili senza history)
-                return acc + s.qty * (toUSD(s.currentPrice, s.currency, eurRate) - toUSD(s.prevClose || s.currentPrice, s.currency, eurRate));
-              }
-            }, 0);
-            const base = totalValue - monthPnL || 1;
-            const pct = (monthPnL / base) * 100;
-            if (Math.abs(pct) < 0.001) return null;
-            const c = col(pct);
-            return (
-              <div style={{ display: "flex", alignItems: "center", gap: 5, background: "#F8F9FC", border: "1px solid #E2E8F0", borderRadius: 6, padding: "5px 10px" }}>
-                <span style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>1M</span>
-                <span style={{ fontSize: 12, fontWeight: 700, color: c }}>{sign(pct)}{Math.abs(pct).toFixed(2)}%</span>
-                <span style={{ fontSize: 10, color: c }}>{sign(monthPnL)}${fmt(Math.abs(monthPnL))}</span>
-              </div>
-            );
-          })()}
-          {/* Da inizio (P&L totale %) */}
-          {(() => {
-            const c = col(totalPct);
-            return (
-              <div style={{ display: "flex", alignItems: "center", gap: 5, background: "#F8F9FC", border: "1px solid #E2E8F0", borderRadius: 6, padding: "5px 10px" }}>
-                <span style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>TOT</span>
-                <span style={{ fontSize: 12, fontWeight: 700, color: c }}>{sign(totalPct)}{Math.abs(totalPct).toFixed(2)}%</span>
-                <span style={{ fontSize: 10, color: c }}>{sign(totalPnL)}${fmt(Math.abs(totalPnL))}</span>
-              </div>
-            );
-          })()}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 34, fontWeight: 800, lineHeight: 1, letterSpacing: "-0.02em", color: "#0A1628" }}>
+            ${fmt(totalValue)}
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
+            {/* Pill 1G */}
+            {dayVar !== null && (
+              <span style={{
+                fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 20,
+                background: col(dayVar) + "18", color: col(dayVar), border: `1px solid ${col(dayVar)}33`
+              }}>
+                1G {sign(dayVar)}{dayVar.toFixed(2)}%
+              </span>
+            )}
+            {/* Pill 1M */}
+            {monthVar !== null && (
+              <span style={{
+                fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 20,
+                background: col(monthVar) + "18", color: col(monthVar), border: `1px solid ${col(monthVar)}33`
+              }}>
+                1M {sign(monthVar)}{monthVar.toFixed(2)}%
+              </span>
+            )}
+            {/* Pill TOT */}
+            <span style={{
+              fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 20,
+              background: col(totalPct) + "18", color: col(totalPct), border: `1px solid ${col(totalPct)}33`
+            }}>
+              TOT {sign(totalPct)}{totalPct.toFixed(2)}%
+            </span>
+            <span style={{ fontSize: 12, color: "#5A6A7E", marginLeft: 4 }}>
+              {sign(totalPnL)}${fmt(Math.abs(totalPnL))}
+            </span>
+          </div>
         </div>
       </div>
 
