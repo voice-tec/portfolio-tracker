@@ -4,12 +4,16 @@ import { toUSD } from "../utils/currency";
 import { parseBuyDate } from "../utils/dates";
 
 export const PERIODS = ["1G", "1M", "6M", "1A", "Inizio"];
-// Giorni di calendario per ogni periodo — usati per trovare la data di cutoff
-// nella serie storica (giorni di trading effettivi, non di calendario)
-const PERIOD_DAYS = { "1G": 1, "1M": 30, "6M": 182, "1A": 365 };
-// Giorni di trading approssimativi per ogni periodo
-// usati come fallback se la serie è troppo corta
-const PERIOD_TRADING_DAYS = { "1G": 1, "1M": 21, "6M": 126, "1A": 252 };
+
+// Calcola la data di riferimento per ogni periodo
+// usando setMonth/setFullYear per essere precisi come Yahoo/TradingView
+function getPeriodCutoff(period) {
+  const d = new Date();
+  if (period === "1M") { d.setMonth(d.getMonth() - 1); }
+  else if (period === "6M") { d.setMonth(d.getMonth() - 6); }
+  else if (period === "1A") { d.setFullYear(d.getFullYear() - 1); }
+  return d.toISOString().slice(0, 10);
+}
 
 export function useChart(stocks, eurRate) {
   const [rawData, setRawData] = useState({});
@@ -130,48 +134,74 @@ export function useChart(stocks, eurRate) {
     [stocks, eurRate]
   );
 
-  // ── buildPeriod: dato un periodo, ritorna chartData e pill ─────────────────
-  // "Inizio": base = totalInvested (qty × buyPrice) → coincide con header P&L
-  // Altri periodi: base = punto precedente al cutoff → stesso metodo Yahoo/TradingView
+  // ── earliestBuyDate: data del primo acquisto ─────────────────────────────
+  const earliestBuyDate = useMemo(() => {
+    const dates = stocks
+      .map(s => { const bd = parseBuyDate(s.buyDate); return bd ? bd.toISOString().slice(0,10) : null; })
+      .filter(Boolean).sort();
+    return dates[0] || null;
+  }, [stocks]);
+
+  // ── buildPeriod ───────────────────────────────────────────────────────────
+  // Approccio corretto:
+  //   1. Prendi solo i punti della serie dove TUTTE le posizioni sono già attive
+  //      (data >= earliestBuyDate) → così ogni punto ha gli stessi titoli
+  //   2. Per "Inizio": base = totalInvested (buyPrice utente) → coincide con header
+  //   3. Per altri periodi: base = primo punto del range nella serie filtrata
   function buildPeriod(period) {
     if (portfolioSeries.length < 2) return { chartData: [], pill: null };
 
+    // Serie filtrata: solo giorni >= data del primo acquisto
+    // così ogni punto ha lo stesso set di posizioni → curva coerente
+    const activeSeries = earliestBuyDate
+      ? portfolioSeries.filter(p => p.date >= earliestBuyDate)
+      : portfolioSeries;
+
+    if (activeSeries.length < 2) return { chartData: [], pill: null };
+
     let slice;
-    let baseValore = null; // null = usa slice[0].valore
+    let baseValore = null;
 
     if (period === "Inizio") {
-      slice = portfolioSeries;
-      // Base = costo di acquisto reale, non il prezzo storico del primo giorno
-      baseValore = totalInvested > 0 ? totalInvested : slice[0].valore;
+      // Base = prezzo di acquisto utente → coincide con P&L header
+      slice = activeSeries;
+      baseValore = totalInvested > 0 ? totalInvested : activeSeries[0].valore;
+
     } else if (period === "1G") {
-      slice = portfolioSeries.slice(-2);
+      // Ultima chiusura vs chiusura precedente
+      slice = activeSeries.slice(-2);
+
     } else {
-      const days   = PERIOD_DAYS[period];
-      const cutoff = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
-      const idx    = portfolioSeries.findIndex(p => p.date >= cutoff);
-      if (idx > 0) {
-        slice = portfolioSeries.slice(idx - 1);
-        // Se il punto base precede il primo acquisto reale, usa totalInvested
-        // (es: 1A quando il portafoglio esiste da meno di un anno)
-        const earliestBuy = stocks
-          .map(s => { const bd = parseBuyDate(s.buyDate); return bd ? bd.toISOString().slice(0,10) : null; })
-          .filter(Boolean)
-          .sort()[0];
-        if (earliestBuy && slice[0].date < earliestBuy) {
-          baseValore = totalInvested > 0 ? totalInvested : slice[0].valore;
-        }
+      const cutoff = getPeriodCutoff(period);
+
+      // Se il cutoff è prima del primo acquisto → uguale a "Inizio"
+      if (earliestBuyDate && cutoff < earliestBuyDate) {
+        slice = activeSeries;
+        baseValore = totalInvested > 0 ? totalInvested : activeSeries[0].valore;
       } else {
-        slice = portfolioSeries;
+        // Trova il primo punto >= cutoff, poi prendi quello precedente come base
+        // (stesso giorno N mesi fa, o il più vicino disponibile)
+        const idx = activeSeries.findIndex(p => p.date >= cutoff);
+        if (idx > 0) {
+          // idx-1 = ultimo giorno di trading PRIMA del cutoff = base corretta
+          slice = activeSeries.slice(idx - 1);
+        } else if (idx === 0) {
+          slice = activeSeries;
+          baseValore = totalInvested > 0 ? totalInvested : activeSeries[0].valore;
+        } else {
+          // Nessun dato nel range → usa tutto come Inizio
+          slice = activeSeries;
+          baseValore = totalInvested > 0 ? totalInvested : activeSeries[0].valore;
+        }
       }
     }
 
-    if (slice.length < 2) return { chartData: [], pill: null };
+    if (!slice || slice.length < 2) return { chartData: [], pill: null };
 
-    const first    = slice[0];
     const last     = slice[slice.length - 1];
-    const base     = baseValore ?? first.valore; // valore di riferimento per pct
-    const spyFirst = spyMap[first.date]
-      ?? spyData.find(s => s.date >= first.date)?.price;
+    const base     = baseValore ?? slice[0].valore;
+    const spyFirst = spyMap[slice[0].date]
+      ?? spyData.find(s => s.date >= slice[0].date)?.price;
 
     const chartData = slice.map(p => ({
       ...p,
