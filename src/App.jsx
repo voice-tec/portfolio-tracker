@@ -591,7 +591,7 @@ function AuthScreen({ onAuth }) {
         html,body{height:100%;height:-webkit-fill-available;overflow-x:hidden;-webkit-tap-highlight-color:transparent}
         input{background:#FFFFFF;border:1.5px solid #D0D8EC;color:#0A1628;font-family:inherit;font-size:13px;padding:12px 14px;border-radius:8px;outline:none;width:100%;transition:border-color 0.15s;box-shadow:0 1px 3px rgba(10,22,64,0.06)}input:focus{border-color:#1E4FD8;box-shadow:0 0 0 3px rgba(30,79,216,0.1)}select{background:#FFFFFF;border:1.5px solid #D0D8EC;color:#0A1628;font-family:inherit;font-size:13px;padding:12px 14px;border-radius:8px;outline:none;width:100%;transition:border-color 0.15s;box-shadow:0 1px 3px rgba(10,22,64,0.06);cursor:pointer;-webkit-appearance:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%231E4FD8'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px}
         input:focus{border-color:#1E4FD8;box-shadow:0 0 0 3px rgba(30,79,216,0.08)} input::placeholder{color:#A0AABF}
-        @keyframes spin{to{transform:rotate(360deg)}}
+        @keyframes spin{to{transform:rotate(360deg)}} @keyframes fadeIn{from{opacity:0}to{opacity:1}} @keyframes slideUp{from{opacity:0;transform:translateY(40px)}to{opacity:1;transform:translateY(0)}} @keyframes slideInRight{from{opacity:0;transform:translateX(30px)}to{opacity:1;transform:translateX(0)}} @keyframes popIn{from{opacity:0;transform:scale(0.7)}to{opacity:1;transform:scale(1)}}
         @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
       `}</style>
       <div style={{ animation: "fadeUp 0.4s ease", width: "100%", maxWidth: 400 }}>
@@ -1767,6 +1767,312 @@ function ScreenerTab({ fmt, onAddTicker }) {
   );
 }
 
+
+// ─── ADD STOCK WIZARD MODAL ────────────────────────────────────────────────────
+function AddStockWizard({ onClose, onAdd, sym, fmt }) {
+  const [step, setStep]           = useState(1); // 1=search 2=details 3=success
+  const [query, setQuery]         = useState("");
+  const [searchRes, setSearchRes] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [chosen, setChosen]       = useState(null); // { ticker, name, sector, price, change, logo }
+  const [priceLoading, setPriceLoading] = useState(false);
+  const [histData, setHistData]   = useState([]);
+  const [qty, setQty]             = useState("");
+  const [buyPrice, setBuyPrice]   = useState("");
+  const [buyDate, setBuyDate]     = useState("");
+  const [adding, setAdding]       = useState(false);
+  const [animDir, setAnimDir]     = useState("forward"); // forward | back
+  const inputRef = useRef();
+
+  useEffect(() => { if (step === 1) setTimeout(() => inputRef.current?.focus(), 120); }, [step]);
+
+  // Search debounce
+  useEffect(() => {
+    if (!query || query.length < 1) { setSearchRes([]); return; }
+    const t = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const r = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+        const d = await r.json();
+        setSearchRes(d.results || []);
+      } catch {} finally { setSearching(false); }
+    }, 280);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  async function selectTicker(t) {
+    setChosen({ ticker: t.ticker, name: t.name, sector: t.sector, price: null, change: null });
+    setPriceLoading(true);
+    setAnimDir("forward");
+    setStep(1.5); // transizione
+    try {
+      const [priceRes, histRes] = await Promise.all([
+        fetch(`/api/price?ticker=${t.ticker}`),
+        fetch(`/api/history?ticker=${t.ticker}&days=90`),
+      ]);
+      const pd = await priceRes.json();
+      const hd = await histRes.json();
+      setChosen(c => ({ ...c, price: pd.price, change: pd.changePercent, currency: pd.currency }));
+      setHistData(Array.isArray(hd) ? hd.slice(-60) : []);
+      setBuyPrice(pd.price ? pd.price.toFixed(2) : "");
+      setBuyDate(new Date().toISOString().split("T")[0]);
+    } catch {}
+    setPriceLoading(false);
+    setAnimDir("forward");
+    setStep(2);
+  }
+
+  async function handleConfirm() {
+    if (!qty || !buyPrice || !buyDate) return;
+    setAdding(true);
+    try {
+      await onAdd({ ticker: chosen.ticker, qty: parseFloat(qty), buyPrice: parseFloat(buyPrice), buyDate, sector: chosen.sector || "Altro" });
+      setAnimDir("forward");
+      setStep(3);
+    } catch {}
+    setAdding(false);
+  }
+
+  // Mini sparkline
+  function Sparkline({ data, color = "#5EC98A" }) {
+    if (!data || data.length < 2) return null;
+    const prices = data.map(d => d.price);
+    const min = Math.min(...prices), max = Math.max(...prices);
+    const W = 280, H = 70;
+    const pts = prices.map((p, i) => {
+      const x = (i / (prices.length - 1)) * W;
+      const y = H - ((p - min) / (max - min || 1)) * H;
+      return `${x},${y}`;
+    }).join(" ");
+    const areaBottom = `${W},${H} 0,${H}`;
+    const isUp = prices[prices.length-1] >= prices[0];
+    const c = isUp ? "#5EC98A" : "#E87040";
+    return (
+      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ overflow: "visible" }}>
+        <defs>
+          <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={c} stopOpacity="0.3"/>
+            <stop offset="100%" stopColor={c} stopOpacity="0"/>
+          </linearGradient>
+        </defs>
+        <polygon points={`${pts} ${areaBottom}`} fill="url(#sparkGrad)"/>
+        <polyline points={pts} fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+    );
+  }
+
+  const overlayStyle = {
+    position: "fixed", inset: 0, background: "rgba(10,22,40,0.7)",
+    backdropFilter: "blur(6px)", zIndex: 9999,
+    display: "flex", alignItems: "center", justifyContent: "center",
+    animation: "fadeIn 0.2s ease",
+  };
+  const modalStyle = {
+    background: "#FFFFFF", borderRadius: 20, width: "100%", maxWidth: 480,
+    margin: "0 16px", boxShadow: "0 32px 80px rgba(10,22,64,0.25)",
+    overflow: "hidden", position: "relative",
+    animation: "slideUp 0.3s cubic-bezier(0.34,1.56,0.64,1)",
+  };
+
+  return (
+    <div style={overlayStyle} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={modalStyle}>
+
+        {/* Header */}
+        <div style={{ background: "#0A1628", padding: "20px 24px 16px", position: "relative" }}>
+          {/* Step dots */}
+          <div style={{ display: "flex", gap: 6, justifyContent: "center", marginBottom: 16 }}>
+            {[1,2,3].map(s => (
+              <div key={s} style={{
+                width: step >= s ? (step === s ? 24 : 8) : 8, height: 8,
+                borderRadius: 4, transition: "all 0.3s ease",
+                background: step >= s ? "#F4C542" : "#1a2d4a"
+              }}/>
+            ))}
+          </div>
+          <div style={{ fontSize: 11, color: "#8A9AB0", textAlign: "center", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+            {step === 1 || step === 1.5 ? "Cerca il titolo" : step === 2 ? "Dettagli acquisto" : "Aggiunto!"}
+          </div>
+          <button onClick={onClose} style={{ position: "absolute", top: 16, right: 16, background: "#1a2d4a", border: "none", color: "#8A9AB0", width: 28, height: 28, borderRadius: "50%", cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+        </div>
+
+        {/* ── STEP 1: Search ── */}
+        {(step === 1 || step === 1.5) && (
+          <div style={{ padding: "24px", animation: "fadeIn 0.2s ease" }}>
+            <div style={{ position: "relative", marginBottom: 16 }}>
+              <div style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", fontSize: 16, pointerEvents: "none" }}>🔍</div>
+              <input ref={inputRef} type="text" placeholder="AAPL, ENI, Tesla…"
+                value={query} onChange={e => setQuery(e.target.value)}
+                style={{ width: "100%", padding: "14px 14px 14px 44px", fontSize: 16, border: "2px solid #E2E8F4", borderRadius: 12, outline: "none", fontFamily: "inherit", transition: "border-color 0.15s", boxSizing: "border-box" }}
+                onFocus={e => e.target.style.borderColor = "#1E4FD8"}
+                onBlur={e => e.target.style.borderColor = "#E2E8F4"}
+              />
+              {searching && <div style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)" }}><Spinner color="#1E4FD8" size={14}/></div>}
+            </div>
+
+            {/* Risultati search */}
+            {searchRes.length > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {searchRes.map(t => (
+                  <button key={t.ticker} onClick={() => selectTicker(t)}
+                    style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: "#F8FAFF", border: "1.5px solid #E2E8F4", borderRadius: 10, cursor: "pointer", textAlign: "left", transition: "all 0.15s", fontFamily: "inherit", width: "100%" }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor="#1E4FD8"; e.currentTarget.style.background="#EEF3FF"; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor="#E2E8F4"; e.currentTarget.style.background="#F8FAFF"; }}>
+                    <img src={`https://assets.parqet.com/logos/symbol/${t.ticker}?format=svg`}
+                      onError={e => { e.target.style.display="none"; }}
+                      style={{ width: 36, height: 36, borderRadius: 8, border: "1px solid #E2E8F4", objectFit: "contain", background: "#fff", padding: 3 }}/>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: "#0A1628" }}>{t.ticker}</div>
+                      <div style={{ fontSize: 11, color: "#8A9AB0", marginTop: 1 }}>{t.name}</div>
+                    </div>
+                    {t.sector && t.sector !== "Altro" && (
+                      <span style={{ fontSize: 10, background: "#EEF3FF", color: "#1E4FD8", padding: "3px 8px", borderRadius: 20, fontWeight: 600 }}>{t.sector}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {step === 1.5 && (
+              <div style={{ textAlign: "center", padding: "32px 0", color: "#8A9AB0", fontSize: 13 }}>
+                <Spinner color="#1E4FD8" size={20}/> <span style={{ marginLeft: 10 }}>Recupero dati…</span>
+              </div>
+            )}
+
+            {!query && searchRes.length === 0 && step !== 1.5 && (
+              <div style={{ textAlign: "center", padding: "32px 0", color: "#C0C8D8" }}>
+                <div style={{ fontSize: 36, marginBottom: 8 }}>📈</div>
+                <div style={{ fontSize: 13 }}>Cerca per ticker o nome azienda</div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── STEP 2: Details ── */}
+        {step === 2 && chosen && (
+          <div style={{ animation: "slideInRight 0.3s cubic-bezier(0.34,1.1,0.64,1)" }}>
+            {/* Preview titolo */}
+            <div style={{ padding: "20px 24px", background: "#F8FAFF", borderBottom: "1px solid #E8EBF4" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+                <img src={`https://assets.parqet.com/logos/symbol/${chosen.ticker}?format=svg`}
+                  onError={e => { e.target.style.display="none"; }}
+                  style={{ width: 44, height: 44, borderRadius: 10, border: "1px solid #E2E8F4", objectFit: "contain", background: "#fff", padding: 4 }}/>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: 18, color: "#0A1628" }}>{chosen.ticker}</div>
+                  <div style={{ fontSize: 12, color: "#8A9AB0" }}>{chosen.name}</div>
+                </div>
+                <div style={{ marginLeft: "auto", textAlign: "right" }}>
+                  {chosen.price
+                    ? <div style={{ fontWeight: 800, fontSize: 20, color: "#0A1628" }}>${fmt(chosen.price)}</div>
+                    : <Spinner color="#1E4FD8" size={14}/>}
+                  {chosen.change != null && (
+                    <div style={{ fontSize: 12, color: chosen.change >= 0 ? "#5EC98A" : "#E87040", fontWeight: 600 }}>
+                      {chosen.change >= 0 ? "+" : ""}{chosen.change?.toFixed(2)}%
+                    </div>
+                  )}
+                </div>
+              </div>
+              {histData.length > 0 && (
+                <div style={{ borderRadius: 8, overflow: "hidden" }}>
+                  <Sparkline data={histData} />
+                </div>
+              )}
+              {chosen.sector && chosen.sector !== "Altro" && (
+                <div style={{ marginTop: 10 }}>
+                  <span style={{ fontSize: 10, background: "#EEF3FF", color: "#1E4FD8", padding: "3px 10px", borderRadius: 20, fontWeight: 600 }}>{chosen.sector}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Campi */}
+            <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: 14 }}>
+              <div>
+                <div style={{ fontSize: 11, color: "#8A9AB0", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>Quantità</div>
+                <input type="number" placeholder="Es. 10" value={qty}
+                  onChange={e => setQty(e.target.value)} autoFocus
+                  style={{ width: "100%", padding: "14px", fontSize: 16, border: "2px solid #E2E8F4", borderRadius: 10, outline: "none", fontFamily: "inherit", boxSizing: "border-box", colorScheme: "light", transition: "border-color 0.15s" }}
+                  onFocus={e => e.target.style.borderColor="#1E4FD8"}
+                  onBlur={e => e.target.style.borderColor="#E2E8F4"}/>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: "#8A9AB0", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>Prezzo di acquisto</div>
+                <div style={{ position: "relative" }}>
+                  <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: "#8A9AB0", fontSize: 15 }}>$</span>
+                  <input type="number" step="0.01" value={buyPrice}
+                    onChange={e => setBuyPrice(e.target.value)}
+                    style={{ width: "100%", padding: "14px 14px 14px 28px", fontSize: 16, border: "2px solid #E2E8F4", borderRadius: 10, outline: "none", fontFamily: "inherit", boxSizing: "border-box", colorScheme: "light", transition: "border-color 0.15s" }}
+                    onFocus={e => e.target.style.borderColor="#1E4FD8"}
+                    onBlur={e => e.target.style.borderColor="#E2E8F4"}/>
+                </div>
+                {chosen.price && buyPrice && Math.abs(parseFloat(buyPrice) - chosen.price) / chosen.price > 0.05 && (
+                  <div style={{ fontSize: 11, color: "#F4A020", marginTop: 4 }}>
+                    ⚠️ Diverso dal prezzo attuale (${fmt(chosen.price)})
+                  </div>
+                )}
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: "#8A9AB0", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>Data di acquisto</div>
+                <input type="date" value={buyDate} max={new Date().toISOString().split("T")[0]}
+                  onChange={e => setBuyDate(e.target.value)}
+                  style={{ width: "100%", padding: "14px", fontSize: 15, border: "2px solid #E2E8F4", borderRadius: 10, outline: "none", fontFamily: "inherit", boxSizing: "border-box", colorScheme: "light", transition: "border-color 0.15s" }}
+                  onFocus={e => e.target.style.borderColor="#1E4FD8"}
+                  onBlur={e => e.target.style.borderColor="#E2E8F4"}/>
+              </div>
+
+              <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+                <button onClick={() => { setAnimDir("back"); setStep(1); setQuery(""); setSearchRes([]); }}
+                  style={{ flex: 1, padding: "14px", border: "2px solid #E2E8F4", borderRadius: 10, background: "none", color: "#8A9AB0", fontFamily: "inherit", fontSize: 14, cursor: "pointer", fontWeight: 600 }}>
+                  ← Indietro
+                </button>
+                <button onClick={handleConfirm} disabled={!qty || !buyPrice || !buyDate || adding}
+                  style={{ flex: 2, padding: "14px", border: "none", borderRadius: 10, background: (!qty||!buyPrice||!buyDate) ? "#E2E8F4" : "#1E4FD8", color: (!qty||!buyPrice||!buyDate) ? "#C0C8D8" : "#fff", fontFamily: "inherit", fontSize: 14, cursor: (!qty||!buyPrice||!buyDate) ? "not-allowed" : "pointer", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "all 0.2s" }}>
+                  {adding ? <><Spinner color="#fff" size={12}/> Aggiunta…</> : "Aggiungi al portafoglio →"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── STEP 3: Success ── */}
+        {step === 3 && chosen && (
+          <div style={{ padding: "40px 24px", textAlign: "center", animation: "popIn 0.4s cubic-bezier(0.34,1.56,0.64,1)" }}>
+            <div style={{ fontSize: 64, marginBottom: 16, animation: "popIn 0.5s cubic-bezier(0.34,1.56,0.64,1) 0.1s both" }}>🎉</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: "#0A1628", marginBottom: 6 }}>{chosen.ticker} aggiunto!</div>
+            <div style={{ fontSize: 13, color: "#8A9AB0", marginBottom: 24 }}>
+              {qty} azioni · ${fmt(parseFloat(buyPrice))} · {buyDate}
+            </div>
+            <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 12, padding: "16px 20px", marginBottom: 24, textAlign: "left" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                <span style={{ fontSize: 12, color: "#8A9AB0" }}>Valore investito</span>
+                <span style={{ fontWeight: 700, color: "#0A1628" }}>${fmt(parseFloat(qty) * parseFloat(buyPrice))}</span>
+              </div>
+              {chosen.price && (
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ fontSize: 12, color: "#8A9AB0" }}>Valore attuale</span>
+                  <span style={{ fontWeight: 700, color: parseFloat(qty)*chosen.price >= parseFloat(qty)*parseFloat(buyPrice) ? "#16A34A" : "#E87040" }}>
+                    ${fmt(parseFloat(qty) * chosen.price)}
+                  </span>
+                </div>
+              )}
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => { setStep(1); setQuery(""); setChosen(null); setQty(""); setBuyPrice(""); setSearchRes([]); }}
+                style={{ flex: 1, padding: "13px", border: "2px solid #E2E8F4", borderRadius: 10, background: "none", color: "#1E4FD8", fontFamily: "inherit", fontSize: 13, cursor: "pointer", fontWeight: 700 }}>
+                + Aggiungi altro
+              </button>
+              <button onClick={onClose}
+                style={{ flex: 1, padding: "13px", border: "none", borderRadius: 10, background: "#0A1628", color: "#fff", fontFamily: "inherit", fontSize: 13, cursor: "pointer", fontWeight: 700 }}>
+                Chiudi
+              </button>
+            </div>
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}
+
 // ─── OVERVIEW TAB ─────────────────────────────────────────────────────────────
 function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, totalInvested,
   totalPnL, totalPct, sectorData, portfolioHistory, alerts, setSelectedId, setEditId,
@@ -2902,6 +3208,7 @@ export default function App() {
   const [selectedId, setSelectedId] = useState(null);
   const [editId, setEditId] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
 
@@ -3346,7 +3653,7 @@ export default function App() {
 
   if (userLoading) return (
     <div style={{ minHeight: "100vh", background: "#F8F9FC", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Geist', sans-serif" }}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap'); *{box-sizing:border-box;margin:0;padding:0} body{-webkit-tap-highlight-color:transparent} @keyframes spin{to{transform:rotate(360deg)}} @supports(padding-top: env(safe-area-inset-top)){.safe-top{padding-top:env(safe-area-inset-top)!important}}`}</style>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap'); *{box-sizing:border-box;margin:0;padding:0} body{-webkit-tap-highlight-color:transparent} @keyframes spin{to{transform:rotate(360deg)}} @keyframes fadeIn{from{opacity:0}to{opacity:1}} @keyframes slideUp{from{opacity:0;transform:translateY(40px)}to{opacity:1;transform:translateY(0)}} @keyframes slideInRight{from{opacity:0;transform:translateX(30px)}to{opacity:1;transform:translateX(0)}} @keyframes popIn{from{opacity:0;transform:scale(0.7)}to{opacity:1;transform:scale(1)}} @supports(padding-top: env(safe-area-inset-top)){.safe-top{padding-top:env(safe-area-inset-top)!important}}`}</style>
       <div style={{ textAlign: "center" }}>
         <div style={{ marginBottom: 16 }}><TrackfolioLogo size={28} showText={true} textColor="#0A1628" /></div>
         <span style={{ display: "inline-block", width: 16, height: 16, borderRadius: "50%", border: "2px solid #F4C542", borderTopColor: "transparent", animation: "spin 0.7s linear infinite" }} />
@@ -3380,7 +3687,7 @@ export default function App() {
             .add-btn{background:#F4C542;border:none;color:#0D0F14;font-family:inherit;font-size:12px;font-weight:600;padding:10px 20px;border-radius:4px;cursor:pointer;display:flex;align-items:center;gap:7px;white-space:nowrap;transition:opacity 0.15s}
             .add-btn:hover{opacity:0.85} .add-btn:disabled{opacity:0.5;cursor:not-allowed}
             .card{background:#FFFFFF;border:1px solid #E2E8F0;border-radius:10px;padding:16px 18px;box-shadow:0 1px 4px rgba(10,22,40,0.06)}
-            @keyframes spin{to{transform:rotate(360deg)}}
+            @keyframes spin{to{transform:rotate(360deg)}} @keyframes fadeIn{from{opacity:0}to{opacity:1}} @keyframes slideUp{from{opacity:0;transform:translateY(40px)}to{opacity:1;transform:translateY(0)}} @keyframes slideInRight{from{opacity:0;transform:translateX(30px)}to{opacity:1;transform:translateX(0)}} @keyframes popIn{from{opacity:0;transform:scale(0.7)}to{opacity:1;transform:scale(1)}}
             @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
             .fade-up{animation:fadeUp 0.3s ease forwards}
 
@@ -3434,6 +3741,44 @@ export default function App() {
           {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} />}
           {showOnboarding && <OnboardingModal onClose={closeOnboarding} />}
 
+          {/* Add Stock Wizard */}
+          {showWizard && (
+            <AddStockWizard
+              sym={sym} fmt={fmt}
+              onClose={() => setShowWizard(false)}
+              onAdd={async ({ ticker, qty, buyPrice, buyDate, sector }) => {
+                setAdding(true);
+                try {
+                  const priceRes = await fetch(`/api/price?ticker=${ticker}`);
+                  const priceData = await priceRes.json();
+                  const newStock = {
+                    ticker: ticker.toUpperCase(),
+                    qty: parseFloat(qty),
+                    buyPrice: parseFloat(buyPrice),
+                    currentPrice: priceData.price || parseFloat(buyPrice),
+                    sector: sector || "Altro",
+                    buyDate,
+                    price_real: !!priceData.price,
+                    currency: priceData.currency || "USD",
+                    marketState: priceData.marketState || "CLOSED",
+                  };
+                  const { data, error } = await supabase.from("stocks").insert([{
+                    user_id: user.id,
+                    ticker: newStock.ticker,
+                    qty: newStock.qty,
+                    buy_price: newStock.buyPrice,
+                    current_price: newStock.currentPrice,
+                    sector: newStock.sector,
+                    buy_date: newStock.buyDate,
+                    price_real: newStock.price_real,
+                  }]).select();
+                  if (error) throw error;
+                  setStocks(prev => [...prev, { ...newStock, id: data[0].id }]);
+                } finally { setAdding(false); }
+              }}
+            />
+          )}
+
           {/* Header */}
           <div style={{ padding: "0 16px 0 20px", paddingTop: "env(safe-area-inset-top)", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #1a2d4a", minHeight: 52, gap: 10, background: "#0A1628", position: "sticky", top: 0, zIndex: 100 }}>
             {/* Logo */}
@@ -3466,7 +3811,7 @@ export default function App() {
                 }
                 <span className="hide-mobile">{marketOpen === null ? "..." : marketOpen ? "Live" : "Chiusi"}</span>
               </button>
-              <button className="add-btn" onClick={() => setShowForm(v => !v)} style={{ fontSize: 11, padding: "6px 14px", background: showForm ? "#E87040" : "#1E4FD8" }}>{showForm ? "✕ Chiudi" : "+ Aggiungi"}</button>
+              <button className="add-btn" onClick={() => setShowWizard(true)} style={{ fontSize: 11, padding: "6px 14px", background: "#1E4FD8" }}>+ Aggiungi</button>
               {/* Mobile: user avatar button */}
               <button onClick={() => signOut().then(() => setUser(null))}
                 style={{ background: "#1a2d4a", border: "1px solid #2a4a6a", borderRadius: "50%", width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, color: "#8BA4C0", fontSize: 11, fontFamily: "inherit" }}
@@ -3477,7 +3822,7 @@ export default function App() {
           </div>
 
           {/* Add form */}
-          {showForm && (
+          {false && showForm && (
             <div className="fade-up" style={{ padding: "16px 20px", background: "#FFFFFF", borderBottom: "1px solid #E2E8F4", boxShadow: "0 4px 16px rgba(10,22,64,0.06)" }}>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 10 }}>
                 <div style={{ gridColumn: "1 / -1" }}>
