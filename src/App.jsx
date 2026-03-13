@@ -5033,12 +5033,6 @@ function WhatIfTab({ fmt, fmtPct, eurRate }) {
     </div>
   );
 }
-
-// Converte prezzo in USD usando il tasso EUR/USD corrente
-// EUR → price / eurRate | GBp (pence) → price/100 / (eurRate*0.85) | USD → invariato
-
-
-export default function App() {
   const [user, setUser] = useState(null);
   const [userLoading, setUserLoading] = useState(true);
 
