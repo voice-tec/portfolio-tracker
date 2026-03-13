@@ -1,47 +1,49 @@
-// api/search.js — Vercel Serverless Function
-// GET /api/search?q=apple
-// Returns matching ticker symbols from Finnhub + sector from Yahoo Finance
-
+// api/search.js
 const SECTOR_MAP = {
-  "Technology":              "Tech",
-  "Financial Services":      "Finanza",
-  "Healthcare":              "Salute",
-  "Energy":                  "Energia",
-  "Consumer Cyclical":       "Consumer",
-  "Consumer Defensive":      "Consumer",
-  "Industrials":             "Industriali",
-  "Real Estate":             "Real Estate",
-  "Utilities":               "Utility",
-  "Basic Materials":         "Materiali",
-  "Communication Services":  "Telecom",
-  "Financial":               "Finanza",
+  "Technology": "Tecnologia", "Software": "Tecnologia", "Semiconductors": "Tecnologia",
+  "Financial Services": "Finanza", "Financial": "Finanza", "Banks": "Finanza", "Insurance": "Finanza",
+  "Healthcare": "Salute", "Pharmaceuticals": "Salute", "Biotechnology": "Salute",
+  "Energy": "Energia", "Oil": "Energia",
+  "Consumer Cyclical": "Consumo", "Consumer Defensive": "Consumo", "Retail": "Consumo",
+  "Industrials": "Industriale", "Aerospace": "Industriale", "Machinery": "Industriale",
+  "Real Estate": "Immobiliare",
+  "Utilities": "Utilities",
+  "Basic Materials": "Materiali", "Materials": "Materiali",
+  "Communication Services": "Comunicazione", "Media": "Comunicazione",
 };
 
-async function fetchSector(ticker) {
+function mapSector(raw) {
+  if (!raw) return null;
+  const entry = Object.entries(SECTOR_MAP).find(([k]) => raw.includes(k));
+  return entry ? entry[1] : null;
+}
+
+async function fetchSectorFinnhub(ticker, apiKey) {
   try {
-    const url = `https://query2.finance.yahoo.com/v11/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=assetProfile`;
-    const r = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "application/json",
-      }
-    });
+    const r = await fetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${encodeURIComponent(ticker)}&token=${apiKey}`);
     if (!r.ok) return null;
     const d = await r.json();
-    const profile = d?.quoteSummary?.result?.[0]?.assetProfile;
-    const raw = profile?.sector;
-    if (!raw) return null;
-    return SECTOR_MAP[raw] || "Altro";
-  } catch {
-    return null;
-  }
+    return mapSector(d.finnhubIndustry || d.sector);
+  } catch { return null; }
+}
+
+async function fetchSectorYahoo(ticker) {
+  try {
+    const r = await fetch(
+      `https://query2.finance.yahoo.com/v11/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=assetProfile`,
+      { headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json" } }
+    );
+    if (!r.ok) return null;
+    const d = await r.json();
+    const raw = d?.quoteSummary?.result?.[0]?.assetProfile?.sector;
+    return mapSector(raw);
+  } catch { return null; }
 }
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", process.env.ALLOWED_ORIGIN || "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
@@ -54,7 +56,7 @@ export default async function handler(req, res) {
   try {
     const url = `https://finnhub.io/api/v1/search?q=${encodeURIComponent(q)}&token=${apiKey}`;
     const response = await fetch(url);
-    if (!response.ok) return res.status(response.status).json({ error: `Finnhub error: ${response.statusText}` });
+    if (!response.ok) return res.status(response.status).json({ error: `Finnhub error` });
 
     const data = await response.json();
     const filtered = (data.result || [])
@@ -62,18 +64,15 @@ export default async function handler(req, res) {
       .slice(0, 8);
 
     const results = await Promise.all(filtered.map(async r => {
-      const sector = await fetchSector(r.symbol);
-      return {
-        ticker:   r.symbol,
-        name:     r.description,
-        exchange: r.displaySymbol?.includes(".") ? r.displaySymbol.split(".")[1] : "US",
-        type:     r.type,
-        sector:   sector || (r.type === "ETP" ? "ETF" : "Altro"),
-      };
+      const isETF = r.type === "ETP";
+      if (isETF) return { ticker: r.symbol, name: r.description, exchange: "US", type: r.type, sector: "ETF" };
+
+      // Prova Yahoo prima, poi Finnhub come fallback
+      const sector = (await fetchSectorYahoo(r.symbol)) || (await fetchSectorFinnhub(r.symbol, apiKey)) || "Altro";
+      return { ticker: r.symbol, name: r.description, exchange: "US", type: r.type, sector };
     }));
 
     return res.status(200).json({ results });
-
   } catch (err) {
     console.error("Search error:", err);
     return res.status(500).json({ error: "Failed to search symbols" });

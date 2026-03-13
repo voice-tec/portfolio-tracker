@@ -3483,17 +3483,9 @@ export default function App() {
                 <div style={{ gridColumn: "1 / -1" }}>
                   <div style={{ fontSize: 10, color: "#8A9AB0", marginBottom: 4, letterSpacing: "0.08em", textTransform: "uppercase", fontWeight: 600 }}>Ticker</div>
                   <TickerAutocomplete value={form.ticker} onChange={v => setForm(f => ({ ...f, ticker: v }))}
-                    onSelect={async t => {
-                      const sector = t.sector || "Altro";
+                    onSelect={t => {
+                      const sector = t.sector && t.sector !== "Altro" ? t.sector : "Altro";
                       setForm(f => ({ ...f, ticker: t.ticker, sector }));
-                      // Prova a prendere il settore reale da Finnhub via /api/price
-                      try {
-                        const r = await fetch(`/api/price?ticker=${t.ticker}&info=1`);
-                        const d = await r.json();
-                        if (d.sector && d.sector !== "Altro") {
-                          setForm(f => ({ ...f, ticker: t.ticker, sector: d.sector }));
-                        }
-                      } catch {}
                     }} />
                 </div>
                 <div>
