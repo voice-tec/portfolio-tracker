@@ -28,16 +28,138 @@ function getPieColor(name, idx) {
   return SECTOR_COLOR_MAP[name] || FALLBACK_COLORS[idx % FALLBACK_COLORS.length];
 }
 
-// ─── ALERT SUGGERIMENTI ───────────────────────────────────────────────────────
+// ─── ALERT SUGGERIMENTI (label + dettaglio espandibile) ───────────────────────
 const TIPS = {
-  "Tech":       ["Bilancia con XLV (Salute) o XLP (Beni primari)", "Aggiungi esposizione internazionale con VEA", "Considera obbligazioni TLT per ridurre volatilità"],
-  "Finanza":    ["Bilancia con settori difensivi come XLU o XLV", "Considera esposizione internazionale VWO", "I tassi alti favoriscono le banche ma aumentano il rischio"],
-  "Energia":    ["Diversifica con XLK (Tech) o XLV (Salute)", "Alta ciclicità: considera XLP come difensivo", "GLD può bilanciare il rischio commodity"],
-  "Real Estate":["REIT sensibili ai tassi: diversifica con Tech", "Aggiungi bond a breve SHY come bilanciamento", "Considera settori meno correlati ai tassi"],
+  "Tech": [
+    { label: "Bilancia con XLV o XLP", detail: "XLV (Salute) e XLP (Beni primari) sono settori difensivi che reagiscono meglio nei momenti di ribasso tech." },
+    { label: "Esposizione internazionale con VEA", detail: "VEA diversifica su Europa, Asia e mercati sviluppati, riducendo la dipendenza dalle mega-cap USA." },
+    { label: "Obbligazioni TLT per ridurre volatilità", detail: "I Treasury a lungo termine tendono a salire quando il tech scende, offrendo un bilanciamento naturale." },
+  ],
+  "Finanza": [
+    { label: "Settori difensivi XLU o XLV", detail: "Utility e Salute hanno bassa correlazione col settore finanziario e reggono meglio in fasi di stress bancario." },
+    { label: "Esposizione emergenti con VWO", detail: "Diversifica su mercati emergenti che hanno cicli diversi rispetto alle banche occidentali." },
+    { label: "Attenzione ai tassi d'interesse", detail: "I titoli finanziari beneficiano dei tassi alti ma soffrono in caso di inversione rapida." },
+  ],
+  "Energia": [
+    { label: "Diversifica con XLK o XLV", detail: "Tech e Salute hanno bassa correlazione con l'energia e riducono l'esposizione al ciclo delle commodity." },
+    { label: "XLP come cuscinetto difensivo", detail: "I beni primari (cibo, igiene) mantengono valore nei periodi di contrazione economica." },
+    { label: "GLD per bilanciare il rischio commodity", detail: "L'oro ha correlazione parziale con l'energia ma agisce da riserva di valore in scenari estremi." },
+  ],
+  "Real Estate": [
+    { label: "REIT sensibili ai tassi: diversifica con Tech", detail: "Quando i tassi salgono i REIT soffrono; il tech (specialmente software) è meno dipendente dal costo del debito." },
+    { label: "Bond a breve SHY come bilanciamento", detail: "I Treasury a breve scadenza offrono rendimento senza il rischio duration legato ai tassi." },
+    { label: "Settori meno correlati ai tassi", detail: "Consumer discretionary o healthcare hanno driver di crescita indipendenti dalla politica monetaria." },
+  ],
 };
-const DEFAULT_TIPS = ["Diversifica su altri settori", "Considera ETF globali come VTI o VEA", "Valuta obbligazioni per ridurre volatilità"];
+const DEFAULT_TIPS = [
+  { label: "Diversifica su altri settori", detail: "Distribuire il capitale su 5-8 settori riduce il rischio specifico senza sacrificare il rendimento atteso." },
+  { label: "ETF globali come VTI o VEA", detail: "VTI copre l'intero mercato USA, VEA i mercati sviluppati internazionali: insieme offrono esposizione globale." },
+  { label: "Obbligazioni per ridurre volatilità", detail: "Un'allocazione del 10-20% in bond riduce la volatilità complessiva del portafoglio nelle fasi di ribasso." },
+];
 
-// ─── COMPONENTE ───────────────────────────────────────────────────────────────
+// ─── TIP PILL INTERATTIVA ─────────────────────────────────────────────────────
+function TipItem({ tip }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div
+      onClick={() => setOpen(v => !v)}
+      style={{
+        borderRadius: 6,
+        background: open ? "rgba(220,38,38,0.14)" : "rgba(220,38,38,0.06)",
+        border: `1px solid ${open ? "rgba(220,38,38,0.35)" : "rgba(220,38,38,0.14)"}`,
+        padding: "8px 10px",
+        cursor: "pointer",
+        transition: "all 0.18s",
+        marginBottom: 6,
+        userSelect: "none",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <span style={{ fontSize: 11, color: "#FECACA", fontWeight: 500, lineHeight: 1.3 }}>
+          {tip.label}
+        </span>
+        <span style={{
+          fontSize: 10, color: "rgba(254,202,202,0.45)", flexShrink: 0,
+          display: "inline-block", transition: "transform 0.18s",
+          transform: open ? "rotate(180deg)" : "rotate(0deg)",
+        }}>▾</span>
+      </div>
+      {open && (
+        <div style={{
+          marginTop: 7, fontSize: 10, color: "rgba(254,202,202,0.65)",
+          lineHeight: 1.6, borderTop: "1px solid rgba(220,38,38,0.18)",
+          paddingTop: 7,
+        }}>
+          {tip.detail}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── PANNELLO ALERT ───────────────────────────────────────────────────────────
+function AlertPanel({ alerts, onClose }) {
+  return (
+    <div style={{
+      flex: 1, minWidth: 230, maxWidth: 320,
+      background: "rgba(127,29,29,0.20)",
+      border: "1px solid rgba(220,38,38,0.28)",
+      borderRadius: 10,
+      padding: "14px 16px",
+    }}>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+          <span style={{ fontSize: 15 }}>⚠️</span>
+          <span style={{ fontSize: 10, color: "#FCA5A5", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 700 }}>
+            Concentrazione elevata
+          </span>
+        </div>
+        <button onClick={onClose} style={{
+          background: "none", border: "none",
+          color: "rgba(252,165,165,0.35)", cursor: "pointer",
+          fontSize: 15, padding: 0, lineHeight: 1,
+        }}>✕</button>
+      </div>
+
+      {alerts.map(a => {
+        const pct = parseFloat(a.pct);
+        const barColor = pct > 50 ? "#EF4444" : pct > 35 ? "#F97316" : "#FBBF24";
+        return (
+          <div key={a.sector} style={{ marginBottom: 16 }}>
+            {/* Nome + % */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 7 }}>
+              <span style={{ fontSize: 13, color: "#FECACA", fontWeight: 600 }}>{a.sector}</span>
+              <span style={{ fontSize: 16, color: barColor, fontWeight: 700 }}>{a.pct}%</span>
+            </div>
+
+            {/* Barra */}
+            <div style={{ height: 6, background: "rgba(220,38,38,0.15)", borderRadius: 3, marginBottom: 12, overflow: "hidden" }}>
+              <div style={{
+                height: "100%",
+                width: `${Math.min(pct, 100)}%`,
+                background: `linear-gradient(90deg, ${barColor}88, ${barColor})`,
+                borderRadius: 3,
+              }} />
+            </div>
+
+            {/* Etichetta */}
+            <div style={{ fontSize: 9, color: "rgba(252,165,165,0.4)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+              Suggerimenti — tocca per espandere
+            </div>
+
+            {/* Tips interattive */}
+            {a.tips.map((tip, j) => (
+              <TipItem key={j} tip={tip} />
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── COMPONENTE PRINCIPALE ────────────────────────────────────────────────────
 export function AllocationCard({ stocks, eurRate }) {
   const [tab, setTab] = useState("settori");
   const [activeIdx, setActiveIdx] = useState(null);
@@ -45,27 +167,21 @@ export function AllocationCard({ stocks, eurRate }) {
 
   const { holdings, loading: etfLoading } = useETFHoldings(stocks);
 
-  // ── totalValue sempre in USD ───────────────────────────────────────────────
   const totalValue = useMemo(
     () => stocks.reduce((s, x) => s + x.qty * toUSD(x.currentPrice, x.currency, eurRate), 0),
     [stocks, eurRate]
   );
 
-  // ── pieData: valori sempre in USD ─────────────────────────────────────────
   const pieData = useMemo(() => {
     const map = {};
-
     stocks.forEach(s => {
-      // Valore posizione in USD
       const posVal = s.qty * toUSD(s.currentPrice, s.currency, eurRate);
-
       const etfData = holdings[s.ticker];
       const hasSectorWeights = etfData?.sectorWeights?.length > 0;
       const isETF = s.sector === "ETF" || isKnownETF(s.ticker);
 
       if (tab === "settori") {
         if (isETF && hasSectorWeights) {
-          // Scomponi ETF per settore usando i pesi reali
           etfData.sectorWeights.forEach(sw => {
             const key = sw.sector || "Altro";
             map[key] = (map[key] || 0) + posVal * (sw.weight / 100);
@@ -81,13 +197,11 @@ export function AllocationCard({ stocks, eurRate }) {
         map[tipo] = (map[tipo] || 0) + posVal;
       }
     });
-
     return Object.entries(map)
       .map(([name, value]) => ({ name, value: parseFloat(value.toFixed(2)) }))
       .sort((a, b) => b.value - a.value);
   }, [stocks, tab, holdings, eurRate]);
 
-  // ── alert concentrazione >25% ─────────────────────────────────────────────
   const alerts = useMemo(() => {
     if (tab !== "settori" || totalValue === 0) return [];
     return pieData
@@ -160,7 +274,7 @@ export function AllocationCard({ stocks, eurRate }) {
             {centerItem ? (
               <>
                 <div style={{ fontSize: 10, color: "#8A9AB0", lineHeight: 1.2, marginBottom: 2 }}>{centerItem.name}</div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: "#0A1628", letterSpacing: "-0.5px" }}>${fmt(centerItem.value)}</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "#E8E6DF", letterSpacing: "-0.5px" }}>${fmt(centerItem.value)}</div>
                 <div style={{ fontSize: 13, color: "#F4C542", fontWeight: 600, marginTop: 1 }}>
                   {totalValue > 0 ? ((centerItem.value / totalValue) * 100).toFixed(1) : 0}%
                 </div>
@@ -168,7 +282,7 @@ export function AllocationCard({ stocks, eurRate }) {
             ) : (
               <>
                 <div style={{ fontSize: 10, color: "#8A9AB0", marginBottom: 3 }}>Patrimonio</div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: "#0A1628", letterSpacing: "-0.5px" }}>${fmt(totalValue)}</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "#E8E6DF", letterSpacing: "-0.5px" }}>${fmt(totalValue)}</div>
                 <div style={{ fontSize: 11, color: "#5A6A7E", marginTop: 2 }}>€{fmt(totalValue * eurRate)}</div>
               </>
             )}
@@ -199,27 +313,7 @@ export function AllocationCard({ stocks, eurRate }) {
 
         {/* Panel alert */}
         {alerts.length > 0 && showAlerts && (
-          <div style={{ flex: 1, minWidth: 200, maxWidth: 280, background: "#0f1117", borderRadius: 8, border: "1px solid #E8704033", padding: "12px 14px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-              <div style={{ fontSize: 9, color: "#E87040", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 600 }}>⚠️ Concentrazione elevata</div>
-              <button onClick={() => setShowAlerts(false)} style={{ background: "none", border: "none", color: "#444", cursor: "pointer", fontSize: 12, padding: 0 }}>✕</button>
-            </div>
-            {alerts.map(a => (
-              <div key={a.sector} style={{ marginBottom: 12 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                  <span style={{ fontSize: 11, color: "#E8E6DF", fontWeight: 500 }}>{a.sector}</span>
-                  <span style={{ fontSize: 12, color: "#E87040", fontWeight: 700 }}>{a.pct}%</span>
-                </div>
-                <div style={{ height: 4, background: "#1a1d26", borderRadius: 2, marginBottom: 8, overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${Math.min(parseFloat(a.pct), 100)}%`, background: parseFloat(a.pct) > 50 ? "#E87040" : "#F4C542", borderRadius: 2 }} />
-                </div>
-                <div style={{ fontSize: 9, color: "#444", marginBottom: 6 }}>Suggerimenti:</div>
-                {a.tips.map((tip, j) => (
-                  <div key={j} style={{ fontSize: 10, color: "#666", marginBottom: 4, paddingLeft: 8, borderLeft: "2px solid #2a2d35", lineHeight: 1.4 }}>{tip}</div>
-                ))}
-              </div>
-            ))}
-          </div>
+          <AlertPanel alerts={alerts} onClose={() => setShowAlerts(false)} />
         )}
       </div>
     </div>
