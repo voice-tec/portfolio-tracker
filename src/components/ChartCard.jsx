@@ -49,22 +49,7 @@ export function ChartCard({ stocks, eurRate }) {
   }, [chartData, stocks]);
 
   return (
-    <div className="card" style={{ marginBottom: 16, padding: "20px 20px 12px" }}>
-
-      {/* ── Valore + % header stile Getquin ── */}
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 28, fontWeight: 700, color: "#0A1628", letterSpacing: "-0.5px" }}>
-          ${fmt(lastValore)}
-        </div>
-        <div style={{ fontSize: 12, color: lineColor, marginTop: 2, display: "flex", alignItems: "center", gap: 6 }}>
-          <span>{isPositive ? "↑" : "↓"} {Math.abs(lastPct).toFixed(2)}%</span>
-          <span style={{ color: "#5A6A7E" }}>
-            ({isPositive ? "+" : ""}${fmt(lastValore - lastCosto)})
-          </span>
-          <span style={{ color: "#D8DCE8", margin: "0 2px" }}>·</span>
-          <span style={{ color: "#5A6A7E", fontSize: 11 }}>{period === "Inizio" ? "da inizio" : `ultimi ${period}`}</span>
-        </div>
-      </div>
+    <div className="card" style={{ marginBottom: 16, padding: "14px 20px 12px" }}>
 
       {/* ── Controls ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
