@@ -91,8 +91,11 @@ export function ChartCard({ stocks, eurRate, onPeriodReturns }) {
 
       {/* ── Variazione periodo corrente ── */}
       {(() => {
-        const varMap = { "1M": periodReturns?.day != null ? periodReturns?.month : null, "3M": periodReturns?.threeMonth, "1A": periodReturns?.year, "Inizio": lastPct, "6M": null };
-        const v = period === "Inizio" ? lastPct : (period === "1M" ? periodReturns?.month : period === "3M" ? periodReturns?.threeMonth : period === "1A" ? periodReturns?.year : null);
+        const v = period === "Inizio" ? periodReturns?.all
+          : period === "1M"  ? periodReturns?.month
+          : period === "3M"  ? periodReturns?.threeMonth
+          : period === "1A"  ? periodReturns?.year
+          : null;
         if (v == null) return null;
         const c = v >= 0 ? "#5EC98A" : "#E87040";
         return (
