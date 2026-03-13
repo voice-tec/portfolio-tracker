@@ -1807,13 +1807,17 @@ function AddStockWizard({ onClose, onAdd, sym, fmt }) {
     setStep(1.5); // transizione
     try {
       const [priceRes, histRes] = await Promise.all([
-        fetch(`/api/price?ticker=${t.ticker}`),
+        fetch(`/api/price?symbol=${t.ticker}`),
         fetch(`/api/history?ticker=${t.ticker}&days=90`),
       ]);
       const pd = await priceRes.json();
       const hd = await histRes.json();
       setChosen(c => ({ ...c, price: pd.price, change: pd.changePercent, currency: pd.currency }));
-      setHistData(Array.isArray(hd) ? hd.slice(-60) : []);
+      // Normalizza formato history: [{date,price}] o [{date,close}] → [{price}]
+      const normalized = Array.isArray(hd) ? hd.slice(-60).map(d => ({
+        price: d.price ?? d.close ?? d.adjClose ?? 0
+      })).filter(d => d.price > 0) : [];
+      setHistData(normalized);
       setBuyPrice(pd.price ? pd.price.toFixed(2) : "");
       setBuyDate(new Date().toISOString().split("T")[0]);
     } catch {}
@@ -1836,7 +1840,8 @@ function AddStockWizard({ onClose, onAdd, sym, fmt }) {
   // Mini sparkline
   function Sparkline({ data, color = "#5EC98A" }) {
     if (!data || data.length < 2) return null;
-    const prices = data.map(d => d.price);
+    const prices = data.map(d => d?.price ?? 0).filter(p => p > 0);
+    if (prices.length < 2) return null;
     const min = Math.min(...prices), max = Math.max(...prices);
     const W = 280, H = 70;
     const pts = prices.map((p, i) => {
@@ -3332,10 +3337,10 @@ export default function App() {
     })();
   }, []);
 
-  async function handleAdd() {
-    const t = form.ticker.trim().toUpperCase();
-    const q = parseFloat(form.qty);
-    const p = parseFloat(form.buyPrice);
+  async function handleAdd(override = null) {
+    const t = (override?.ticker || form.ticker).trim().toUpperCase();
+    const q = parseFloat(override?.qty ?? form.qty);
+    const p = parseFloat(override?.buyPrice ?? form.buyPrice);
     if (!t) return setFormErr("Inserisci un ticker.");
     if (!q || q <= 0) return setFormErr("Quantità non valida.");
     if (!p || p <= 0) return setFormErr("Prezzo non valido.");
@@ -3352,14 +3357,14 @@ export default function App() {
     const history = simulateHistory(curPrice);
     if (realPrice) history[history.length - 1].price = realPrice;
     // Converti data da YYYY-MM-DD a dd/mm/yy
-    const buyDateFormatted = form.buyDate; // salva direttamente in YYYY-MM-DD
+    const buyDateFormatted = override?.buyDate || form.buyDate; // salva direttamente in YYYY-MM-DD
     // Determina valuta dal ticker o dalla risposta API
     const detectedCurrency = (() => {
       if (t.endsWith(".MI") || t.endsWith(".AS") || t.endsWith(".PA") || t.endsWith(".DE") || t.endsWith(".SW") || t.endsWith(".MA") || t.endsWith(".BR")) return "EUR";
       if (t.endsWith(".L")) return "GBp"; // Pence sterline
       return "USD";
     })();
-    const ns = { ticker: t, qty: q, buyPrice: p, currentPrice: parseFloat(curPrice.toFixed(2)), history, sector: form.sector || "Altro", priceReal: !!realPrice, buyDate: buyDateFormatted, currency: detectedCurrency };
+    const ns = { ticker: t, qty: q, buyPrice: p, currentPrice: parseFloat(curPrice.toFixed(2)), history, sector: override?.sector || form.sector || "Altro", priceReal: !!realPrice, buyDate: override?.buyDate || buyDateFormatted, currency: detectedCurrency };
     // Save to Supabase if logged in
     let dbId = null;
     if (user) {
@@ -3369,7 +3374,7 @@ export default function App() {
     setStocks(prev => [...prev, withId]);
     setSelectedId(withId.id);
     setForm({ ticker: "", qty: "", buyPrice: "", sector: "Altro", buyDate: "" });
-    setAdding(false); setShowForm(false);
+    setAdding(false); setShowForm(false); // wizard chiude da solo allo step 3
     // Auto-refresh prezzo live dopo aggiunta
     fetchPrice(t, true).then(result => {
       if (!result) return;
@@ -3747,34 +3752,10 @@ export default function App() {
               sym={sym} fmt={fmt}
               onClose={() => setShowWizard(false)}
               onAdd={async ({ ticker, qty, buyPrice, buyDate, sector }) => {
-                setAdding(true);
-                try {
-                  const priceRes = await fetch(`/api/price?ticker=${ticker}`);
-                  const priceData = await priceRes.json();
-                  const newStock = {
-                    ticker: ticker.toUpperCase(),
-                    qty: parseFloat(qty),
-                    buyPrice: parseFloat(buyPrice),
-                    currentPrice: priceData.price || parseFloat(buyPrice),
-                    sector: sector || "Altro",
-                    buyDate,
-                    price_real: !!priceData.price,
-                    currency: priceData.currency || "USD",
-                    marketState: priceData.marketState || "CLOSED",
-                  };
-                  const { data, error } = await supabase.from("stocks").insert([{
-                    user_id: user.id,
-                    ticker: newStock.ticker,
-                    qty: newStock.qty,
-                    buy_price: newStock.buyPrice,
-                    current_price: newStock.currentPrice,
-                    sector: newStock.sector,
-                    buy_date: newStock.buyDate,
-                    price_real: newStock.price_real,
-                  }]).select();
-                  if (error) throw error;
-                  setStocks(prev => [...prev, { ...newStock, id: data[0].id }]);
-                } finally { setAdding(false); }
+                // Usa handleAdd esistente popolando il form
+                setForm({ ticker, qty: String(qty), buyPrice: String(buyPrice), buyDate, sector: sector || "Altro" });
+                await new Promise(resolve => setTimeout(resolve, 50));
+                await handleAdd({ ticker, qty: parseFloat(qty), buyPrice: parseFloat(buyPrice), buyDate, sector: sector || "Altro" });
               }}
             />
           )}
