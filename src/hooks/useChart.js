@@ -4,7 +4,12 @@ import { toUSD } from "../utils/currency";
 import { parseBuyDate } from "../utils/dates";
 
 export const PERIODS = ["1G", "1M", "6M", "1A", "Inizio"];
+// Giorni di calendario per ogni periodo — usati per trovare la data di cutoff
+// nella serie storica (giorni di trading effettivi, non di calendario)
 const PERIOD_DAYS = { "1G": 1, "1M": 30, "6M": 182, "1A": 365 };
+// Giorni di trading approssimativi per ogni periodo
+// usati come fallback se la serie è troppo corta
+const PERIOD_TRADING_DAYS = { "1G": 1, "1M": 21, "6M": 126, "1A": 252 };
 
 export function useChart(stocks, eurRate) {
   const [rawData, setRawData] = useState({});
@@ -119,19 +124,26 @@ export function useChart(stocks, eurRate) {
   }, [spyData]);
 
   // ── buildPeriod: dato un periodo, ritorna chartData e pill ─────────────────
-  // chartData: ogni punto ha pct = (valore - first.valore) / first.valore * 100
-  // pill: { pct, delta } dove pct = chartData[last].pct (IDENTICO al tooltip)
+  // Il punto base è SEMPRE il giorno di trading precedente al cutoff,
+  // esattamente come fa Yahoo/TradingView — non il primo giorno >= cutoff.
   function buildPeriod(period) {
     if (portfolioSeries.length < 2) return { chartData: [], pill: null };
 
     let slice;
     if (period === "Inizio") {
       slice = portfolioSeries;
+    } else if (period === "1G") {
+      slice = portfolioSeries.slice(-2);
     } else {
       const days   = PERIOD_DAYS[period];
       const cutoff = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
-      const filtered = portfolioSeries.filter(p => p.date >= cutoff);
-      slice = filtered.length >= 2 ? filtered : portfolioSeries;
+      const idx    = portfolioSeries.findIndex(p => p.date >= cutoff);
+      if (idx > 0) {
+        // Prende il punto PRIMA del cutoff come base → stesso metodo di Yahoo
+        slice = portfolioSeries.slice(idx - 1);
+      } else {
+        slice = portfolioSeries;
+      }
     }
 
     if (slice.length < 2) return { chartData: [], pill: null };
