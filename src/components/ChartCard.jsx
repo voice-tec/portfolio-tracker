@@ -2,7 +2,7 @@ import { useState } from "react";
 import { PERIODS, useChart } from "../hooks/useChart";
 import Chart from "./Chart";
 
-export default function ChartCard({ stocks, eurRate }) {
+export function ChartCard({ stocks, eurRate }) {
   const [period, setPeriod] = useState("1M");
 
   const { buildPeriod, loading } = useChart(stocks, eurRate);
