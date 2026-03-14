@@ -65,18 +65,13 @@ export function useChart(stocks, eurRate) {
   }, [rawData]);
 
   // ── Serie valore portafoglio giorno per giorno ─────────────────────────────
-  // Per ogni giorno:
-  //   valore = Σ(qty × prezzoAdj_in_USD) per le posizioni già acquistate
-  //   forward fill se il prezzo manca per un giorno festivo
   const portfolioSeries = useMemo(() => {
     if (!Object.keys(priceMap).length || !stocks.length) return [];
 
     const tickers = Object.keys(priceMap);
-
     const allDates = [...new Set(
       tickers.flatMap(t => Object.keys(priceMap[t]))
     )].sort();
-
     if (!allDates.length) return [];
 
     const positions = stocks.map(s => {
@@ -86,14 +81,12 @@ export function useChart(stocks, eurRate) {
       return { ...s, buyDateISO, costUSD };
     });
 
-    // Forward fill per ogni ticker
     const lastKnown = {};
     tickers.forEach(t => { lastKnown[t] = null; });
 
     const series = [];
 
     allDates.forEach(date => {
-      // Aggiorna lastKnown
       tickers.forEach(t => {
         if (priceMap[t][date] != null) lastKnown[t] = priceMap[t][date];
       });
@@ -110,14 +103,61 @@ export function useChart(stocks, eurRate) {
       }
       if (!valid || valore <= 0) return;
 
-      const costo = active.reduce((s, p) => s + p.costUSD, 0);
       const label = new Date(date + "T12:00:00")
         .toLocaleDateString("it-IT", { day: "2-digit", month: "short" });
 
-      series.push({ date, label, valore, costo });
+      series.push({ date, label, valore });
     });
 
-    return series;
+    // ── Chain-linking ──────────────────────────────────────────────────────
+    // Per ogni giorno calcola il rendimento giornaliero r_i = (v_i - v_{i-1}) / v_{i-1}
+    // ma solo se il set di posizioni attive è lo stesso del giorno precedente.
+    // Se entra un nuovo titolo (cash-flow in), il denominatore viene aggiustato:
+    //   v_{i-1} corretto = v_{i-1} + nuovoCosto  (come se il titolo fosse già lì ieri)
+    // Così l'ingresso di capitale non crea rendimento artificiale.
+
+    const positionsByDate = {};
+    allDates.forEach(date => {
+      positionsByDate[date] = positions.filter(p => date >= p.buyDateISO).map(p => p.ticker + p.buyDateISO);
+    });
+
+    // Ricostruisci serie con chain-linking
+    const chainSeries = [];
+    let cumulativeIndex = 0; // parte da 0%
+
+    for (let i = 0; i < series.length; i++) {
+      const pt = series[i];
+
+      if (i === 0) {
+        chainSeries.push({ ...pt, chainPct: 0 });
+        continue;
+      }
+
+      const prev = series[i - 1];
+
+      // Controlla se sono entrate nuove posizioni oggi
+      const prevActive = positions.filter(p => prev.date >= p.buyDateISO);
+      const currActive = positions.filter(p => pt.date >= p.buyDateISO);
+      const newPositions = currActive.filter(p =>
+        !prevActive.find(pa => pa.ticker === p.ticker && pa.buyDateISO === p.buyDateISO)
+      );
+
+      let adjustedPrev = prev.valore;
+      if (newPositions.length > 0) {
+        // Aggiungi il costo delle nuove posizioni al valore precedente
+        // così il rendimento del giorno non include il nuovo capitale
+        const newCost = newPositions.reduce((s, p) => s + p.costUSD, 0);
+        adjustedPrev = prev.valore + newCost;
+      }
+
+      const dailyReturn = adjustedPrev > 0 ? (pt.valore - adjustedPrev) / adjustedPrev : 0;
+      cumulativeIndex = (1 + cumulativeIndex / 100) * (1 + dailyReturn) - 1;
+      const chainPct = parseFloat((cumulativeIndex * 100).toFixed(2));
+
+      chainSeries.push({ ...pt, chainPct });
+    }
+
+    return chainSeries;
   }, [priceMap, stocks, eurRate]);
 
   // ── spyMap ─────────────────────────────────────────────────────────────────
@@ -127,14 +167,7 @@ export function useChart(stocks, eurRate) {
     return m;
   }, [spyData]);
 
-  // ── Costo totale investito (qty × buyPrice in USD) ────────────────────────
-  // Usato come base per "Inizio" — così coincide con il P&L dell'header
-  const totalInvested = useMemo(() =>
-    stocks.reduce((s, x) => s + (parseFloat(x.qty) || 0) * toUSD(parseFloat(x.buyPrice) || 0, x.currency, eurRate), 0),
-    [stocks, eurRate]
-  );
-
-  // ── earliestBuyDate: data del primo acquisto ─────────────────────────────
+  // ── earliestBuyDate ───────────────────────────────────────────────────────
   const earliestBuyDate = useMemo(() => {
     const dates = stocks
       .map(s => { const bd = parseBuyDate(s.buyDate); return bd ? bd.toISOString().slice(0,10) : null; })
@@ -143,16 +176,12 @@ export function useChart(stocks, eurRate) {
   }, [stocks]);
 
   // ── buildPeriod ───────────────────────────────────────────────────────────
-  // Approccio corretto:
-  //   1. Prendi solo i punti della serie dove TUTTE le posizioni sono già attive
-  //      (data >= earliestBuyDate) → così ogni punto ha gli stessi titoli
-  //   2. Per "Inizio": base = totalInvested (buyPrice utente) → coincide con header
-  //   3. Per altri periodi: base = primo punto del range nella serie filtrata
+  // Usa chainPct (rendimento concatenato) immune agli spike da nuovo capitale.
+  // Per ogni periodo trova il punto base e rinormalizza chainPct a 0% da lì.
+  // pill = ultimo punto rinormalizzato = identico al tooltip. Sempre.
   function buildPeriod(period) {
     if (portfolioSeries.length < 2) return { chartData: [], pill: null };
 
-    // Serie filtrata: solo giorni >= data del primo acquisto
-    // così ogni punto ha lo stesso set di posizioni → curva coerente
     const activeSeries = earliestBuyDate
       ? portfolioSeries.filter(p => p.date >= earliestBuyDate)
       : portfolioSeries;
@@ -160,67 +189,43 @@ export function useChart(stocks, eurRate) {
     if (activeSeries.length < 2) return { chartData: [], pill: null };
 
     let slice;
-    let baseValore = null;
 
     if (period === "Inizio") {
-      // Base = prezzo di acquisto utente → coincide con P&L header
       slice = activeSeries;
-      baseValore = totalInvested > 0 ? totalInvested : activeSeries[0].valore;
-
     } else if (period === "1G") {
-      // Ultima chiusura vs chiusura precedente
       slice = activeSeries.slice(-2);
-
     } else {
       const cutoff = getPeriodCutoff(period);
-
-      // Se il cutoff è prima del primo acquisto → uguale a "Inizio"
       if (earliestBuyDate && cutoff < earliestBuyDate) {
         slice = activeSeries;
-        baseValore = totalInvested > 0 ? totalInvested : activeSeries[0].valore;
       } else {
-        // Trova il primo punto >= cutoff, poi prendi quello precedente come base
-        // (stesso giorno N mesi fa, o il più vicino disponibile)
         const idx = activeSeries.findIndex(p => p.date >= cutoff);
-        if (idx > 0) {
-          // idx-1 = ultimo giorno di trading PRIMA del cutoff = base corretta
-          slice = activeSeries.slice(idx - 1);
-        } else if (idx === 0) {
-          slice = activeSeries;
-          baseValore = totalInvested > 0 ? totalInvested : activeSeries[0].valore;
-        } else {
-          // Nessun dato nel range → usa tutto come Inizio
-          slice = activeSeries;
-          baseValore = totalInvested > 0 ? totalInvested : activeSeries[0].valore;
-        }
+        slice = idx > 0 ? activeSeries.slice(idx - 1) : activeSeries;
       }
     }
 
     if (!slice || slice.length < 2) return { chartData: [], pill: null };
 
-    const last     = slice[slice.length - 1];
-    const base     = baseValore ?? slice[0].valore;
-    const spyFirst = spyMap[slice[0].date]
+    const baseChain = slice[0].chainPct ?? 0;
+    const spyFirst  = spyMap[slice[0].date]
       ?? spyData.find(s => s.date >= slice[0].date)?.price;
 
-    const chartData = slice.map(p => ({
-      ...p,
-      // Normalizza sempre su costo attivo del giorno:
-      // se in quel giorno erano attive meno posizioni, il costo è inferiore
-      // → nessuno spike quando entra un nuovo titolo
-      pct: p.costo > 0
-        ? parseFloat(((p.valore - p.costo) / p.costo * 100).toFixed(2))
-        : 0,
-      spyPct: (() => {
+    const chartData = slice.map(p => {
+      // Rinormalizza chainPct: 0% al primo punto, X% all'ultimo
+      const pct = parseFloat(
+        ((((1 + (p.chainPct ?? 0) / 100) / (1 + baseChain / 100)) - 1) * 100).toFixed(2)
+      );
+      const spyPct = (() => {
         const sv = spyMap[p.date];
         if (!sv || !spyFirst) return null;
         return parseFloat(((sv / spyFirst - 1) * 100).toFixed(2));
-      })(),
-    }));
+      })();
+      return { ...p, pct, spyPct };
+    });
 
     const pill = {
       pct:   chartData[chartData.length - 1].pct,
-      delta: last.valore - last.costo,
+      delta: slice[slice.length - 1].valore - slice[0].valore,
     };
 
     return { chartData, pill };
