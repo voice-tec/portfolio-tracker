@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   ResponsiveContainer, ComposedChart, Area, Line,
   XAxis, YAxis, Tooltip, ReferenceLine,
@@ -20,26 +20,34 @@ function Spinner({ color = "#5EC98A", size = 12 }) {
 const col  = v => v == null ? "#8A9AB0" : v >= 0 ? "#5EC98A" : "#E87040";
 const sign = v => (v != null && v >= 0) ? "+" : "";
 
-export function ChartCard({ stocks, eurRate }) {
-  const [period, setPeriod]           = useState("1M");
+export function ChartCard({ stocks, eurRate, onPillsReady }) {
+  const [period, setPeriod]       = useState("1M");
   const [showBenchmark, setShowBenchmark] = useState(false);
 
-  const { portfolioSeries, spyData, spyMap, loading, buildPeriod } = useChart(stocks, eurRate);
+  const { loading, buildPeriod } = useChart(stocks, eurRate);
 
   // Periodo corrente
   const { chartData, pill } = useMemo(
     () => buildPeriod(period),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [portfolioSeries, spyMap, period]
+    [loading, period]
   );
 
-  // Tutte le pills (ricalcola tutti i periodi)
+  // Tutte le pills
   const allPills = useMemo(() => {
     const r = {};
     PERIODS.forEach(p => { r[p] = buildPeriod(p).pill; });
     return r;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [portfolioSeries, spyMap]);
+  }, [loading]);
+
+  // Notifica parent
+  useEffect(() => {
+    if (onPillsReady && Object.values(allPills).some(p => p != null)) {
+      onPillsReady(allPills);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allPills]);
 
   // Marker acquisti
   const purchaseMarkers = useMemo(() => {
@@ -55,8 +63,8 @@ export function ChartCard({ stocks, eurRate }) {
       seen.add(key);
       const pt = iso >= firstDate
         ? chartData.find(p => p.date >= iso)
-        : chartData[0];
-      return pt ? [{ ...pt, ticker: s.ticker, beforeRange: iso < firstDate }] : [];
+        : null;
+      return pt ? [{ ...pt, ticker: s.ticker }] : [];
     });
   }, [chartData, stocks]);
 
@@ -65,7 +73,7 @@ export function ChartCard({ stocks, eurRate }) {
   return (
     <div className="card" style={{ marginBottom: 16, padding: "20px 20px 14px" }}>
 
-      {/* ── Pills periodo ── */}
+      {/* ── Pills ── */}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14, alignItems: "center" }}>
         {PERIODS.map(p => {
           const v      = allPills[p]?.pct ?? null;
@@ -128,17 +136,14 @@ export function ChartCard({ stocks, eurRate }) {
               cursor={{ stroke: lineColor, strokeWidth: 1, strokeDasharray: "4 2" }}
             />
 
-            {/* break-even del periodo */}
             <ReferenceLine y={0} stroke="#E0E4EF" strokeDasharray="4 3" strokeWidth={1} />
 
-            {/* Curva portafoglio */}
             <Area type="monotone" dataKey="pct"
               stroke={lineColor} strokeWidth={1.5}
               fill="url(#cGrad)" dot={false}
               activeDot={{ r: 4, fill: lineColor, stroke: "#fff", strokeWidth: 2 }}
             />
 
-            {/* S&P 500 */}
             {showBenchmark && (
               <Line type="monotone" dataKey="spyPct"
                 stroke="#F4C542" strokeWidth={1} dot={false}
@@ -147,7 +152,6 @@ export function ChartCard({ stocks, eurRate }) {
               />
             )}
 
-            {/* Marker acquisti */}
             {purchaseMarkers.map(m => (
               <ReferenceLine key={m.ticker + m.date} x={m.label}
                 stroke="#7EB8F7" strokeWidth={1.5} strokeDasharray="3 3"
@@ -159,7 +163,7 @@ export function ChartCard({ stocks, eurRate }) {
       )}
 
       {/* ── Legenda ── */}
-      {!loading && chartData.length >= 2 && (
+      {!loading && chartData.length >= 2 && (showBenchmark || purchaseMarkers.length > 0) && (
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap", paddingTop: 10, borderTop: "1px solid #F0F2F7", marginTop: 6, alignItems: "center" }}>
           {showBenchmark && (() => {
             const sv = [...chartData].reverse().find(p => p.spyPct != null)?.spyPct;
@@ -176,7 +180,6 @@ export function ChartCard({ stocks, eurRate }) {
             <div key={m.ticker + m.date} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10 }}>
               <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#7EB8F7" }} />
               <span style={{ color: "#7EB8F7" }}>{m.ticker}</span>
-              {m.beforeRange && <span style={{ color: "#C0C8D8" }}>(prima del periodo)</span>}
             </div>
           ))}
         </div>
