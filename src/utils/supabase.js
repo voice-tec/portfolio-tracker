@@ -1,5 +1,15 @@
 // src/utils/supabase.js
 import { createClient } from '@supabase/supabase-js'
+import { displayToISO } from './dates'
+
+// Normalizza buy_date sempre in formato ISO YYYY-MM-DD
+function normalizeBuyDate(d) {
+  if (!d) return new Date().toISOString().slice(0, 10);
+  // Già ISO
+  if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+  // dd/mm/yyyy o dd/mm/yy
+  return displayToISO(d);
+}
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -50,7 +60,7 @@ export async function saveStock(userId, stock) {
     buy_price:     stock.buyPrice,
     current_price: stock.currentPrice,
     sector:        stock.sector || 'Altro',
-    buy_date:      stock.buyDate,
+    buy_date:      normalizeBuyDate(stock.buyDate),
     price_real:    stock.priceReal || false,
     target_price:  stock.targetPrice || null,
     stop_loss:     stock.stopLoss || null,
