@@ -205,8 +205,11 @@ export function useChart(stocks, eurRate) {
 
     const chartData = slice.map(p => ({
       ...p,
-      pct: base > 0
-        ? parseFloat(((p.valore - base) / base * 100).toFixed(2))
+      // Normalizza sempre su costo attivo del giorno:
+      // se in quel giorno erano attive meno posizioni, il costo è inferiore
+      // → nessuno spike quando entra un nuovo titolo
+      pct: p.costo > 0
+        ? parseFloat(((p.valore - p.costo) / p.costo * 100).toFixed(2))
         : 0,
       spyPct: (() => {
         const sv = spyMap[p.date];
@@ -217,7 +220,7 @@ export function useChart(stocks, eurRate) {
 
     const pill = {
       pct:   chartData[chartData.length - 1].pct,
-      delta: last.valore - base,
+      delta: last.valore - last.costo,
     };
 
     return { chartData, pill };
