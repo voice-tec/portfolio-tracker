@@ -142,15 +142,10 @@ export function useChart(stocks, eurRate) {
         !prevActive.find(pa => pa.ticker === p.ticker && pa.buyDateISO === p.buyDateISO)
       );
 
-      let adjustedPrev = prev.valore;
-      if (newPositions.length > 0) {
-        // Aggiungi il costo delle nuove posizioni al valore precedente
-        // così il rendimento del giorno non include il nuovo capitale
-        const newCost = newPositions.reduce((s, p) => s + p.costUSD, 0);
-        adjustedPrev = prev.valore + newCost;
-      }
-
-      const dailyReturn = adjustedPrev > 0 ? (pt.valore - adjustedPrev) / adjustedPrev : 0;
+      const cashIn = newPositions.reduce((s, p) => s + p.costUSD, 0);
+      const dailyReturn = prev.valore > 0
+        ? (pt.valore - prev.valore - cashIn) / prev.valore
+        : 0;
       cumulativeIndex = (1 + cumulativeIndex / 100) * (1 + dailyReturn) - 1;
       const chainPct = parseFloat((cumulativeIndex * 100).toFixed(2));
 
