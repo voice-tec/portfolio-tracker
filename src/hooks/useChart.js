@@ -93,19 +93,18 @@ export function useChart(stocks, eurRate) {
         if (priceMap[t][date] != null) lastKnown[t] = priceMap[t][date];
       });
 
-      const active = positions.filter(p => date >= p.buyDateISO);
-      if (!active.length) return;
-
+      // Usa TUTTI i titoli sempre (non solo quelli già comprati)
+      // così non ci sono spike quando entra un nuovo titolo
       let value = 0;
       let valid = true;
-      for (const p of active) {
+      for (const p of positions) {
         if (lastKnown[p.ticker] == null) { valid = false; break; }
         value += p.qty * toUSD(lastKnown[p.ticker], p.currency, eurRate);
       }
       if (!valid || value <= 0) return;
 
-      // baseValue = costo totale delle posizioni attive oggi
-      const baseValue = active.reduce((s, p) => s + p.costUSD, 0);
+      // baseValue = costo totale di TUTTI i titoli (costante)
+      const baseValue = positions.reduce((s, p) => s + p.costUSD, 0);
 
       const label = new Date(date + "T12:00:00")
         .toLocaleDateString("it-IT", { day: "2-digit", month: "short" });
