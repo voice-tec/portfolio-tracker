@@ -220,5 +220,5 @@ export function useChart(stocks, eurRate) {
     };
   }
 
-  return { fullSeries, loading, buildPeriod, rawData };
+  return { fullSeries, loading, buildPeriod, priceMap };
 }
