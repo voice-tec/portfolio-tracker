@@ -179,16 +179,15 @@ export function useChart(stocks, eurRate) {
     // 1M, 6M, 1A: startVal = valore di TUTTI i titoli attuali al prezzo del cutoff
     const cutoff = getPeriodCutoff(period);
 
-    // Calcola startVal usando tutti i titoli al prezzo del cutoff
+    // Calcola startVal usando priceMap (già indicizzato { date -> price })
+    // Forward fill: cerca la data più vicina <= cutoff
     let startVal = 0;
     for (const pos of allPositions) {
-      const candles = rawData[pos.ticker] || [];
-      // Forward fill: ultimo prezzo disponibile <= cutoff
-      let price = null;
-      for (const c of candles) {
-        if (c.date <= cutoff) price = c.price;
-        else break;
-      }
+      const tickerPrices = priceMap[pos.ticker] || {};
+      // Prendi tutte le date <= cutoff e usa l'ultima
+      const dates = Object.keys(tickerPrices).filter(d => d <= cutoff).sort();
+      const lastDate = dates[dates.length - 1];
+      const price = lastDate ? tickerPrices[lastDate] : null;
       if (price) startVal += pos.qty * toUSD(price, pos.currency, eurRate);
     }
 
