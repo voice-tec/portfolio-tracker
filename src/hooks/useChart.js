@@ -114,26 +114,44 @@ export function useChart(stocks, eurRate) {
     return m;
   }, [spyData]);
 
+  // ── Costo totale investito (qty × buyPrice) ──────────────────────────────
+  const totalInvested = stocks.reduce((sum, s) => {
+    return sum + (parseFloat(s.qty) || 0) * toUSD(parseFloat(s.buyPrice) || 0, s.currency, eurRate);
+  }, 0);
+
   // ── buildPeriod: taglia + normalizza a 0% dal primo punto del range ───────
+  // Per "Inizio": base = totalInvested (buyPrice utente) → coincide con P&L header
+  // Per altri periodi: base = valore portafoglio al primo punto del range
   function buildPeriod(period) {
     if (portfolioSeries.length < 2) return { chartData: [], pill: null };
 
     let slice;
+    let baseValore;
 
     if (period === "Inizio") {
       slice = portfolioSeries;
+      // Usa il prezzo di acquisto reale, non il prezzo Yahoo di quel giorno
+      baseValore = totalInvested > 0 ? totalInvested : slice[0].valore;
     } else if (period === "1G") {
       slice = portfolioSeries.slice(-2);
+      baseValore = slice[0].valore;
     } else {
       const cutoff = getPeriodCutoff(period);
       const idx = portfolioSeries.findIndex(p => p.date >= cutoff);
-      // idx-1 = chiusura del giorno prima del cutoff (base corretta come Yahoo)
       slice = idx > 0 ? portfolioSeries.slice(idx - 1) : portfolioSeries;
+      // Se il cutoff è prima del primo acquisto → usa totalInvested
+      const earliestBuy = stocks
+        .map(s => { const bd = parseBuyDate(s.buyDate); return bd ? bd.toISOString().slice(0,10) : null; })
+        .filter(Boolean).sort()[0];
+      if (earliestBuy && slice[0].date < earliestBuy) {
+        baseValore = totalInvested > 0 ? totalInvested : slice[0].valore;
+      } else {
+        baseValore = slice[0].valore;
+      }
     }
 
     if (!slice || slice.length < 2) return { chartData: [], pill: null };
 
-    const baseValore = slice[0].valore;
     const spyBase = spyIndex[slice[0].date]
       ?? spyData.find(s => s.date >= slice[0].date)?.price;
 
