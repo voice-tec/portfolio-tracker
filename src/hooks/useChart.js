@@ -123,57 +123,103 @@ export function useChart(stocks, eurRate) {
     return m;
   }, [spyData]);
 
-  // buildPeriod — stessa logica del file HTML di riferimento:
-  //   "Inizio": pct = (value - baseValue) / baseValue  (baseValue cambia con nuovi acquisti)
-  //   altri:    pct = (value - startVal)  / startVal   (startVal = valore al primo giorno del range)
+  // buildPeriod:
+  //   "Inizio": pct = (value - baseValue) / baseValue
+  //             baseValue = costo investito (cambia quando entra nuovo titolo) → no spike
+  //   "1G":     ultimi 2 punti della serie
+  //   altri:    startVal = valore di TUTTI i titoli attuali al prezzo del cutoff
+  //             (come se fossero già in portafoglio) → no spike da nuovo capitale
   function buildPeriod(period) {
     if (fullSeries.length < 2) return { chartData: [], pill: null };
 
-    let slice;
+    // Posizioni attuali (tutte, indipendentemente da buyDate)
+    const allPositions = stocks.map(s => ({
+      ticker:   s.ticker,
+      qty:      parseFloat(s.qty) || 0,
+      currency: s.currency,
+    }));
 
     if (period === "Inizio") {
-      slice = fullSeries;
-    } else if (period === "1G") {
-      slice = fullSeries.slice(-2);
-    } else {
-      const cutoff = getPeriodCutoff(period);
-      const idx = fullSeries.findIndex(p => p.date >= cutoff);
-      slice = idx > 0 ? fullSeries.slice(idx - 1) : fullSeries;
+      const spyBase = spyIndex[fullSeries[0].date]
+        ?? spyData.find(s => s.date >= fullSeries[0].date)?.price;
+
+      const chartData = fullSeries.map(p => ({
+        ...p,
+        pct: parseFloat(((p.value - p.baseValue) / p.baseValue * 100).toFixed(2)),
+        spyPct: (() => {
+          const sv = spyIndex[p.date];
+          if (!sv || !spyBase) return null;
+          return parseFloat(((sv / spyBase - 1) * 100).toFixed(2));
+        })(),
+      }));
+
+      return {
+        chartData,
+        pill: {
+          pct:   chartData[chartData.length - 1].pct,
+          delta: fullSeries[fullSeries.length - 1].value - fullSeries[fullSeries.length - 1].baseValue,
+        },
+      };
     }
 
-    if (!slice || slice.length < 2) return { chartData: [], pill: null };
+    if (period === "1G") {
+      const slice = fullSeries.slice(-2);
+      const startVal = slice[0].value;
+      const chartData = slice.map(p => ({
+        ...p,
+        pct: parseFloat(((p.value - startVal) / startVal * 100).toFixed(2)),
+        spyPct: null,
+      }));
+      return {
+        chartData,
+        pill: { pct: chartData[chartData.length - 1].pct, delta: slice[slice.length - 1].value - startVal },
+      };
+    }
 
-    const startVal = slice[0].value;
-    const spyBase  = spyIndex[slice[0].date]
+    // 1M, 6M, 1A: startVal = valore di TUTTI i titoli attuali al prezzo del cutoff
+    const cutoff = getPeriodCutoff(period);
+
+    // Calcola startVal usando tutti i titoli al prezzo del cutoff
+    let startVal = 0;
+    for (const pos of allPositions) {
+      const candles = rawData[pos.ticker] || [];
+      // Forward fill: ultimo prezzo disponibile <= cutoff
+      let price = null;
+      for (const c of candles) {
+        if (c.date <= cutoff) price = c.price;
+        else break;
+      }
+      if (price) startVal += pos.qty * toUSD(price, pos.currency, eurRate);
+    }
+
+    if (startVal <= 0) return { chartData: [], pill: null };
+
+    // Slice della serie dal cutoff in poi
+    const idx = fullSeries.findIndex(p => p.date >= cutoff);
+    const slice = idx >= 0 ? fullSeries.slice(idx) : fullSeries;
+    if (slice.length < 2) return { chartData: [], pill: null };
+
+    const spyBase = spyIndex[slice[0].date]
       ?? spyData.find(s => s.date >= slice[0].date)?.price;
 
-    const chartData = slice.map(p => {
-      let pct;
-      if (period === "Inizio") {
-        // Come l'HTML: (value - baseValue) / baseValue
-        pct = parseFloat(((p.value - p.baseValue) / p.baseValue * 100).toFixed(2));
-      } else {
-        // Come l'HTML: (value - startVal) / startVal
-        pct = parseFloat(((p.value - startVal) / startVal * 100).toFixed(2));
-      }
-
-      const spyPct = (() => {
+    const chartData = slice.map(p => ({
+      ...p,
+      pct: parseFloat(((p.value - startVal) / startVal * 100).toFixed(2)),
+      spyPct: (() => {
         const sv = spyIndex[p.date];
         if (!sv || !spyBase) return null;
         return parseFloat(((sv / spyBase - 1) * 100).toFixed(2));
-      })();
+      })(),
+    }));
 
-      return { ...p, pct, spyPct };
-    });
-
-    const last = chartData[chartData.length - 1];
-    const pill = {
-      pct:   last.pct,
-      delta: slice[slice.length - 1].value - (period === "Inizio" ? slice[slice.length - 1].baseValue : startVal),
+    return {
+      chartData,
+      pill: {
+        pct:   chartData[chartData.length - 1].pct,
+        delta: slice[slice.length - 1].value - startVal,
+      },
     };
-
-    return { chartData, pill };
   }
 
-  return { fullSeries, loading, buildPeriod };
+  return { fullSeries, loading, buildPeriod, rawData };
 }
