@@ -11,6 +11,7 @@ import { fetchPrice, fetchHistory, fetchAnalyst, fetchSearch, fetchNews, fetchSc
 import { useEurRate } from "./hooks/useEurRate";
 import { AllocationCard } from "./components/AllocationCard";
 import { ChartCard } from "./components/ChartCard";
+import { PortfolioMetrics } from "./components/PortfolioMetrics";
 import { MarketBadge } from "./components/MarketBadge";
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
@@ -557,7 +558,7 @@ function UpgradeModal({ onClose }) {
 
 // ─── AUTH SCREEN ──────────────────────────────────────────────────────────────
 function AuthScreen({ onAuth }) {
-  const [mode, setMode] = useState("register");
+  const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
   const [name, setName] = useState("");
@@ -583,174 +584,41 @@ function AuthScreen({ onAuth }) {
     setLoading(false);
   }
 
-  const features = [
-    { icon: "📈", text: "Grafico performance con confronto S&P 500" },
-    { icon: "🎯", text: "Analisi settori e alert concentrazione" },
-    { icon: "🔔", text: "Alert prezzi su target e stop-loss" },
-    { icon: "🔮", text: "Simulazioni scenari macro e previsioni AI" },
-    { icon: "📰", text: "News e rating analisti in tempo reale" },
-  ];
-
   return (
-    <div style={{ minHeight: "100vh", display: "flex", fontFamily: "'Geist', sans-serif" }}>
+    <div style={{ minHeight: "100vh", background: "#EEF2FA", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontFamily: "'Geist', sans-serif", padding: 20 }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap');
         *{box-sizing:border-box;margin:0;padding:0}
-        html,body{height:100%;overflow-x:hidden;-webkit-tap-highlight-color:transparent}
-        .auth-input{background:#F8FAFF;border:1.5px solid #E0E8F4;color:#0A1628;font-family:inherit;font-size:13px;padding:12px 14px;border-radius:10px;outline:none;width:100%;transition:all 0.15s;box-shadow:none}
-        .auth-input:focus{border-color:#4361ee;background:#fff;box-shadow:0 0 0 3px rgba(67,97,238,0.08)}
-        .auth-input::placeholder{color:#A0AABF}
-        @keyframes spin{to{transform:rotate(360deg)}}
-        @keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
-        @keyframes floatIn{from{opacity:0;transform:translateX(-12px)}to{opacity:1;transform:translateX(0)}}
+        html,body{height:100%;height:-webkit-fill-available;overflow-x:hidden;-webkit-tap-highlight-color:transparent}
+        input{background:#FFFFFF;border:1.5px solid #D0D8EC;color:#0A1628;font-family:inherit;font-size:13px;padding:12px 14px;border-radius:8px;outline:none;width:100%;transition:border-color 0.15s;box-shadow:0 1px 3px rgba(10,22,64,0.06)}input:focus{border-color:#1E4FD8;box-shadow:0 0 0 3px rgba(30,79,216,0.1)}select{background:#FFFFFF;border:1.5px solid #D0D8EC;color:#0A1628;font-family:inherit;font-size:13px;padding:12px 14px;border-radius:8px;outline:none;width:100%;transition:border-color 0.15s;box-shadow:0 1px 3px rgba(10,22,64,0.06);cursor:pointer;-webkit-appearance:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%231E4FD8'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px}
+        input:focus{border-color:#1E4FD8;box-shadow:0 0 0 3px rgba(30,79,216,0.08)} input::placeholder{color:#A0AABF}
+        @keyframes spin{to{transform:rotate(360deg)}} @keyframes fadeIn{from{opacity:0}to{opacity:1}} @keyframes slideUp{from{opacity:0;transform:translateY(40px)}to{opacity:1;transform:translateY(0)}} @keyframes slideInRight{from{opacity:0;transform:translateX(30px)}to{opacity:1;transform:translateX(0)}} @keyframes popIn{from{opacity:0;transform:scale(0.7)}to{opacity:1;transform:scale(1)}}
+        @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
       `}</style>
-
-      {/* ── SINISTRA: Marketing ── */}
-      <div style={{
-        flex: 1, display: "none",
-        background: "linear-gradient(145deg, #0f1f5c 0%, #1a3a8f 50%, #0d3d62 100%)",
-        padding: "60px 52px", flexDirection: "column", justifyContent: "space-between",
-        position: "relative", overflow: "hidden",
-        ["@media(min-width:768px)"]: { display: "flex" }
-      }}
-        className="auth-left"
-      >
-        <style>{`.auth-left{display:flex!important}@media(max-width:767px){.auth-left{display:none!important}}`}</style>
-
-        {/* Bolle decorative */}
-        <div style={{ position: "absolute", top: -80, right: -80, width: 320, height: 320, borderRadius: "50%", background: "rgba(99,130,255,0.12)" }} />
-        <div style={{ position: "absolute", bottom: 60, left: -60, width: 240, height: 240, borderRadius: "50%", background: "rgba(6,214,160,0.08)" }} />
-        <div style={{ position: "absolute", top: "45%", right: "10%", width: 160, height: 160, borderRadius: "50%", background: "rgba(244,197,66,0.06)" }} />
-
-        {/* Logo */}
-        <div style={{ position: "relative" }}>
-          <TrackfolioLogo size={32} showText={true} textColor="#ffffff" />
+      <div style={{ animation: "fadeUp 0.4s ease", width: "100%", maxWidth: 400 }}>
+        <div style={{ textAlign: "center", marginBottom: 36 }}>
+          <div style={{ marginBottom: 8 }}><TrackfolioLogo size={36} showText={true} textColor="#0A1628" /></div>
         </div>
-
-        {/* Copy centrale */}
-        <div style={{ position: "relative" }}>
-          <div style={{ fontSize: 11, color: "rgba(99,130,255,0.9)", fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 20 }}>
-            Il tuo portfolio, sotto controllo
-          </div>
-          <h2 style={{ fontSize: "clamp(26px, 3vw, 38px)", fontWeight: 800, color: "#ffffff", lineHeight: 1.15, letterSpacing: "-0.02em", marginBottom: 20 }}>
-            Investi con<br />
-            <span style={{ background: "linear-gradient(90deg, #6382ff, #06d6a0)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>
-              dati reali
-            </span>
-          </h2>
-          <p style={{ fontSize: 14, color: "rgba(255,255,255,0.55)", lineHeight: 1.75, marginBottom: 36, maxWidth: 340 }}>
-            Trackfolio aggrega prezzi live, storico e analisi in un'unica dashboard. Niente fogli Excel, niente confusione.
-          </p>
-
-          {/* Feature list */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
-            {features.map(({ icon, text }, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, animation: `floatIn 0.4s ease ${i * 0.07}s both` }}>
-                <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(255,255,255,0.08)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, flexShrink: 0 }}>
-                  {icon}
-                </div>
-                <span style={{ fontSize: 13, color: "rgba(255,255,255,0.72)", lineHeight: 1.4 }}>{text}</span>
-              </div>
+        <div style={{ background: "#FFFFFF", border: "1px solid #E8EBF4", borderRadius: 12, padding: "30px 28px" }}>
+          <div style={{ display: "flex", background: "#EEF2FA", borderRadius: 6, padding: 3, marginBottom: 22 }}>
+            {[["login","Accedi"],["register","Registrati"]].map(([m, label]) => (
+              <button key={m} onClick={() => { setMode(m); setErr(""); }} style={{ flex: 1, background: mode === m ? "#E8EBF2" : "transparent", border: "none", color: mode === m ? "#0A0E1A" : "#444", fontFamily: "inherit", fontSize: 11, padding: "8px", borderRadius: 4, cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.1em", transition: "all 0.15s" }}>{label}</button>
             ))}
           </div>
-        </div>
-
-        {/* Footer */}
-        <div style={{ position: "relative", fontSize: 10, color: "rgba(255,255,255,0.25)", lineHeight: 1.7 }}>
-          ⚠️ Strumento a scopo puramente informativo.<br />Non costituisce consulenza finanziaria ai sensi MiFID II.
-        </div>
-      </div>
-
-      {/* ── DESTRA: Form ── */}
-      <div style={{
-        width: "100%", maxWidth: 480, background: "#ffffff",
-        display: "flex", flexDirection: "column", justifyContent: "center",
-        padding: "48px 40px", position: "relative",
-      }}>
-        <div style={{ animation: "fadeUp 0.4s ease", width: "100%", maxWidth: 360, margin: "0 auto" }}>
-
-          {/* Logo mobile */}
-          <div style={{ marginBottom: 32 }} className="auth-logo-mobile">
-            <style>{`.auth-logo-mobile{display:block}@media(min-width:768px){.auth-logo-mobile{display:none}}`}</style>
-            <TrackfolioLogo size={28} showText={true} textColor="#0A1628" />
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {mode === "register" && <input placeholder="Nome" value={name} onChange={e => setName(e.target.value)} />}
+            <input placeholder="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} />
+            <input placeholder="Password" type="password" value={pw} onChange={e => setPw(e.target.value)} onKeyDown={e => e.key === "Enter" && submit()} />
           </div>
-
-          {/* Titolo */}
-          <div style={{ marginBottom: 28 }}>
-            <h1 style={{ fontSize: 24, fontWeight: 800, color: "#0A1628", letterSpacing: "-0.02em", marginBottom: 6 }}>
-              {mode === "register" ? "Crea il tuo account" : "Bentornato"}
-            </h1>
-            <p style={{ fontSize: 13, color: "#8A9AB0" }}>
-              {mode === "register"
-                ? "Inizia a tracciare il tuo portafoglio gratuitamente."
-                : "Accedi per vedere il tuo portafoglio."}
-            </p>
-          </div>
-
-          {/* Tab switcher */}
-          <div style={{ display: "flex", background: "#F4F6FB", borderRadius: 10, padding: 4, marginBottom: 24, gap: 4 }}>
-            {[["register", "Registrati"], ["login", "Accedi"]].map(([m, label]) => (
-              <button key={m} onClick={() => { setMode(m); setErr(""); }} style={{
-                flex: 1, background: mode === m ? "#ffffff" : "transparent",
-                border: "none", color: mode === m ? "#0A1628" : "#8A9AB0",
-                fontFamily: "inherit", fontSize: 12, padding: "9px", borderRadius: 7,
-                cursor: "pointer", fontWeight: mode === m ? 600 : 400,
-                boxShadow: mode === m ? "0 1px 4px rgba(0,0,0,0.08)" : "none",
-                transition: "all 0.15s",
-              }}>{label}</button>
-            ))}
-          </div>
-
-          {/* Campi */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 6 }}>
-            {mode === "register" && (
-              <input className="auth-input" placeholder="Il tuo nome" value={name} onChange={e => setName(e.target.value)} />
-            )}
-            <input className="auth-input" placeholder="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} />
-            <input className="auth-input" placeholder="Password" type="password" value={pw} onChange={e => setPw(e.target.value)} onKeyDown={e => e.key === "Enter" && submit()} />
-          </div>
-
-          {err && (
-            <div style={{ fontSize: 11, color: "#ef4444", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 6, padding: "8px 12px", marginTop: 8, marginBottom: 4 }}>
-              {err}
-            </div>
-          )}
-
-          {/* CTA */}
-          <button onClick={submit} disabled={loading} style={{
-            marginTop: 18, width: "100%",
-            background: "linear-gradient(135deg, #4361ee, #3a0ca3)",
-            border: "none", color: "#fff", fontFamily: "inherit",
-            fontSize: 14, fontWeight: 700, padding: "14px", borderRadius: 10,
-            cursor: loading ? "not-allowed" : "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-            opacity: loading ? 0.75 : 1,
-            boxShadow: "0 4px 16px rgba(67,97,238,0.3)",
-            transition: "opacity 0.15s",
-          }}>
-            {loading && <Spinner color="#fff" />}
-            {mode === "register" ? "Crea account gratuito →" : "Entra nel portafoglio →"}
+          {err && <div style={{ fontSize: 11, color: "#E87040", marginTop: 10 }}>{err}</div>}
+          <button onClick={submit} disabled={loading} style={{ marginTop: 18, width: "100%", background: "#1E4FD8", border: "none", color: "#FFFFFF", fontFamily: "inherit", fontSize: 12, fontWeight: 700, padding: "13px", borderRadius: 6, cursor: loading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: loading ? 0.7 : 1 }}>
+            {loading && <Spinner color="#F8F9FC" />}
+            {mode === "login" ? "Entra nel portafoglio" : "Crea Account"}
           </button>
-
-          {/* Switch link */}
-          <div style={{ textAlign: "center", marginTop: 20, fontSize: 12, color: "#8A9AB0" }}>
-            {mode === "register" ? "Hai già un account? " : "Non hai un account? "}
-            <button onClick={() => { setMode(mode === "register" ? "login" : "register"); setErr(""); }} style={{ background: "none", border: "none", color: "#4361ee", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", fontSize: 12, padding: 0 }}>
-              {mode === "register" ? "Accedi" : "Registrati"}
-            </button>
-          </div>
-
-          {/* Stats sociali */}
-          {mode === "register" && (
-            <div style={{ display: "flex", gap: 20, justifyContent: "center", marginTop: 28, paddingTop: 24, borderTop: "1px solid #F0F2F7" }}>
-              {[["Gratis", "Per sempre"], ["100%", "Privacy"], ["Live", "Prezzi reali"]].map(([v, l]) => (
-                <div key={l} style={{ textAlign: "center" }}>
-                  <div style={{ fontSize: 15, fontWeight: 800, color: "#0A1628", letterSpacing: "-0.01em" }}>{v}</div>
-                  <div style={{ fontSize: 10, color: "#A0AABF", marginTop: 2 }}>{l}</div>
-                </div>
-              ))}
-            </div>
-          )}
+          <div style={{ fontSize: 10, color: "#D8DCE8", textAlign: "center", marginTop: 12 }}>Benvenuto su Trackfolio</div>
+        </div>
+        <div style={{ fontSize: 9, color: "#C8CDD8", textAlign: "center", marginTop: 18, lineHeight: 1.8 }}>
+          ⚠️ Strumento a scopo puramente informativo.<br />Non costituisce consulenza finanziaria ai sensi MiFID II.
         </div>
       </div>
     </div>
@@ -2227,145 +2095,50 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
 
 
   if (stocks.length === 0) return (
-    <div style={{ minHeight: "80vh", background: "linear-gradient(135deg, #f0f4ff 0%, #fafbff 40%, #f0faf5 100%)", margin: "-20px", padding: "0 20px 60px", overflow: "hidden", position: "relative" }}>
-
-      {/* Sfondo decorativo */}
-      <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden" }}>
-        <div style={{ position: "absolute", top: -120, right: -80, width: 500, height: 500, borderRadius: "50%", background: "radial-gradient(circle, rgba(99,130,255,0.10) 0%, transparent 70%)" }} />
-        <div style={{ position: "absolute", bottom: -60, left: -100, width: 400, height: 400, borderRadius: "50%", background: "radial-gradient(circle, rgba(16,185,129,0.08) 0%, transparent 70%)" }} />
-        <div style={{ position: "absolute", top: "30%", left: "20%", width: 300, height: 300, borderRadius: "50%", background: "radial-gradient(circle, rgba(244,197,66,0.06) 0%, transparent 70%)" }} />
+    <div className="fade-up" style={{ maxWidth: 900, margin: "0 auto", padding: "48px 20px" }}>
+      {/* Welcome hero */}
+      <div style={{ textAlign: "center", marginBottom: 52 }}>
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#EEF4FF", border: "1px solid #C7D8FF", borderRadius: 20, padding: "6px 16px", fontSize: 11, color: "#1E4FD8", fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 24 }}>
+          ✦ Benvenuto su Trackfolio
+        </div>
+        <div style={{ fontSize: "clamp(22px, 6vw, 38px)", fontWeight: 700, color: "#0A1628", lineHeight: 1.2, marginBottom: 16, letterSpacing: "-0.01em" }}>
+          Il tuo portafoglio,<br/><span style={{ color: "#1E4FD8" }}>sempre sotto controllo</span>
+        </div>
+        <div style={{ fontSize: 15, color: "#5A6A7E", maxWidth: 480, margin: "0 auto 32px", lineHeight: 1.7 }}>
+          Traccia i tuoi investimenti, analizza le performance e prendi decisioni più consapevoli.
+        </div>
+        <button className="add-btn" style={{ margin: "0 auto", fontSize: 13, padding: "12px 28px" }} onClick={() => setShowWizard(true)}>
+          + Aggiungi il primo titolo
+        </button>
       </div>
 
-      <div style={{ maxWidth: 960, margin: "0 auto", position: "relative" }}>
-
-        {/* ── HERO ── */}
-        <div style={{ textAlign: "center", padding: "72px 20px 56px" }}>
-
-          {/* Badge */}
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(99,130,255,0.08)", border: "1px solid rgba(99,130,255,0.2)", borderRadius: 100, padding: "5px 14px", fontSize: 11, color: "#4361ee", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 28 }}>
-            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#4361ee", display: "inline-block" }} />
-            Portfolio Tracker
+      {/* Feature highlights */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 40 }}>
+        {[
+          { icon: "📈", title: "Grafico performance", desc: "Visualizza il rendimento % del tuo portafoglio nel tempo, con confronto S&P 500.", color: "#EEF4FF", accent: "#1E4FD8" },
+          { icon: "🎯", title: "Analisi settori", desc: "Scopri come è distribuito il tuo portafoglio per settore e ricevi suggerimenti di bilanciamento.", color: "#FFF8EE", accent: "#F4A020" },
+          { icon: "🔔", title: "Alert prezzi", desc: "Imposta soglie di prezzo e ricevi notifiche quando un titolo supera i tuoi livelli target.", color: "#EEFAF3", accent: "#16A34A" },
+          { icon: "🔮", title: "Simulazioni & previsioni", desc: "Simula scenari macroeconomici e proiezioni future per preparare la tua strategia.", color: "#F5EEFF", accent: "#7C3AED" },
+        ].map(({ icon, title, desc, color, accent }) => (
+          <div key={title} style={{ background: color, border: `1px solid ${accent}22`, borderRadius: 12, padding: "20px 18px" }}>
+            <div style={{ fontSize: 28, marginBottom: 10 }}>{icon}</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#0A1628", marginBottom: 6 }}>{title}</div>
+            <div style={{ fontSize: 12, color: "#5A6A7E", lineHeight: 1.6 }}>{desc}</div>
           </div>
+        ))}
+      </div>
 
-          {/* Titolo */}
-          <h1 style={{ fontSize: "clamp(32px, 6vw, 58px)", fontWeight: 800, color: "#0A1628", lineHeight: 1.1, letterSpacing: "-0.03em", margin: "0 0 20px" }}>
-            Investi con
-            <span style={{ display: "block", background: "linear-gradient(135deg, #4361ee, #06d6a0)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>
-              chiarezza
-            </span>
-          </h1>
-
-          <p style={{ fontSize: 17, color: "#5A6A7E", maxWidth: 440, margin: "0 auto 36px", lineHeight: 1.7, fontWeight: 400 }}>
-            Traccia ogni posizione, analizza le performance e prendi decisioni più consapevoli.
-          </p>
-
-          <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-            <button onClick={() => setShowWizard(true)} style={{
-              background: "linear-gradient(135deg, #4361ee, #3a0ca3)", color: "#fff",
-              border: "none", borderRadius: 10, padding: "13px 28px", fontSize: 14,
-              fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
-              boxShadow: "0 4px 20px rgba(67,97,238,0.35)",
-            }}>
-              + Aggiungi il primo titolo
-            </button>
-            <button onClick={() => setShowWizard(true)} style={{
-              background: "rgba(255,255,255,0.8)", color: "#0A1628",
-              border: "1px solid rgba(0,0,0,0.08)", borderRadius: 10, padding: "13px 24px",
-              fontSize: 14, fontWeight: 500, cursor: "pointer", fontFamily: "inherit",
-              backdropFilter: "blur(8px)",
-            }}>
-              Scopri le funzionalità →
-            </button>
-          </div>
-
-          {/* Ticker live finti */}
-          <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap", marginTop: 36 }}>
-            {[
-              { t: "AAPL",  p: "$213.49", c: "+1.23%", up: true  },
-              { t: "MSFT",  p: "$415.32", c: "+0.87%", up: true  },
-              { t: "NVDA",  p: "$875.20", c: "+2.41%", up: true  },
-              { t: "GOOGL", p: "$175.08", c: "-0.34%", up: false },
-              { t: "SPY",   p: "$523.11", c: "+0.61%", up: true  },
-              { t: "QQQ",   p: "$448.90", c: "+0.95%", up: true  },
-            ].map(({ t, p, c, up }) => (
-              <div key={t} style={{
-                background: "rgba(255,255,255,0.75)", backdropFilter: "blur(8px)",
-                border: "1px solid rgba(0,0,0,0.06)", borderRadius: 8,
-                padding: "7px 14px", display: "flex", alignItems: "center", gap: 10,
-              }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: "#0A1628" }}>{t}</span>
-                <span style={{ fontSize: 11, color: "#5A6A7E" }}>{p}</span>
-                <span style={{ fontSize: 11, fontWeight: 600, color: up ? "#10b981" : "#ef4444" }}>{c}</span>
-              </div>
-            ))}
+      {/* How to start */}
+      <div style={{ background: "#F8FAFF", border: "1px solid #D8E4F8", borderRadius: 12, padding: "20px 24px", display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#0A1628", marginBottom: 4 }}>Come iniziare</div>
+          <div style={{ fontSize: 12, color: "#5A6A7E", lineHeight: 1.7 }}>
+            Clicca <strong>+ Aggiungi</strong> in alto a destra, cerca il ticker del titolo (es. AAPL, QQQ, MSFT), inserisci quantità e prezzo di acquisto. Il grafico si aggiornerà automaticamente.
           </div>
         </div>
-
-        {/* ── GRAFICO FINTO ── */}
-        <div style={{ background: "rgba(255,255,255,0.75)", backdropFilter: "blur(12px)", border: "1px solid rgba(0,0,0,0.07)", borderRadius: 16, padding: "24px 24px 16px", marginBottom: 32, boxShadow: "0 4px 32px rgba(0,0,0,0.06)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
-            <div>
-              <div style={{ fontSize: 11, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>Valore portafoglio</div>
-              <div style={{ fontSize: 28, fontWeight: 800, color: "#0A1628", letterSpacing: "-0.02em" }}>$24.831,50</div>
-              <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-                <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "rgba(16,185,129,0.1)", color: "#10b981", border: "1px solid rgba(16,185,129,0.2)" }}>1G +1.23%</span>
-                <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "rgba(16,185,129,0.1)", color: "#10b981", border: "1px solid rgba(16,185,129,0.2)" }}>1M +4.87%</span>
-                <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "rgba(16,185,129,0.1)", color: "#10b981", border: "1px solid rgba(16,185,129,0.2)" }}>TOT +18.3%</span>
-              </div>
-            </div>
-            <div style={{ display: "flex", gap: 4 }}>
-              {["1M","3M","6M","1A","Inizio"].map(p => (
-                <div key={p} style={{ fontSize: 10, padding: "3px 9px", borderRadius: 4, background: p === "1A" ? "#E8EBF4" : "none", color: p === "1A" ? "#0A1628" : "#8A9AB0", fontWeight: p === "1A" ? 600 : 400 }}>{p}</div>
-              ))}
-            </div>
-          </div>
-
-          {/* SVG grafico finto */}
-          <svg viewBox="0 0 800 140" style={{ width: "100%", height: 140, display: "block" }} preserveAspectRatio="none">
-            <defs>
-              <linearGradient id="wGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#4361ee" stopOpacity="0.15" />
-                <stop offset="100%" stopColor="#4361ee" stopOpacity="0" />
-              </linearGradient>
-            </defs>
-            <path d="M0,100 C40,95 60,110 100,90 C140,70 160,80 200,60 C240,40 260,55 300,45 C340,35 370,50 410,40 C450,30 470,45 510,35 C550,25 580,38 620,28 C660,18 700,30 740,20 C760,15 780,18 800,15 L800,140 L0,140 Z" fill="url(#wGrad)" />
-            <path d="M0,100 C40,95 60,110 100,90 C140,70 160,80 200,60 C240,40 260,55 300,45 C340,35 370,50 410,40 C450,30 470,45 510,35 C550,25 580,38 620,28 C660,18 700,30 740,20 C760,15 780,18 800,15" fill="none" stroke="#4361ee" strokeWidth="2" />
-            <line x1="0" y1="100" x2="800" y2="100" stroke="#E8EBF4" strokeWidth="1" strokeDasharray="4 4" />
-          </svg>
-
-          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
-            {["Mar","Apr","Mag","Giu","Lug","Ago","Set","Ott","Nov","Dic","Gen","Feb"].map(m => (
-              <span key={m} style={{ fontSize: 9, color: "#C0C8D8" }}>{m}</span>
-            ))}
-          </div>
-        </div>
-
-        {/* ── FEATURE CARDS ── */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 14 }}>
-          {[
-            { icon: "📊", title: "Analisi settori", desc: "ETF scomposti per settore con alert concentrazione automatici.", grad: "linear-gradient(135deg, #eef2ff, #e0e7ff)", border: "rgba(99,102,241,0.15)", dot: "#6366f1" },
-            { icon: "🔔", title: "Alert prezzi", desc: "Imposta target e stop-loss. Ricevi notifiche in tempo reale.", grad: "linear-gradient(135deg, #ecfdf5, #d1fae5)", border: "rgba(16,185,129,0.15)", dot: "#10b981" },
-            { icon: "🔮", title: "Simulazioni", desc: "Scenari macro come Covid crash, inflazione alta, bull run.", grad: "linear-gradient(135deg, #fdf4ff, #f3e8ff)", border: "rgba(168,85,247,0.15)", dot: "#a855f7" },
-            { icon: "📰", title: "News & Analisti", desc: "Notizie live e rating analisti per ogni titolo in portafoglio.", grad: "linear-gradient(135deg, #fff7ed, #ffedd5)", border: "rgba(249,115,22,0.15)", dot: "#f97316" },
-          ].map(({ icon, title, desc, grad, border, dot }) => (
-            <div key={title} style={{
-              background: grad, border: `1px solid ${border}`,
-              borderRadius: 14, padding: "22px 20px",
-              transition: "transform 0.18s, box-shadow 0.18s",
-            }}
-              onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-3px)"; e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,0,0,0.08)"; }}
-              onMouseLeave={e => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "none"; }}
-            >
-              <div style={{ fontSize: 26, marginBottom: 12 }}>{icon}</div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#0A1628", marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
-                <span style={{ width: 5, height: 5, borderRadius: "50%", background: dot, flexShrink: 0, display: "inline-block" }} />
-                {title}
-              </div>
-              <div style={{ fontSize: 12, color: "#5A6A7E", lineHeight: 1.65 }}>{desc}</div>
-            </div>
-          ))}
-        </div>
-
+        <button className="add-btn" style={{ flexShrink: 0, fontSize: 12, padding: "10px 22px" }} onClick={() => setShowWizard(true)}>
+          Inizia ora →
+        </button>
       </div>
     </div>
   );
@@ -2387,7 +2160,7 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
 
       </div>
 
-      <ChartCard stocks={stocks} eurRate={eurRate} />
+      <PortfolioMetrics stocks={stocks} eurRate={eurRate} totalValue={totalValue} totalPnL={totalPnL} totalPct={totalPct} fmt={fmt} sym={sym} />
 
       {/* ── ALLOCAZIONE (torta stile GetQuin) ── */}
       <AllocationCard stocks={stocks} eurRate={eurRate} />
