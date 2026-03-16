@@ -58,10 +58,10 @@ export function useChart(stocks, eurRate) {
     return map;
   }, [rawData]);
 
-  // Serie completa: { date, value, baseValue }
-  // value     = valore di mercato del portafoglio quel giorno
-  // baseValue = costo investito fino a quel giorno (qty × buyPrice)
-  //             cambia solo quando entra un nuovo titolo
+  // Serie completa con Time-Weighted Return (TWR / Modified Dietz)
+  // r_giorno = (V_oggi - V_ieri - CashIn) / V_ieri
+  // CashIn = costo dei titoli entrati oggi (qty × buyPrice)
+  // Così gli spike da nuovo capitale sono neutralizzati
   const fullSeries = useMemo(() => {
     if (!Object.keys(priceMap).length || !stocks.length) return [];
 
@@ -82,34 +82,55 @@ export function useChart(stocks, eurRate) {
       };
     });
 
-    // Forward fill
     const lastKnown = {};
     tickers.forEach(t => { lastKnown[t] = null; });
 
     const series = [];
+    let prevValue = null;
+    let cumulative = 0; // rendimento cumulato come decimale
 
     allDates.forEach(date => {
+      // Forward fill
       tickers.forEach(t => {
         if (priceMap[t][date] != null) lastKnown[t] = priceMap[t][date];
       });
 
-      // Usa TUTTI i titoli sempre (non solo quelli già comprati)
-      // così non ci sono spike quando entra un nuovo titolo
+      // Solo titoli già acquistati
+      const active = positions.filter(p => date >= p.buyDateISO);
+      if (!active.length) return;
+
+      // Valore portafoglio oggi
       let value = 0;
       let valid = true;
-      for (const p of positions) {
+      for (const p of active) {
         if (lastKnown[p.ticker] == null) { valid = false; break; }
         value += p.qty * toUSD(lastKnown[p.ticker], p.currency, eurRate);
       }
       if (!valid || value <= 0) return;
 
-      // baseValue = costo totale di TUTTI i titoli (costante)
-      const baseValue = positions.reduce((s, p) => s + p.costUSD, 0);
+      // CashIn = titoli entrati oggi al loro prezzo di acquisto
+      const cashIn = positions
+        .filter(p => p.buyDateISO === date)
+        .reduce((s, p) => s + p.costUSD, 0);
+
+      // Modified Dietz: r = (V_oggi - V_ieri - CashIn) / V_ieri
+      if (prevValue !== null && prevValue > 0) {
+        const r = (value - prevValue - cashIn) / prevValue;
+        cumulative = (1 + cumulative) * (1 + r) - 1;
+      }
 
       const label = new Date(date + "T12:00:00")
         .toLocaleDateString("it-IT", { day: "2-digit", month: "short" });
 
-      series.push({ date, label, value, baseValue });
+      series.push({
+        date,
+        label,
+        value,
+        // twr = rendimento cumulato in % dall'inizio
+        twr: parseFloat((cumulative * 100).toFixed(2)),
+      });
+
+      prevValue = value;
     });
 
     return series;
@@ -122,87 +143,35 @@ export function useChart(stocks, eurRate) {
     return m;
   }, [spyData]);
 
-  // buildPeriod:
-  //   "Inizio": pct = (value - baseValue) / baseValue
-  //             baseValue = costo investito (cambia quando entra nuovo titolo) → no spike
-  //   "1G":     ultimi 2 punti della serie
-  //   altri:    startVal = valore di TUTTI i titoli attuali al prezzo del cutoff
-  //             (come se fossero già in portafoglio) → no spike da nuovo capitale
+  // buildPeriod: taglia fullSeries al periodo e rinormalizza twr a 0% dal primo punto
+  // twr è già immune agli spike — basta ritagliare e rinormalizzare
   function buildPeriod(period) {
     if (fullSeries.length < 2) return { chartData: [], pill: null };
 
-    // Posizioni attuali (tutte, indipendentemente da buyDate)
-    const allPositions = stocks.map(s => ({
-      ticker:   s.ticker,
-      qty:      parseFloat(s.qty) || 0,
-      currency: s.currency,
-    }));
+    let slice;
 
     if (period === "Inizio") {
-      const spyBase = spyIndex[fullSeries[0].date]
-        ?? spyData.find(s => s.date >= fullSeries[0].date)?.price;
-
-      const chartData = fullSeries.map(p => ({
-        ...p,
-        pct: parseFloat(((p.value - p.baseValue) / p.baseValue * 100).toFixed(2)),
-        spyPct: (() => {
-          const sv = spyIndex[p.date];
-          if (!sv || !spyBase) return null;
-          return parseFloat(((sv / spyBase - 1) * 100).toFixed(2));
-        })(),
-      }));
-
-      return {
-        chartData,
-        pill: {
-          pct:   chartData[chartData.length - 1].pct,
-          delta: fullSeries[fullSeries.length - 1].value - fullSeries[fullSeries.length - 1].baseValue,
-        },
-      };
+      slice = fullSeries;
+    } else if (period === "1G") {
+      slice = fullSeries.slice(-2);
+    } else {
+      const cutoff = getPeriodCutoff(period);
+      const idx = fullSeries.findIndex(p => p.date >= cutoff);
+      // idx-1 = chiusura del giorno prima del cutoff (base corretta)
+      slice = idx > 0 ? fullSeries.slice(idx - 1) : fullSeries;
     }
 
-    if (period === "1G") {
-      const slice = fullSeries.slice(-2);
-      const startVal = slice[0].value;
-      const chartData = slice.map(p => ({
-        ...p,
-        pct: parseFloat(((p.value - startVal) / startVal * 100).toFixed(2)),
-        spyPct: null,
-      }));
-      return {
-        chartData,
-        pill: { pct: chartData[chartData.length - 1].pct, delta: slice[slice.length - 1].value - startVal },
-      };
-    }
+    if (!slice || slice.length < 2) return { chartData: [], pill: null };
 
-    // 1M, 6M, 1A: startVal = valore di TUTTI i titoli attuali al prezzo del cutoff
-    const cutoff = getPeriodCutoff(period);
-
-    // Calcola startVal usando priceMap (già indicizzato { date -> price })
-    // Forward fill: cerca la data più vicina <= cutoff
-    let startVal = 0;
-    for (const pos of allPositions) {
-      const tickerPrices = priceMap[pos.ticker] || {};
-      // Prendi tutte le date <= cutoff e usa l'ultima
-      const dates = Object.keys(tickerPrices).filter(d => d <= cutoff).sort();
-      const lastDate = dates[dates.length - 1];
-      const price = lastDate ? tickerPrices[lastDate] : null;
-      if (price) startVal += pos.qty * toUSD(price, pos.currency, eurRate);
-    }
-
-    if (startVal <= 0) return { chartData: [], pill: null };
-
-    // Slice della serie dal cutoff in poi
-    const idx = fullSeries.findIndex(p => p.date >= cutoff);
-    const slice = idx >= 0 ? fullSeries.slice(idx) : fullSeries;
-    if (slice.length < 2) return { chartData: [], pill: null };
-
-    const spyBase = spyIndex[slice[0].date]
+    // Rinormalizza twr a 0% dal primo punto dello slice
+    // Formula: ((1 + twr_oggi) / (1 + twr_base) - 1) × 100
+    const twrBase  = slice[0].twr / 100;
+    const spyBase  = spyIndex[slice[0].date]
       ?? spyData.find(s => s.date >= slice[0].date)?.price;
 
     const chartData = slice.map(p => ({
       ...p,
-      pct: parseFloat(((p.value - startVal) / startVal * 100).toFixed(2)),
+      pct: parseFloat((((1 + p.twr / 100) / (1 + twrBase) - 1) * 100).toFixed(2)),
       spyPct: (() => {
         const sv = spyIndex[p.date];
         if (!sv || !spyBase) return null;
@@ -210,14 +179,14 @@ export function useChart(stocks, eurRate) {
       })(),
     }));
 
-    return {
-      chartData,
-      pill: {
-        pct:   chartData[chartData.length - 1].pct,
-        delta: slice[slice.length - 1].value - startVal,
-      },
+    const pill = {
+      pct:   chartData[chartData.length - 1].pct,
+      delta: slice[slice.length - 1].value - slice[0].value,
     };
+
+    return { chartData, pill };
   }
+
 
   return { fullSeries, loading, buildPeriod, priceMap };
 }
