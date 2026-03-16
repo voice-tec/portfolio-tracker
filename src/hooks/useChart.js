@@ -1,37 +1,45 @@
-import { useEffect, useState, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { fetchHistory } from "../utils/api";
 import { toUSD } from "../utils/currency";
 import { parseBuyDate } from "../utils/dates";
 
 export const PERIODS = ["1G", "1M", "6M", "1A", "Inizio"];
 
-const PERIOD_DAYS = {
-  "1G":    1,
-  "1M":    30,
-  "6M":    180,
-  "1A":    365,
-  "Inizio": Infinity,
-};
+function getPeriodCutoff(period) {
+  const d = new Date();
+  if (period === "1M") d.setMonth(d.getMonth() - 1);
+  else if (period === "6M") d.setMonth(d.getMonth() - 6);
+  else if (period === "1A") d.setFullYear(d.getFullYear() - 1);
+  return d.toISOString().slice(0, 10);
+}
 
 export function useChart(stocks, eurRate) {
-  const [histories, setHistories] = useState({});
-  const [loading, setLoading]     = useState(false);
+  const [rawData, setRawData] = useState({});
+  const [spyData, setSpyData] = useState([]);
+  const [loading, setLoading] = useState(false);
 
-  // 1️⃣ Scarica prezzi storici per ogni ticker
   useEffect(() => {
     if (!stocks.length) return;
     setLoading(true);
+
     const tickers = [...new Set(stocks.map(s => s.ticker))];
-    Promise.all(
-      tickers.map(t =>
-        fetchHistory(t, 1000)
-          .then(c => ({ ticker: t, candles: c || [] }))
-          .catch(() => ({ ticker: t, candles: [] }))
-      )
-    ).then(results => {
+
+    Promise.all([
+      ...tickers.map(ticker =>
+        fetchHistory(ticker, 1000)
+          .then(c => ({ ticker, candles: c || [] }))
+          .catch(() => ({ ticker, candles: [] }))
+      ),
+      fetchHistory("SPY", 1000)
+        .then(c => ({ ticker: "SPY", candles: c || [] }))
+        .catch(() => ({ ticker: "SPY", candles: [] })),
+    ]).then(results => {
       const map = {};
-      results.forEach(r => { map[r.ticker] = r.candles; });
-      setHistories(map);
+      results
+        .filter(r => r.ticker !== "SPY")
+        .forEach(({ ticker, candles }) => { map[ticker] = candles; });
+      setRawData(map);
+      setSpyData(results.find(r => r.ticker === "SPY")?.candles || []);
       setLoading(false);
     });
   }, [
@@ -40,120 +48,112 @@ export function useChart(stocks, eurRate) {
     eurRate,
   ]);
 
-  // 2️⃣ Serie completa con Modified Dietz
-  const fullSeries = useMemo(() => {
-    if (!Object.keys(histories).length || !stocks.length) return [];
+  const priceMap = useMemo(() => {
+    const map = {};
+    Object.entries(rawData).forEach(([ticker, candles]) => {
+      map[ticker] = {};
+      candles.forEach(c => {
+        if (c.date && c.price != null) map[ticker][c.date] = c.price;
+      });
+    });
+    return map;
+  }, [rawData]);
 
-    // Prepara posizioni con buyDateISO e costUSD
+  // ── Serie grezza: { date, label, valore } con forward fill ───────────────
+  const portfolioSeries = useMemo(() => {
+    if (!Object.keys(priceMap).length || !stocks.length) return [];
+
+    const tickers = Object.keys(priceMap);
+    const allDates = [...new Set(tickers.flatMap(t => Object.keys(priceMap[t])))].sort();
+    if (!allDates.length) return [];
+
     const positions = stocks.map(s => {
       const bd = parseBuyDate(s.buyDate);
       return {
-        ticker:     s.ticker,
-        qty:        parseFloat(s.qty) || 0,
-        costUSD:    toUSD(parseFloat(s.buyPrice) || 0, s.currency, eurRate),
-        buyDateISO: bd ? bd.toISOString().slice(0, 10) : "1970-01-01",
-        currency:   s.currency,
+        ...s,
+        buyDateISO: bd ? bd.toISOString().slice(0, 10) : allDates[0],
       };
     });
 
-    // Unione di tutte le date disponibili
-    const allDates = new Set();
-    Object.values(histories).forEach(candles =>
-      candles.forEach(c => { if (c.date) allDates.add(c.date); })
-    );
-    const dates = [...allDates].sort();
+    const lastKnown = {};
+    tickers.forEach(t => { lastKnown[t] = null; });
 
-    let prevValue = null;
-    let cumulative = 0;
     const series = [];
 
-    for (const date of dates) {
-      // Posizioni attive a questa data
+    allDates.forEach(date => {
+      // Forward fill
+      tickers.forEach(t => {
+        if (priceMap[t][date] != null) lastKnown[t] = priceMap[t][date];
+      });
+
       const active = positions.filter(p => date >= p.buyDateISO);
-      if (!active.length) continue;
+      if (!active.length) return;
 
-      // Valore portafoglio = Σ(qty × prezzo_adj_in_USD)
-      let value = 0;
-      for (const pos of active) {
-        const price = getPrice(histories[pos.ticker] || [], date);
-        value += pos.qty * toUSD(price, pos.currency, eurRate);
+      let totalValue = 0;
+      let valid = true;
+      for (const p of active) {
+        const price = lastKnown[p.ticker];
+        if (price == null) { valid = false; break; }
+        totalValue += (parseFloat(p.qty) || 0) * toUSD(price, p.currency, eurRate);
       }
-      if (value <= 0) continue;
-
-      // Cash flow Ct = capitale nuovo entrato OGGI (al prezzo di acquisto)
-      const cashIn = active
-        .filter(p => p.buyDateISO === date)
-        .reduce((s, p) => s + p.qty * p.costUSD, 0);
-
-      // rt = (Vt - Vt-1 - Ct) / Vt-1   (Modified Dietz)
-      let dailyReturn = 0;
-      if (prevValue !== null && prevValue > 0) {
-        dailyReturn = (value - prevValue - cashIn) / prevValue;
-      }
-
-      // Rendimento cumulato concatenato
-      cumulative = (1 + cumulative) * (1 + dailyReturn) - 1;
+      if (!valid || totalValue <= 0) return;
 
       const label = new Date(date + "T12:00:00")
         .toLocaleDateString("it-IT", { day: "2-digit", month: "short" });
 
-      series.push({ date, label, value, pct: cumulative });
-
-      prevValue = value;
-    }
+      series.push({ date, label, valore: totalValue });
+    });
 
     return series;
-  }, [histories, stocks, eurRate]);
+  }, [priceMap, stocks, eurRate]);
 
-  // 3️⃣ buildPeriod: taglia e rinormalizza la serie per il periodo scelto
+  // SPY index
+  const spyIndex = useMemo(() => {
+    const m = {};
+    spyData.forEach(c => { if (c.date && c.price) m[c.date] = c.price; });
+    return m;
+  }, [spyData]);
+
+  // ── buildPeriod: taglia + normalizza a 0% dal primo punto del range ───────
   function buildPeriod(period) {
-    if (fullSeries.length < 2) return { chartData: [], pill: null };
+    if (portfolioSeries.length < 2) return { chartData: [], pill: null };
 
     let slice;
 
     if (period === "Inizio") {
-      slice = fullSeries;
-
+      slice = portfolioSeries;
     } else if (period === "1G") {
-      slice = fullSeries.slice(-2);
-
+      slice = portfolioSeries.slice(-2);
     } else {
-      const days   = PERIOD_DAYS[period];
-      const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - days);
-      const cutoffISO = cutoff.toISOString().slice(0, 10);
-
-      const idx = fullSeries.findIndex(p => p.date >= cutoffISO);
-      // Prende il punto precedente come base (ultimo giorno prima del cutoff)
-      slice = idx > 0 ? fullSeries.slice(idx - 1) : fullSeries;
+      const cutoff = getPeriodCutoff(period);
+      const idx = portfolioSeries.findIndex(p => p.date >= cutoff);
+      // idx-1 = chiusura del giorno prima del cutoff (base corretta come Yahoo)
+      slice = idx > 0 ? portfolioSeries.slice(idx - 1) : portfolioSeries;
     }
 
     if (!slice || slice.length < 2) return { chartData: [], pill: null };
 
-    // Rinormalizza: 0% al primo punto dello slice
-    const base = slice[0].pct;
+    const baseValore = slice[0].valore;
+    const spyBase = spyIndex[slice[0].date]
+      ?? spyData.find(s => s.date >= slice[0].date)?.price;
+
     const chartData = slice.map(p => ({
       ...p,
-      pct: parseFloat((((1 + p.pct) / (1 + base) - 1) * 100).toFixed(2)),
+      pct: parseFloat(((p.valore / baseValore - 1) * 100).toFixed(2)),
+      spyPct: (() => {
+        const sv = spyIndex[p.date];
+        if (!sv || !spyBase) return null;
+        return parseFloat(((sv / spyBase - 1) * 100).toFixed(2));
+      })(),
     }));
 
     const pill = {
       pct:   chartData[chartData.length - 1].pct,
-      delta: slice[slice.length - 1].value - slice[0].value,
+      delta: slice[slice.length - 1].valore - baseValore,
     };
 
     return { chartData, pill };
   }
 
-  return { fullSeries, loading, buildPeriod };
-}
-
-// Forward fill: restituisce il prezzo più recente disponibile fino a `date`
-function getPrice(candles, date) {
-  let last = 0;
-  for (const c of candles) {
-    if (c.date <= date) last = c.price ?? 0;
-    else break;
-  }
-  return last;
+  return { portfolioSeries, spyData, spyIndex, loading, buildPeriod };
 }
