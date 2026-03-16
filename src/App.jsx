@@ -12,6 +12,7 @@ import { useEurRate } from "./hooks/useEurRate";
 import { AllocationCard } from "./components/AllocationCard";
 import { ChartCard } from "./components/ChartCard";
 import { PortfolioMetrics } from "./components/PortfolioMetrics";
+import { ScenarioOverview } from "./components/ScenarioOverview";
 import { MarketBadge } from "./components/MarketBadge";
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
@@ -2259,6 +2260,8 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
 
       {/* ── ALLOCAZIONE (torta stile GetQuin) ── */}
       <AllocationCard stocks={stocks} eurRate={eurRate} />
+
+      <ScenarioOverview stocks={stocks} totalValue={totalValue} fmt={fmt} sym={sym} />
 
       {/* ── LISTA TITOLI COMPATTA ── */}
       <div className="card">
