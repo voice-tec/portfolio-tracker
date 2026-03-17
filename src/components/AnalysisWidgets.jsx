@@ -173,7 +173,7 @@ export function EarningsImpact({ ticker }) {
   useEffect(() => {
     if (!ticker) return;
     setLoading(true);
-    fetch(`${API_BASE}/api/earnings?symbol=${encodeURIComponent(ticker)}`)
+    fetch(`${API_BASE}/api/analyst?symbol=${encodeURIComponent(ticker)}&earnings=true`)
       .then(r => r.json())
       .then(d => { setData(d); setLoading(false); })
       .catch(() => setLoading(false));

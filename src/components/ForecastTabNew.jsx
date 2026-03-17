@@ -4,7 +4,6 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ReferenceLine, Cell, Legend,
 } from "recharts";
 import { toUSD } from "../utils/currency";
-import { RiskConcentration, EarningsImpact } from "./AnalysisWidgets";
 import { API_BASE } from "../utils/api";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -252,9 +251,40 @@ function HistoricalAnalysis({ d, ticker, band, setBand, macroCtx }) {
 
   return (
     <div className="card" style={{ padding: "16px 18px" }}>
-      <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 14 }}>
-        🔍 Analisi Storica — {ticker} a questo prezzo (±7%)
+      {/* Header con slider */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
+        <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+          🔍 Analisi Storica — {ticker} a questo prezzo
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 9, color: "#8A9AB0" }}>Banda:</span>
+          {[3, 7, 15].map(b => (
+            <button key={b} onClick={() => setBand(b)} style={{
+              padding: "3px 10px", borderRadius: 20, cursor: "pointer",
+              fontFamily: "inherit", fontSize: 10, fontWeight: 600, border: "none",
+              background: band === b ? "#0A1628" : "#F0F2F7",
+              color: band === b ? "#fff" : "#8A9AB0",
+            }}>±{b}%</button>
+          ))}
+        </div>
       </div>
+
+      {/* Contesto macro — evidenzia periodi simili */}
+      {macroCtx && (() => {
+        const vix = macroCtx.vix;
+        const t10y = macroCtx.treasury10y;
+        const spread = macroCtx.yieldSpread;
+        let label = null, color = "#8A9AB0";
+        if (vix > 25)       { label = "⚠️ Alta volatilità (VIX " + vix + ") — i casi storici in periodi simili tendono ad essere più variabili"; color = "#DC2626"; }
+        else if (t10y > 4.5) { label = "🏦 Tassi elevati (10Y " + t10y + "%) — contesto simile a 2022-2023"; color = "#7C3AED"; }
+        else if (spread < 0) { label = "📉 Curva invertita — storicamente precede rallentamento"; color = "#F97316"; }
+        else                  { label = "✅ Contesto macro stabile — dati storici ben rappresentativi"; color = "#16A34A"; }
+        return label ? (
+          <div style={{ padding: "8px 12px", borderRadius: 8, background: color + "10", border: `1px solid ${color}25`, marginBottom: 14, fontSize: 10, color, lineHeight: 1.5 }}>
+            {label}
+          </div>
+        ) : null;
+      })()}
 
       {/* KPI */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8, marginBottom: 16 }}>
@@ -296,22 +326,23 @@ function HistoricalAnalysis({ d, ticker, band, setBand, macroCtx }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 220, overflowY: "auto" }}>
         {[...outcomes].reverse().map((o, i) => {
           const isPos = o.pct >= 0;
-          const barW  = maxAbs > 0 ? Math.abs(o.pct) / maxAbs * 100 : 0;
+          const barW  = maxAbs > 0 ? Math.abs(o.pct) / maxAbs * 45 : 0;
           return (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", borderBottom: "1px solid #F8FAFF" }}>
-              <div style={{ width: 56, fontSize: 9, color: "#8A9AB0", flexShrink: 0 }}>{o.date}</div>
-              <div style={{ width: 150, display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: "#0A1628" }}>{o.entryPrice ? `$${o.entryPrice.toFixed(2)}` : "—"}</span>
-                <span style={{ fontSize: 9, color: "#C0C8D8" }}>→</span>
-                <span style={{ fontSize: 11, fontWeight: 700, color: isPos ? "#16A34A" : "#DC2626" }}>{o.exitPrice ? `$${o.exitPrice.toFixed(2)}` : "—"}</span>
+            <div key={i} style={{ display: "grid", gridTemplateColumns: "60px 1fr 56px", gap: 8, alignItems: "center" }}>
+              <span style={{ fontSize: 9, color: "#8A9AB0", textAlign: "right" }}>{o.date}</span>
+              <div style={{ position: "relative", height: 14, background: "#F8FAFF", borderRadius: 2 }}>
+                <div style={{
+                  position: "absolute", top: 0, bottom: 0,
+                  left: isPos ? "50%" : `calc(50% - ${barW}%)`,
+                  width: `${barW}%`,
+                  background: isPos ? "#16A34A" : "#DC2626",
+                  opacity: 0.5, borderRadius: 2,
+                }} />
+                <div style={{ position: "absolute", top: 0, bottom: 0, left: "50%", width: 1, background: "#E0E4EF" }} />
               </div>
-              <div style={{ flex: 1, position: "relative", height: 8, background: "#F0F2F7", borderRadius: 4 }}>
-                <div style={{ position: "absolute", top: 0, bottom: 0, left: isPos ? "50%" : `calc(50% - ${barW/2}%)`, width: `${barW/2}%`, background: isPos ? "#16A34A" : "#DC2626", opacity: 0.7, borderRadius: 4 }} />
-                <div style={{ position: "absolute", top: 0, bottom: 0, left: "50%", width: 1, background: "#D0D4DF" }} />
-              </div>
-              <div style={{ width: 52, fontSize: 13, fontWeight: 800, color: isPos ? "#16A34A" : "#DC2626", textAlign: "right", flexShrink: 0 }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: isPos ? "#16A34A" : "#DC2626" }}>
                 {isPos ? "+" : ""}{o.pct}%
-              </div>
+              </span>
             </div>
           );
         })}
@@ -327,12 +358,13 @@ export function ForecastTabNew({ stocks, fmt, sym, rate, eurRate }) {
   const [analystData, setAnalystData]   = useState({});
   const [historyData, setHistoryData]   = useState({});
   const [loading, setLoading]     = useState(false);
-  const [band, setBand]           = useState(7);
-  const [macroCtx, setMacroCtx]   = useState(null);
+  const [band, setBand]           = useState(7);   // ±7% default
+  const [macroCtx, setMacroCtx]   = useState(null); // contesto macro live
   const allLoadedRef = useRef(false);
 
+  // Fetch contesto macro per evidenziare periodi simili
   useEffect(() => {
-    fetch(`${API_BASE}/api/macro`)
+    fetch(`${API_BASE}/api/price?symbol=__MACRO__`)
       .then(r => r.json())
       .then(d => setMacroCtx(d))
       .catch(() => {});
@@ -374,26 +406,23 @@ export function ForecastTabNew({ stocks, fmt, sym, rate, eurRate }) {
     // Forecast se non caricato
     if (!forecastData[t]) {
       setLoading(true);
-      fetch(`${API_BASE}/api/forecast?symbol=${encodeURIComponent(t)}&price=${selected.currentPrice}`)
+      fetch(`${API_BASE}/api/forecast?symbol=${encodeURIComponent(t)}&price=${selected.currentPrice}&band=${band/100}`)
         .then(r => r.json())
         .then(d => { if (!d.error) setForecastData(p => ({ ...p, [t]: d })); setLoading(false); })
         .catch(() => setLoading(false));
     }
-  }, [selected?.ticker]);
+  }, [selected?.ticker, band]);
 
+  // Refetch analisi storica quando cambia banda
   useEffect(() => {
-    if (!selected?.ticker) return;
+    if (!selected) return;
     const t = selected.ticker;
-    const p = selected.currentPrice;
     setLoading(true);
-    fetch(`${API_BASE}/api/forecast?symbol=${encodeURIComponent(t)}&price=${p}&band=${band/100}`)
+    fetch(`${API_BASE}/api/forecast?symbol=${encodeURIComponent(t)}&price=${selected.currentPrice}&band=${band/100}`)
       .then(r => r.json())
-      .then(d => {
-        if (!d.error) setForecastData(prev => ({ ...prev, [t]: d }));
-        setLoading(false);
-      })
+      .then(d => { if (!d.error) setForecastData(p => ({ ...p, [t]: d })); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [band, selected?.ticker]);
+  }, [band]);
 
   // Portfolio forecast aggregato
   const portfolioForecast = useMemo(() => {
@@ -558,6 +587,16 @@ export function ForecastTabNew({ stocks, fmt, sym, rate, eurRate }) {
               </AreaChart>
             </ResponsiveContainer>
 
+            {/* Nota metodologia */}
+            {d.methodology && (
+              <div style={{ marginTop: 12, padding: "8px 12px", background: "#F8FAFF", borderRadius: 8, fontSize: 9, color: "#8A9AB0", lineHeight: 1.6 }}>
+                📊 <strong style={{ color: "#0A1628" }}>Metodologia:</strong> {d.methodology.note}
+                {d.methodology.analystWeight > 0 && (
+                  <span style={{ marginLeft: 6, color: "#4361ee" }}>· Target analisti: ${d.methodology.analystTarget?.toFixed(2)}</span>
+                )}
+              </div>
+            )}
+
             {/* Legenda + scenari */}
             <div style={{ display: "flex", gap: 12, marginTop: 12, flexWrap: "wrap", alignItems: "center" }}>
               {[
@@ -598,18 +637,15 @@ export function ForecastTabNew({ stocks, fmt, sym, rate, eurRate }) {
                   <Tooltip contentStyle={{ background: "#fff", border: "1px solid #E8EBF4", borderRadius: 8, fontSize: 10, padding: "4px 8px" }}
                     formatter={v => [`${v}%`, "Media storica"]} />
                   <ReferenceLine y={0} stroke="#E0E4EF" />
-                  <Bar dataKey="avgReturn" radius={[3, 3, 0, 0]}>
+                  <Bar dataKey="avg" radius={[3, 3, 0, 0]}>
                     {d.seasonality.map((s, i) => (
-                      <Cell key={i} fill={s.avgReturn >= 0 ? "#16A34A" : "#DC2626"} fillOpacity={0.7} />
+                      <Cell key={i} fill={s.avg >= 0 ? "#16A34A" : "#DC2626"} fillOpacity={0.7} />
                     ))}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>
           )}
-
-          {/* Earnings Impact */}
-          <EarningsImpact ticker={selected.ticker} />
 
           <div style={{ fontSize: 9, color: "#C0C8D8", textAlign: "center" }}>
             ⚠️ Stime statistiche basate su dati storici. Non costituisce consulenza finanziaria ai sensi MiFID II.
