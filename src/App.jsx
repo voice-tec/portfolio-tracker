@@ -13,6 +13,7 @@ import { AllocationCard } from "./components/AllocationCard";
 import { ChartCard } from "./components/ChartCard";
 import { PortfolioMetrics } from "./components/PortfolioMetrics";
 import { ScenarioOverview } from "./components/ScenarioOverview";
+import { OverviewWidgets } from "./components/OverviewWidgets";
 import { MarketBadge } from "./components/MarketBadge";
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
