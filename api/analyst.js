@@ -89,6 +89,96 @@ export default async function handler(req, res) {
   const fmpKey     = process.env.FMP_API_KEY;
   const sym        = symbol.toUpperCase();
 
+  // ── ROUTE EARNINGS: ?earnings=true ──────────────────────────────────────────
+  if (req.query.earnings === "true") {
+    try {
+      const summaryUrl = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(sym)}?modules=earningsHistory,calendarEvents`;
+      const er = await fetch(summaryUrl, { headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json" } });
+      if (!er.ok) return res.status(200).json({ earnings: [], stats: {} });
+      const edata = await er.json();
+      const eresult = edata?.quoteSummary?.result?.[0];
+      if (!eresult) return res.status(200).json({ earnings: [], stats: {} });
+
+      const earningsHistory = eresult.earningsHistory?.history || [];
+      const nextEarningsRaw = eresult.calendarEvents?.earnings?.earningsDate?.[0]?.raw;
+
+      const nowTs = Math.floor(Date.now() / 1000);
+      const from3y = nowTs - 3 * 365 * 86400;
+      let priceMap = {};
+      try {
+        const pr = await fetch(
+          `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&period1=${from3y}&period2=${nowTs}`,
+          { headers: { "User-Agent": "Mozilla/5.0" } }
+        );
+        if (pr.ok) {
+          const pd = await pr.json();
+          const pres = pd?.chart?.result?.[0];
+          if (pres) {
+            const ts = pres.timestamp || [];
+            const cl = pres.indicators?.quote?.[0]?.close || [];
+            ts.forEach((t, i) => { if (cl[i] != null) priceMap[new Date(t * 1000).toISOString().slice(0, 10)] = cl[i]; });
+          }
+        }
+      } catch {}
+
+      const getNear = (dateStr, off) => {
+        for (let d = 0; d <= 5; d++) {
+          for (const sg of [1, -1]) {
+            const dt = new Date(dateStr); dt.setDate(dt.getDate() + off + sg * d);
+            const k = dt.toISOString().slice(0, 10);
+            if (priceMap[k]) return priceMap[k];
+          }
+        }
+        return null;
+      };
+
+      const earnings = earningsHistory
+        .filter(e => e.quarter?.raw)
+        .map(e => {
+          const dateStr   = e.quarter?.fmt || new Date(e.quarter.raw * 1000).toISOString().slice(0, 10);
+          const epsActual = e.epsActual?.raw  ?? null;
+          const epsEst    = e.epsEstimate?.raw ?? null;
+          const surprise  = e.surprisePercent?.raw ?? null;
+          const pb = getNear(dateStr, -1), pd = getNear(dateStr, 0), p2w = getNear(dateStr, 10);
+          const moveDay = pb && pd  ? parseFloat(((pd  - pb) / pb * 100).toFixed(2)) : null;
+          const move2w  = pb && p2w ? parseFloat(((p2w - pb) / pb * 100).toFixed(2)) : null;
+          const qd = new Date(e.quarter.raw * 1000);
+          return {
+            date: dateStr,
+            quarter: `Q${Math.floor(qd.getMonth()/3)+1} ${qd.getFullYear()}`,
+            epsActual, epsEstimate: epsEst, surprise,
+            beat: surprise != null ? surprise > 0 : null,
+            moveDay, move2w,
+          };
+        })
+        .filter(e => e.epsActual !== null)
+        .sort((a, b) => b.date.localeCompare(a.date))
+        .slice(0, 12);
+
+      const beats  = earnings.filter(e => e.beat === true);
+      const misses = earnings.filter(e => e.beat === false);
+      const avg = (arr, key) => arr.filter(e => e[key] != null).length
+        ? parseFloat((arr.filter(e => e[key] != null).reduce((s, e) => s + e[key], 0) / arr.filter(e => e[key] != null).length).toFixed(2))
+        : null;
+
+      return res.status(200).json({
+        symbol: sym,
+        nextEarnings: nextEarningsRaw ? new Date(nextEarningsRaw * 1000).toISOString().slice(0, 10) : null,
+        earnings,
+        stats: {
+          totalReported: earnings.length,
+          beatRate: earnings.length ? Math.round(beats.length / earnings.length * 100) : null,
+          avgMoveOnBeat: avg(beats, "moveDay"),
+          avgMoveOnMiss: avg(misses, "moveDay"),
+          avgMove2w:     avg(earnings, "move2w"),
+        },
+      });
+    } catch (err) {
+      return res.status(200).json({ earnings: [], stats: {}, error: err.message });
+    }
+  }
+
+
   // ETF sectors: cerca ticker esatto poi senza suffisso borsa (.MI .DE .AS ecc.)
   const baseSym = sym.replace(/\.(MI|DE|AS|PA|SW|L|BR|MA)$/i, "");
   const sectorWeights = ETF_SECTORS[sym] || ETF_SECTORS[baseSym] || [];

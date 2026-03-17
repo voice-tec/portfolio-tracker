@@ -9,45 +9,45 @@ export default async function handler(req, res) {
   if (!symbol) return res.status(400).json({ error: "Missing symbol" });
   const s = symbol.toUpperCase();
 
-  // ── ROUTE MACRO: ?symbol=__MACRO__ ──────────────────────────────────────
+  // ── ROUTE MACRO: ?symbol=__MACRO__ ──────────────────────────────────────────
   if (s === "__MACRO__") {
-    async function fetchYahooMacro(sym) {
+    const fetchM = async (ticker) => {
       try {
-        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=5d`;
-        const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json" } });
+        const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5d`,
+          { headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json" } });
         if (!r.ok) return null;
-        const data = await r.json();
-        const result = data?.chart?.result?.[0];
+        const d = await r.json();
+        const result = d?.chart?.result?.[0];
         if (!result) return null;
-        const closes = result.indicators?.quote?.[0]?.close || [];
-        const last = closes.filter(Boolean).pop();
-        const prev = closes.filter(Boolean).slice(-2)[0];
-        const changePct = last && prev ? parseFloat(((last - prev) / prev * 100).toFixed(2)) : null;
-        return { price: last, changePct };
+        const closes = result.indicators?.quote?.[0]?.close?.filter(Boolean) || [];
+        const last = closes[closes.length - 1];
+        const prev = closes[closes.length - 2];
+        return { price: last, changePct: last && prev ? parseFloat(((last-prev)/prev*100).toFixed(2)) : null };
       } catch { return null; }
-    }
+    };
     const [vix, t10y, t3m, sp500, dxy, gold, oil] = await Promise.all([
-      fetchYahooMacro("^VIX"), fetchYahooMacro("^TNX"), fetchYahooMacro("^IRX"),
-      fetchYahooMacro("^GSPC"), fetchYahooMacro("DX-Y.NYB"), fetchYahooMacro("GC=F"), fetchYahooMacro("CL=F"),
+      fetchM("^VIX"), fetchM("^TNX"), fetchM("^IRX"),
+      fetchM("^GSPC"), fetchM("DX-Y.NYB"), fetchM("GC=F"), fetchM("CL=F"),
     ]);
-    const yieldSpread = (t10y?.price && t3m?.price) ? parseFloat((t10y.price - t3m.price).toFixed(2)) : null;
+    const yieldSpread = t10y?.price && t3m?.price ? parseFloat((t10y.price - t3m.price).toFixed(2)) : null;
     return res.status(200).json({
-      fedRate:         t3m?.price  ? parseFloat(t3m.price.toFixed(2))  : null,
-      treasury10y:     t10y?.price ? parseFloat(t10y.price.toFixed(2)) : null,
-      treasury10yChange: t10y?.changePct,
+      fedRate:           t3m?.price   ? parseFloat(t3m.price.toFixed(2))   : null,
+      treasury10y:       t10y?.price  ? parseFloat(t10y.price.toFixed(2))  : null,
+      treasury10yChange: t10y?.changePct ?? null,
       yieldSpread,
       yieldCurveInverted: yieldSpread !== null ? yieldSpread < 0 : null,
-      vix:             vix?.price  ? parseFloat(vix.price.toFixed(1))  : null,
-      vixChange:       vix?.changePct,
-      sp500:           sp500?.price ? parseFloat(sp500.price.toFixed(0)) : null,
-      sp500Change:     sp500?.changePct,
-      dxy:             dxy?.price  ? parseFloat(dxy.price.toFixed(1))  : null,
-      gold:            gold?.price ? parseFloat(gold.price.toFixed(0)) : null,
-      goldChange:      gold?.changePct,
-      oil:             oil?.price  ? parseFloat(oil.price.toFixed(1))  : null,
-      timestamp:       new Date().toISOString(),
+      vix:               vix?.price   ? parseFloat(vix.price.toFixed(1))   : null,
+      vixChange:         vix?.changePct ?? null,
+      sp500:             sp500?.price  ? parseFloat(sp500.price.toFixed(0)) : null,
+      sp500Change:       sp500?.changePct ?? null,
+      dxy:               dxy?.price   ? parseFloat(dxy.price.toFixed(1))   : null,
+      gold:              gold?.price  ? parseFloat(gold.price.toFixed(0))  : null,
+      goldChange:        gold?.changePct ?? null,
+      oil:               oil?.price   ? parseFloat(oil.price.toFixed(1))   : null,
+      timestamp: new Date().toISOString(),
     });
   }
+
 
   function getMarketStateByTime() {
     const now = new Date();
