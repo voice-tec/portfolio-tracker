@@ -373,27 +373,34 @@ function MacroScenari({ stocks, sym, rate, fmt, eurRate }) {
       const candles = results.map(r => r?.candles || null);
       const maxLen  = Math.max(...candles.map(r => r?.length || 0));
 
-      const portSeries = Array.from({ length: maxLen }, (_, i) => {
-        const date = candles.find(r => r)?.[i]?.date || "";
-        let totalPct = 0, totalW = 0;
-        candles.forEach((r, j) => {
-          if (r?.[i]) {
-            const w = (parseFloat(stocks[j]?.qty)||0) * (parseFloat(stocks[j]?.currentPrice)||0) / (totalValue || 1);
-            totalPct += r[i].pct * w;
-            totalW   += w;
-          }
-        });
-        return {
-          date,
-          label: date ? new Date(date + "T12:00:00").toLocaleDateString("it-IT", { day: "2-digit", month: "short" }) : "",
-          pct:   totalW > 0 ? parseFloat((totalPct / totalW).toFixed(2)) : 0,
-          spy:   spyData?.[i]?.pct ?? null,
-        };
-      });
+      // Ricalcola totalValue qui — non usare la closure
+      const tv = stocks.reduce((s, x) => s + (parseFloat(x.qty)||0) * (parseFloat(x.currentPrice)||0), 0) || 1;
 
-      // Se tutti i punti sono 0 (titoli non esistevano nel periodo),
-      // usa stima basata su impatto settoriale
-      const allZero = portSeries.every(p => p.pct === 0);
+      // Controlla se ci sono candele valide
+      const hasData = candles.some(c => c && c.length > 0);
+
+      let portSeries = [];
+      if (hasData) {
+        portSeries = Array.from({ length: maxLen }, (_, i) => {
+          const date = candles.find(r => r)?.[i]?.date || "";
+          let totalPct = 0, totalW = 0;
+          candles.forEach((r, j) => {
+            if (r?.[i]) {
+              const w = (parseFloat(stocks[j]?.qty)||0) * (parseFloat(stocks[j]?.currentPrice)||0) / tv;
+              totalPct += r[i].pct * w;
+              totalW   += w;
+            }
+          });
+          return {
+            date,
+            label: date ? (() => { try { return new Date(date + "T12:00:00").toLocaleDateString("it-IT", { day: "2-digit", month: "short" }); } catch { return date; } })() : "",
+            pct:   totalW > 0 ? parseFloat((totalPct / totalW).toFixed(2)) : 0,
+            spy:   spyData?.[i]?.pct ?? null,
+          };
+        });
+      }
+
+      const allZero = !hasData || portSeries.every(p => p.pct === 0);
       setRealCache(c => ({ ...c, [selected.id]: { portSeries, allZero } }));
       setRealLoading(false);
     });
