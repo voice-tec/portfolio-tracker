@@ -18,7 +18,7 @@ const SCENARIOS_STORICI = [
 const MACRO_SCENARI = [
   {
     id: "high_inflation", label: "📈 Alta Inflazione", color: "#F97316",
-    from: "2021-06-01", to: "2022-12-31",
+    from: "2021-06-01", to: "2022-12-31", periodLabel: "Giu 2021 – Dic 2022",
     desc: "Inflazione >5% come 2021-2022. Energia e commodities salgono, tech e bond scendono.",
     spxImpact: -12, duration: "12-18 mesi",
     impact: { "Tech": -25, "Finanza": +8, "Energia": +45, "Materiali": +30, "Salute": -5, "Consumer": -15, "Industriali": +10, "Utility": -12, "Real Estate": -20, "Telecom": -8, "ETF": -10, "Altro": -5 },
@@ -42,7 +42,7 @@ const MACRO_SCENARI = [
   },
   {
     id: "recession", label: "📊 Recessione", color: "#DC2626",
-    from: "2007-10-01", to: "2009-03-09",
+    from: "2007-10-01", to: "2009-03-09", periodLabel: "Ott 2007 – Mar 2009",
     desc: "GDP negativo per 2+ trimestri. Difensivi, oro e bond governativi come rifugio.",
     spxImpact: -30, duration: "6-18 mesi",
     impact: { "Tech": -20, "Finanza": -30, "Energia": -25, "Materiali": -28, "Salute": +5, "Consumer": -15, "Industriali": -22, "Utility": +2, "Real Estate": -18, "Telecom": +2, "ETF": -18, "Altro": -15 },
@@ -65,7 +65,7 @@ const MACRO_SCENARI = [
   },
   {
     id: "boom", label: "🚀 Boom Economico", color: "#16A34A",
-    from: "2017-01-01", to: "2017-12-31",
+    from: "2017-01-01", to: "2017-12-31", periodLabel: "Anno 2017",
     desc: "Crescita GDP >3%, piena occupazione. Ciclici, tech e small cap esplodono.",
     spxImpact: +28, duration: "12-36 mesi",
     impact: { "Tech": +30, "Finanza": +20, "Energia": +25, "Materiali": +35, "Salute": +8, "Consumer": +28, "Industriali": +32, "Utility": -5, "Real Estate": +15, "Telecom": +18, "ETF": +22, "Altro": +15 },
@@ -88,7 +88,7 @@ const MACRO_SCENARI = [
   },
   {
     id: "high_rates", label: "🏦 Tassi Alti", color: "#7C3AED",
-    from: "2022-01-01", to: "2023-12-31",
+    from: "2022-01-01", to: "2023-12-31", periodLabel: "Gen 2022 – Dic 2023",
     desc: "Fed Funds Rate >4% come 2022-2023. Banche e valore outperformano.",
     spxImpact: -15, duration: "12-24 mesi",
     impact: { "Tech": -30, "Finanza": +15, "Energia": +5, "Materiali": -5, "Salute": +5, "Consumer": -12, "Industriali": -8, "Utility": -20, "Real Estate": -25, "Telecom": -10, "ETF": -8, "Altro": -10 },
@@ -110,7 +110,7 @@ const MACRO_SCENARI = [
   },
   {
     id: "low_rates", label: "💸 Tassi Bassi", color: "#0EA5E9",
-    from: "2009-03-01", to: "2015-12-31",
+    from: "2009-03-01", to: "2015-12-31", periodLabel: "Mar 2009 – Dic 2015",
     desc: "Fed Funds Rate <1%. Risk-on, growth e credito salgono.",
     spxImpact: +25, duration: "24-36 mesi",
     impact: { "Tech": +35, "Finanza": -5, "Energia": +10, "Materiali": +12, "Salute": +10, "Consumer": +20, "Industriali": +15, "Utility": +10, "Real Estate": +30, "Telecom": +12, "ETF": +18, "Altro": +10 },
@@ -188,24 +188,30 @@ function StressTest({ stocks, sym, rate, fmt, eurRate }) {
 
       // Serie portafoglio pesata (identica al vecchio codice)
       const maxLen = Math.max(...candles.map(r => r?.length || 0));
+      // Ricalcola totalValue qui per sicurezza
+      const tv = stocks.reduce((s, x) => s + (parseFloat(x.qty)||0) * (parseFloat(x.currentPrice)||0), 0) || 1;
+
       const portSeries = Array.from({ length: maxLen }, (_, i) => {
-        const point = {
-          date:  candles.find(r => r)?.[i]?.date || "",
-          label: candles.find(r => r)?.[i]?.date
-            ? new Date(candles.find(r => r)[i].date + "T12:00:00").toLocaleDateString("it-IT", { day: "2-digit", month: "short" })
-            : "",
-        };
+        const refDate = candles.find(r => r)?.[i]?.date || "";
+        const label = (() => {
+          if (!refDate) return "";
+          try { return new Date(refDate + "T12:00:00").toLocaleDateString("it-IT", { day: "2-digit", month: "short" }); }
+          catch { return refDate; }
+        })();
+
         let totalPct = 0, totalW = 0;
         candles.forEach((r, j) => {
           if (r && r[i]) {
-            const w = (parseFloat(stocks[j]?.qty)||0) * (parseFloat(stocks[j]?.currentPrice)||0) / (totalValue || 1);
+            const w = (parseFloat(stocks[j]?.qty)||0) * (parseFloat(stocks[j]?.currentPrice)||0) / tv;
             totalPct += r[i].pct * w;
             totalW   += w;
           }
         });
-        point.pct = totalW > 0 ? parseFloat((totalPct / totalW).toFixed(2)) : 0;
-        if (spyData?.[i]) point.spy = spyData[i].pct;
-        return point;
+        return {
+          date: refDate, label,
+          pct: totalW > 0 ? parseFloat((totalPct / totalW).toFixed(2)) : 0,
+          spy: spyData?.[i]?.pct ?? null,
+        };
       });
 
       // Impatto per titolo
@@ -385,7 +391,10 @@ function MacroScenari({ stocks, sym, rate, fmt, eurRate }) {
         };
       });
 
-      setRealCache(c => ({ ...c, [selected.id]: { portSeries } }));
+      // Se tutti i punti sono 0 (titoli non esistevano nel periodo),
+      // usa stima basata su impatto settoriale
+      const allZero = portSeries.every(p => p.pct === 0);
+      setRealCache(c => ({ ...c, [selected.id]: { portSeries, allZero } }));
       setRealLoading(false);
     });
   }, [selected.id, stocks.length]);
@@ -492,6 +501,12 @@ function MacroScenari({ stocks, sym, rate, fmt, eurRate }) {
           {realLoading ? (
             <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, color: "#8A9AB0", fontSize: 11 }}>
               <Spinner /> Caricamento dati reali…
+            </div>
+          ) : realCache[selected.id]?.allZero ? (
+            <div style={{ height: 180, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#8A9AB0", fontSize: 11, textAlign: "center", gap: 8, padding: "0 20px" }}>
+              <span style={{ fontSize: 24 }}>📊</span>
+              <span>I tuoi titoli non erano quotati in questo periodo.</span>
+              <span style={{ fontSize: 10 }}>L'impatto è stimato in base al settore → <strong style={{ color: col(impact.pct) }}>{fmtPct(impact.pct, 1)}</strong></span>
             </div>
           ) : realCache[selected.id]?.portSeries?.length > 0 ? (
             <ResponsiveContainer width="100%" height={180}>
