@@ -413,6 +413,8 @@ export function ForecastTabNew({ stocks, fmt, sym, rate, eurRate }) {
   useEffect(() => {
     if (!selected) return;
     setLoading(true);
+    // Invalida cache per questo ticker e refetcha con nuova banda
+    setForecastData(p => { const n = {...p}; delete n[selected.ticker]; return n; });
     fetch(`${API_BASE}/api/forecast?symbol=${encodeURIComponent(selected.ticker)}&price=${selected.currentPrice}&band=${band/100}`)
       .then(r => r.json())
       .then(d => { if (!d.error) setForecastData(p => ({ ...p, [selected.ticker]: d })); setLoading(false); })
@@ -622,9 +624,9 @@ export function ForecastTabNew({ stocks, fmt, sym, rate, eurRate }) {
                   <Tooltip contentStyle={{ background: "#fff", border: "1px solid #E8EBF4", borderRadius: 8, fontSize: 10, padding: "4px 8px" }}
                     formatter={v => [`${v}%`, "Media storica"]} />
                   <ReferenceLine y={0} stroke="#E0E4EF" />
-                  <Bar dataKey="avg" radius={[3, 3, 0, 0]}>
+                  <Bar dataKey="avgReturn" radius={[3, 3, 0, 0]}>
                     {d.seasonality.map((s, i) => (
-                      <Cell key={i} fill={s.avg >= 0 ? "#16A34A" : "#DC2626"} fillOpacity={0.7} />
+                      <Cell key={i} fill={s.avgReturn >= 0 ? "#16A34A" : "#DC2626"} fillOpacity={0.7} />
                     ))}
                   </Bar>
                 </BarChart>
