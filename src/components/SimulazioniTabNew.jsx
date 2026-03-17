@@ -1,0 +1,724 @@
+import { useState, useEffect, useMemo, useCallback } from "react";
+import {
+  ResponsiveContainer, LineChart, Line, AreaChart, Area,
+  XAxis, YAxis, Tooltip, ReferenceLine, Legend, BarChart, Bar, Cell,
+} from "recharts";
+import { fetchHistory, API_BASE } from "../utils/api";
+import { toUSD } from "../utils/currency";
+
+// ── Dati scenari ──────────────────────────────────────────────────────────────
+const SCENARIOS_STORICI = [
+  { id: "covid",     label: "🦠 Covid Crash",      from: "2020-02-19", to: "2020-03-23", spx: -34, color: "#DC2626", desc: "Il mercato perde il 34% in 33 giorni" },
+  { id: "postcovid", label: "🚀 Post-Covid Rally",  from: "2020-03-23", to: "2021-12-31", spx: +114, color: "#16A34A", desc: "La ripresa più rapida della storia" },
+  { id: "gfc",       label: "💥 Financial Crisis",  from: "2007-10-01", to: "2009-03-09", spx: -57, color: "#7C3AED", desc: "La peggior crisi dal 1929 (-57% S&P500)" },
+  { id: "dotcom",    label: "🫧 Dot-com Bubble",    from: "2000-03-10", to: "2002-10-09", spx: -49, color: "#F97316", desc: "Il crollo delle aziende tech (-49%)" },
+  { id: "bull2017",  label: "📈 Bull Run 2017",     from: "2017-01-01", to: "2017-12-31", spx: +19, color: "#0EA5E9", desc: "Un anno eccezionale per i mercati" },
+];
+
+const MACRO_SCENARI = [
+  {
+    id: "high_inflation", label: "📈 Alta Inflazione", color: "#F97316",
+    desc: "Inflazione >5% come 2021-2022. Energia e commodities salgono, tech e bond scendono.",
+    spxImpact: -12, duration: "12-18 mesi",
+    impact: { "Tech": -25, "Finanza": +8, "Energia": +45, "Materiali": +30, "Salute": -5, "Consumer": -15, "Industriali": +10, "Utility": -12, "Real Estate": -20, "Telecom": -8, "ETF": -10, "Altro": -5 },
+    topPicks: [
+      { ticker: "XLE", name: "Energy ETF", reason: "Energia sale con inflazione", perf: 42 },
+      { ticker: "GLD", name: "Gold ETF", reason: "Oro come hedge", perf: 18 },
+      { ticker: "CVX", name: "Chevron", reason: "Petrolio beneficia", perf: 55 },
+      { ticker: "TIPS", name: "Inflation Bonds", reason: "Bond indicizzati", perf: 8 },
+      { ticker: "BRK.B", name: "Berkshire", reason: "Aziende con pricing power", perf: 14 },
+    ],
+    worstPicks: [
+      { ticker: "QQQ", name: "Nasdaq ETF", reason: "Tech colpito da tassi alti", perf: -28 },
+      { ticker: "TLT", name: "Long Bonds", reason: "Bond lunghi crollano", perf: -35 },
+    ],
+    chartData: [
+      { m: "M1", energy: 4, tech: -3, gold: 2 }, { m: "M3", energy: 12, tech: -8, gold: 5 },
+      { m: "M6", energy: 22, tech: -15, gold: 9 }, { m: "M9", energy: 33, tech: -20, gold: 13 },
+      { m: "M12", energy: 42, tech: -25, gold: 18 },
+    ],
+    lineKeys: [{ k: "energy", l: "Energia", c: "#F97316" }, { k: "tech", l: "Tech", c: "#0EA5E9" }, { k: "gold", l: "Oro", c: "#F4C542" }],
+  },
+  {
+    id: "recession", label: "📊 Recessione", color: "#DC2626",
+    desc: "GDP negativo per 2+ trimestri. Difensivi, oro e bond governativi come rifugio.",
+    spxImpact: -30, duration: "6-18 mesi",
+    impact: { "Tech": -20, "Finanza": -30, "Energia": -25, "Materiali": -28, "Salute": +5, "Consumer": -15, "Industriali": -22, "Utility": +2, "Real Estate": -18, "Telecom": +2, "ETF": -18, "Altro": -15 },
+    topPicks: [
+      { ticker: "GLD", name: "Gold ETF", reason: "Rifugio sicuro", perf: 25 },
+      { ticker: "TLT", name: "Gov Bonds", reason: "Treasury salgono", perf: 30 },
+      { ticker: "XLV", name: "Healthcare ETF", reason: "Settore difensivo", perf: 5 },
+      { ticker: "XLP", name: "Staples ETF", reason: "Beni necessità", perf: 3 },
+    ],
+    worstPicks: [
+      { ticker: "XLF", name: "Financial ETF", reason: "Banche colpite da NPL", perf: -35 },
+      { ticker: "XLB", name: "Materials ETF", reason: "Domanda industriale crolla", perf: -30 },
+    ],
+    chartData: [
+      { m: "M1", gold: 3, bonds: 5, spx: -5 }, { m: "M3", gold: 9, bonds: 14, spx: -14 },
+      { m: "M6", gold: 16, bonds: 22, spx: -22 }, { m: "M9", gold: 21, bonds: 27, spx: -28 },
+      { m: "M12", gold: 25, bonds: 30, spx: -30 },
+    ],
+    lineKeys: [{ k: "gold", l: "Oro", c: "#F4C542" }, { k: "bonds", l: "Gov Bond", c: "#0EA5E9" }, { k: "spx", l: "S&P 500", c: "#DC2626" }],
+  },
+  {
+    id: "boom", label: "🚀 Boom Economico", color: "#16A34A",
+    desc: "Crescita GDP >3%, piena occupazione. Ciclici, tech e small cap esplodono.",
+    spxImpact: +28, duration: "12-36 mesi",
+    impact: { "Tech": +30, "Finanza": +20, "Energia": +25, "Materiali": +35, "Salute": +8, "Consumer": +28, "Industriali": +32, "Utility": -5, "Real Estate": +15, "Telecom": +18, "ETF": +22, "Altro": +15 },
+    topPicks: [
+      { ticker: "IWM", name: "Russell 2000", reason: "Small cap in boom", perf: 35 },
+      { ticker: "XLI", name: "Industrials ETF", reason: "Industriali crescono", perf: 30 },
+      { ticker: "NVDA", name: "Nvidia", reason: "Tech + AI capex", perf: 80 },
+      { ticker: "XLY", name: "Consumer Disc.", reason: "Consumi esplodono", perf: 32 },
+    ],
+    worstPicks: [
+      { ticker: "TLT", name: "Long Bonds", reason: "Venduti per risk-on", perf: -15 },
+      { ticker: "GLD", name: "Gold ETF", reason: "Perde appeal in risk-on", perf: -5 },
+    ],
+    chartData: [
+      { m: "M1", smallcap: 4, industriali: 3, spx: 3 }, { m: "M3", smallcap: 12, industriali: 9, spx: 8 },
+      { m: "M6", smallcap: 22, industriali: 18, spx: 15 }, { m: "M9", smallcap: 29, industriali: 24, spx: 20 },
+      { m: "M12", smallcap: 35, industriali: 30, spx: 28 },
+    ],
+    lineKeys: [{ k: "smallcap", l: "Small Cap", c: "#16A34A" }, { k: "industriali", l: "Industriali", c: "#0EA5E9" }, { k: "spx", l: "S&P 500", c: "#8A9AB0" }],
+  },
+  {
+    id: "high_rates", label: "🏦 Tassi Alti", color: "#7C3AED",
+    desc: "Fed Funds Rate >4% come 2022-2023. Banche e valore outperformano.",
+    spxImpact: -15, duration: "12-24 mesi",
+    impact: { "Tech": -30, "Finanza": +15, "Energia": +5, "Materiali": -5, "Salute": +5, "Consumer": -12, "Industriali": -8, "Utility": -20, "Real Estate": -25, "Telecom": -10, "ETF": -8, "Altro": -10 },
+    topPicks: [
+      { ticker: "XLF", name: "Financial ETF", reason: "Banche con margini alti", perf: 18 },
+      { ticker: "JPM", name: "JPMorgan", reason: "Margini netti espandono", perf: 22 },
+      { ticker: "BRK.B", name: "Berkshire", reason: "Float assicurativo rende", perf: 20 },
+    ],
+    worstPicks: [
+      { ticker: "VNQ", name: "Real Estate ETF", reason: "REIT crollano", perf: -25 },
+      { ticker: "ARKK", name: "ARK Innovation", reason: "Growth affonda", perf: -60 },
+    ],
+    chartData: [
+      { m: "M1", banche: 2, realestate: -3, tech: -4 }, { m: "M3", banche: 6, realestate: -9, tech: -12 },
+      { m: "M6", banche: 10, realestate: -16, tech: -20 }, { m: "M9", banche: 14, realestate: -21, tech: -26 },
+      { m: "M12", banche: 18, realestate: -25, tech: -30 },
+    ],
+    lineKeys: [{ k: "banche", l: "Banche", c: "#16A34A" }, { k: "realestate", l: "Real Estate", c: "#DC2626" }, { k: "tech", l: "Tech", c: "#0EA5E9" }],
+  },
+  {
+    id: "low_rates", label: "💸 Tassi Bassi", color: "#0EA5E9",
+    desc: "Fed Funds Rate <1%. Risk-on, growth e credito salgono.",
+    spxImpact: +25, duration: "24-36 mesi",
+    impact: { "Tech": +35, "Finanza": -5, "Energia": +10, "Materiali": +12, "Salute": +10, "Consumer": +20, "Industriali": +15, "Utility": +10, "Real Estate": +30, "Telecom": +12, "ETF": +18, "Altro": +10 },
+    topPicks: [
+      { ticker: "QQQ", name: "Nasdaq ETF", reason: "Tech esplode con tassi zero", perf: 80 },
+      { ticker: "VNQ", name: "Real Estate ETF", reason: "REIT in forte rally", perf: 35 },
+      { ticker: "TSLA", name: "Tesla", reason: "Growth stocks beneficiano", perf: 200 },
+    ],
+    worstPicks: [
+      { ticker: "XLF", name: "Financial ETF", reason: "Margini compressi", perf: -5 },
+      { ticker: "BIL", name: "T-Bill ETF", reason: "Cash non rende nulla", perf: 0 },
+    ],
+    chartData: [
+      { m: "M1", growth: 5, realestate: 3, spx: 3 }, { m: "M3", growth: 18, realestate: 9, spx: 8 },
+      { m: "M6", growth: 40, realestate: 18, spx: 15 }, { m: "M9", growth: 80, realestate: 27, spx: 22 },
+      { m: "M12", growth: 120, realestate: 35, spx: 28 },
+    ],
+    lineKeys: [{ k: "growth", l: "Growth", c: "#0EA5E9" }, { k: "realestate", l: "Real Estate", c: "#7C3AED" }, { k: "spx", l: "S&P 500", c: "#8A9AB0" }],
+  },
+  {
+    id: "low_inflation", label: "📉 Bassa Inflazione", color: "#06B6D4",
+    desc: "Inflazione <2% con crescita stabile. Tech e bond in rally.",
+    spxImpact: +18, duration: "12-24 mesi",
+    impact: { "Tech": +25, "Finanza": +5, "Energia": -10, "Materiali": -8, "Salute": +12, "Consumer": +15, "Industriali": +8, "Utility": +15, "Real Estate": +20, "Telecom": +10, "ETF": +12, "Altro": +8 },
+    topPicks: [
+      { ticker: "QQQ", name: "Nasdaq ETF", reason: "Tech cresce con tassi bassi", perf: 28 },
+      { ticker: "TLT", name: "Long Bonds", reason: "Bond lunghi in rally", perf: 22 },
+      { ticker: "VNQ", name: "Real Estate ETF", reason: "REIT beneficiano", perf: 18 },
+    ],
+    worstPicks: [
+      { ticker: "XLE", name: "Energy ETF", reason: "Energia soffre", perf: -12 },
+      { ticker: "GLD", name: "Gold ETF", reason: "Oro perde appeal", perf: -8 },
+    ],
+    chartData: [
+      { m: "M1", tech: 3, bonds: 2, realestate: 1 }, { m: "M3", tech: 9, bonds: 6, realestate: 4 },
+      { m: "M6", tech: 16, bonds: 12, realestate: 9 }, { m: "M9", tech: 22, bonds: 17, realestate: 13 },
+      { m: "M12", tech: 28, bonds: 22, realestate: 18 },
+    ],
+    lineKeys: [{ k: "tech", l: "Tech", c: "#0EA5E9" }, { k: "bonds", l: "Bond", c: "#16A34A" }, { k: "realestate", l: "Real Estate", c: "#7C3AED" }],
+  },
+];
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const col  = v => v == null ? "#8A9AB0" : v >= 0 ? "#16A34A" : "#DC2626";
+const sign = v => v != null && v >= 0 ? "+" : "";
+const fmtPct = (v, dec = 1) => v != null ? `${sign(v)}${Math.abs(v).toFixed(dec)}%` : "—";
+
+function Spinner({ size = 14, color = "#4361ee" }) {
+  return <span style={{ display: "inline-block", width: size, height: size, borderRadius: "50%", border: `1.5px solid ${color}`, borderTopColor: "transparent", animation: "spin 0.7s linear infinite" }} />;
+}
+
+// ── Sezione 1: Stress Test Storico ────────────────────────────────────────────
+function StressTest({ stocks, sym, rate, fmt, eurRate }) {
+  const [selected, setSelected] = useState(SCENARIOS_STORICI[0]);
+  const [cache, setCache] = useState({});
+  const [loading, setLoading] = useState(false);
+  const totalValue = stocks.reduce((s, x) => s + (parseFloat(x.qty)||0) * toUSD(parseFloat(x.currentPrice)||0, x.currency, eurRate), 0);
+
+  const fetchScenario = useCallback(async (sc) => {
+    if (cache[sc.id]) return;
+    setLoading(true);
+    try {
+      const fromTs = Math.floor(new Date(sc.from).getTime() / 1000);
+      const toTs   = Math.floor(new Date(sc.to).getTime()   / 1000);
+      const days   = Math.ceil((toTs - fromTs) / 86400);
+
+      const results = await Promise.all([
+        ...stocks.map(s =>
+          fetchHistory(s.ticker, days + 30)
+            .then(c => ({ ticker: s.ticker, candles: c || [] }))
+            .catch(() => ({ ticker: s.ticker, candles: [] }))
+        ),
+        fetchHistory("SPY", days + 30)
+          .then(c => ({ ticker: "SPY", candles: c || [] }))
+          .catch(() => ({ ticker: "SPY", candles: [] })),
+      ]);
+
+      const spy = results.find(r => r.ticker === "SPY")?.candles || [];
+      const stockCandles = results.filter(r => r.ticker !== "SPY");
+
+      // Filtra per range scenario
+      const filter = (c) => c.filter(p => p.date >= sc.from && p.date <= sc.to);
+      const filteredSpy = filter(spy);
+
+      // Normalizza a 0% dall'inizio
+      const normalize = (candles) => {
+        const f = filter(candles);
+        if (!f.length) return [];
+        const base = f[0].price;
+        return f.map(p => ({ date: p.date, pct: parseFloat(((p.price - base) / base * 100).toFixed(2)) }));
+      };
+
+      // Serie portafoglio pesata
+      const allDates = [...new Set(stockCandles.flatMap(s => filter(s.candles).map(c => c.date)))].sort();
+      const spyNorm  = normalize(spy);
+      const spyMap   = Object.fromEntries(spyNorm.map(p => [p.date, p.pct]));
+
+      const portSeries = allDates.map(date => {
+        let totalPct = 0, totalW = 0;
+        stockCandles.forEach(({ ticker, candles }) => {
+          const f = filter(candles);
+          if (!f.length) return;
+          const base = f[0].price;
+          const pt   = f.find(p => p.date === date);
+          if (!pt) return;
+          const s = stocks.find(x => x.ticker === ticker);
+          const w = (parseFloat(s?.qty)||0) * (parseFloat(s?.currentPrice)||0) / (totalValue || 1);
+          totalPct += ((pt.price - base) / base * 100) * w;
+          totalW   += w;
+        });
+        return {
+          date,
+          label: new Date(date + "T12:00:00").toLocaleDateString("it-IT", { day: "2-digit", month: "short" }),
+          pct:   totalW > 0 ? parseFloat((totalPct / totalW).toFixed(2)) : 0,
+          spy:   spyMap[date] ?? null,
+        };
+      });
+
+      // Impatto per titolo
+      const perStock = stocks.map(s => {
+        const c = filter(stockCandles.find(x => x.ticker === s.ticker)?.candles || []);
+        if (!c.length) {
+          const beta = s.sector === "Tech" ? 1.4 : s.sector === "Finanza" ? 1.2 : 1.0;
+          const pct  = sc.spx / 100 * beta * 100;
+          return { ...s, pct, pnl: (parseFloat(s.qty)||0) * (parseFloat(s.currentPrice)||0) * rate * pct / 100, noData: true };
+        }
+        const pct = c[c.length - 1].pct ?? ((c[c.length-1].price - c[0].price) / c[0].price * 100);
+        return { ...s, pct: parseFloat(pct.toFixed(2)), pnl: (parseFloat(s.qty)||0) * (parseFloat(s.currentPrice)||0) * rate * pct / 100, noData: false };
+      });
+
+      const finalPct = portSeries.length ? portSeries[portSeries.length - 1].pct : 0;
+      const totalPnl = totalValue * rate * finalPct / 100;
+
+      setCache(c => ({ ...c, [sc.id]: { portSeries, perStock, totalPct: finalPct, totalPnl } }));
+    } catch {}
+    setLoading(false);
+  }, [stocks, totalValue, rate, eurRate]);
+
+  useEffect(() => { fetchScenario(selected); }, [selected.id]);
+
+  const data = cache[selected.id];
+
+  return (
+    <div>
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 18, fontWeight: 800, color: "#0A1628", letterSpacing: "-0.01em" }}>Stress Test Storico</div>
+        <div style={{ fontSize: 12, color: "#8A9AB0", marginTop: 4 }}>Come sarebbe andato il tuo portafoglio durante le grandi crisi? Dati reali da Yahoo Finance.</div>
+      </div>
+
+      {/* Selector */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 20 }}>
+        {SCENARIOS_STORICI.map(sc => (
+          <button key={sc.id} onClick={() => setSelected(sc)} style={{
+            padding: "7px 14px", borderRadius: 20, cursor: "pointer",
+            fontFamily: "inherit", fontSize: 11, fontWeight: 600,
+            border: "none", transition: "all 0.15s",
+            background: selected.id === sc.id ? sc.color + "18" : "#F0F2F7",
+            color: selected.id === sc.id ? sc.color : "#8A9AB0",
+            outline: selected.id === sc.id ? `1.5px solid ${sc.color}44` : "none",
+          }}>
+            {sc.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Header scenario */}
+      <div style={{ background: "#F8FAFF", border: `1px solid ${selected.color}33`, borderRadius: 12, padding: "14px 18px", marginBottom: 20, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#0A1628", marginBottom: 4 }}>{selected.label}</div>
+          <div style={{ fontSize: 11, color: "#8A9AB0" }}>{selected.desc} · {selected.from} → {selected.to}</div>
+        </div>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em" }}>S&P 500</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: col(selected.spx), letterSpacing: "-0.02em" }}>{fmtPct(selected.spx, 0)}</div>
+        </div>
+        <div style={{ fontSize: 10, background: "#ECFDF5", color: "#16A34A", padding: "4px 10px", borderRadius: 20, fontWeight: 600 }}>● Dati reali</div>
+      </div>
+
+      {/* KPI */}
+      {data && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 20 }}>
+          {[
+            { label: "Impatto portafoglio", value: `${sign(data.totalPnl)}${sym}${fmt(Math.abs(data.totalPnl))}`, color: col(data.totalPnl) },
+            { label: "Performance %", value: fmtPct(data.totalPct, 2), color: col(data.totalPct) },
+            { label: "Valore finale", value: `${sym}${fmt((totalValue + data.totalPnl / rate) * rate)}`, color: "#0A1628" },
+          ].map(k => (
+            <div key={k.label} className="card">
+              <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>{k.label}</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: k.color, letterSpacing: "-0.02em" }}>{k.value}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Grafico */}
+      <div className="card" style={{ marginBottom: 20 }}>
+        <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>
+          Andamento portafoglio vs S&P 500
+        </div>
+        {loading ? (
+          <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, color: "#8A9AB0", fontSize: 12 }}>
+            <Spinner /> Caricamento dati storici reali…
+          </div>
+        ) : data?.portSeries?.length > 0 ? (
+          <ResponsiveContainer width="100%" height={200}>
+            <LineChart data={data.portSeries} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
+              <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#8A9AB0" }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+              <YAxis tick={{ fontSize: 9, fill: "#8A9AB0" }} axisLine={false} tickLine={false} width={40} tickFormatter={v => `${v > 0 ? "+" : ""}${v}%`} domain={["auto", "auto"]} />
+              <Tooltip contentStyle={{ background: "#fff", border: "1px solid #E8EBF4", borderRadius: 8, fontSize: 11, padding: "6px 12px" }}
+                formatter={(v, n) => [`${v >= 0 ? "+" : ""}${v?.toFixed(2)}%`, n === "pct" ? "Portafoglio" : "S&P 500"]} />
+              <ReferenceLine y={0} stroke="#E0E4EF" strokeDasharray="4 3" />
+              <Line type="monotone" dataKey="pct" stroke={selected.color} strokeWidth={2} dot={false} name="pct" />
+              <Line type="monotone" dataKey="spy" stroke="#8A9AB0" strokeWidth={1} dot={false} strokeDasharray="4 2" name="spy" connectNulls />
+              <Legend wrapperStyle={{ fontSize: 10, color: "#8A9AB0", paddingTop: 8 }} formatter={v => v === "pct" ? "Il tuo portafoglio" : "S&P 500"} />
+            </LineChart>
+          </ResponsiveContainer>
+        ) : (
+          <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "#8A9AB0", fontSize: 12 }}>
+            Dati storici non disponibili per questo scenario
+          </div>
+        )}
+      </div>
+
+      {/* Impatto per titolo */}
+      {data?.perStock?.length > 0 && (
+        <div className="card">
+          <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>Impatto per titolo</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {[...data.perStock].sort((a, b) => a.pct - b.pct).map(s => (
+              <div key={s.ticker} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ width: 44, fontSize: 11, fontWeight: 700, color: "#0A1628", flexShrink: 0 }}>{s.ticker}</div>
+                <div style={{ flex: 1, height: 6, background: "#F0F2F7", borderRadius: 3, overflow: "hidden" }}>
+                  <div style={{ height: "100%", borderRadius: 3, width: `${Math.min(Math.abs(s.pct), 100)}%`, background: col(s.pct) }} />
+                </div>
+                <div style={{ width: 60, fontSize: 11, fontWeight: 700, color: col(s.pct), textAlign: "right", flexShrink: 0 }}>
+                  {fmtPct(s.pct, 1)}
+                </div>
+                <div style={{ width: 64, fontSize: 10, color: col(s.pnl), textAlign: "right", flexShrink: 0 }}>
+                  {sign(s.pnl)}{sym}{fmt(Math.abs(s.pnl))}
+                </div>
+                {s.noData && <span style={{ fontSize: 8, color: "#C0C8D8" }}>stima</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Sezione 2: Scenari Macro ───────────────────────────────────────────────────
+function MacroScenari({ stocks, sym, rate, fmt, eurRate }) {
+  const [selected, setSelected]   = useState(MACRO_SCENARI[0]);
+  const [investment, setInvestment] = useState(1000); // slider: capitale aggiuntivo
+  const [liveData, setLiveData]   = useState({});
+  const [liveLoading, setLiveLoading] = useState(false);
+
+  const totalValue = stocks.reduce((s, x) => s + (parseFloat(x.qty)||0) * toUSD(parseFloat(x.currentPrice)||0, x.currency, eurRate), 0);
+
+  // Fetch prezzi live dei titoli consigliati
+  const fetchLive = useCallback(async (sc) => {
+    if (liveData[sc.id]) return;
+    setLiveLoading(true);
+    const tickers = [...sc.topPicks, ...sc.worstPicks].map(p => p.ticker);
+    const results = await Promise.all(
+      tickers.map(t =>
+        fetch(`${API_BASE}/api/price?symbol=${t}`).then(r => r.json()).catch(() => null)
+      )
+    );
+    const map = {};
+    tickers.forEach((t, i) => { map[t] = results[i]; });
+    setLiveData(d => ({ ...d, [sc.id]: map }));
+    setLiveLoading(false);
+  }, [liveData]);
+
+  useEffect(() => { fetchLive(selected); }, [selected.id]);
+
+  // Calcola impatto portafoglio
+  const impact = useMemo(() => {
+    let totalImp = 0, totalW = 0;
+    stocks.forEach(s => {
+      const val = (parseFloat(s.qty)||0) * (parseFloat(s.currentPrice)||0);
+      const imp = selected.impact[s.sector || "Altro"] ?? 0;
+      totalImp += imp * val;
+      totalW   += val;
+    });
+    const pct    = totalW > 0 ? totalImp / totalW : 0;
+    const deltaUSD = totalValue * rate * pct / 100;
+    return { pct, deltaUSD };
+  }, [selected, stocks, totalValue, rate]);
+
+  // Simulazione slider: se investissi X nei top picks
+  const sliderReturn = useMemo(() => {
+    const avgPerf = selected.topPicks.reduce((s, p) => s + p.perf, 0) / selected.topPicks.length;
+    return investment * avgPerf / 100;
+  }, [investment, selected]);
+
+  // Dati grafico con linea portafoglio
+  const chartData = useMemo(() => {
+    const n = selected.chartData.length;
+    return selected.chartData.map((pt, i) => ({
+      ...pt,
+      portfolio: parseFloat((impact.pct * (i / Math.max(n - 1, 1))).toFixed(1)),
+    }));
+  }, [selected, impact.pct]);
+
+  const live = liveData[selected.id] || {};
+
+  return (
+    <div>
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 18, fontWeight: 800, color: "#0A1628", letterSpacing: "-0.01em" }}>Scenari Macroeconomici</div>
+        <div style={{ fontSize: 12, color: "#8A9AB0", marginTop: 4 }}>Come reagisce il tuo portafoglio a diversi contesti macro? Titoli consigliati e simulazione interattiva.</div>
+      </div>
+
+      {/* Selector */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 20 }}>
+        {MACRO_SCENARI.map(sc => (
+          <button key={sc.id} onClick={() => setSelected(sc)} style={{
+            padding: "7px 14px", borderRadius: 20, cursor: "pointer",
+            fontFamily: "inherit", fontSize: 11, fontWeight: 600,
+            border: "none", transition: "all 0.15s",
+            background: selected.id === sc.id ? sc.color + "18" : "#F0F2F7",
+            color: selected.id === sc.id ? sc.color : "#8A9AB0",
+            outline: selected.id === sc.id ? `1.5px solid ${sc.color}44` : "none",
+          }}>
+            {sc.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Header */}
+      <div style={{ background: "#F8FAFF", border: `1px solid ${selected.color}33`, borderRadius: 12, padding: "14px 18px", marginBottom: 20, display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#0A1628", marginBottom: 4 }}>{selected.label}</div>
+          <div style={{ fontSize: 11, color: "#8A9AB0", lineHeight: 1.6 }}>{selected.desc}</div>
+          <div style={{ fontSize: 10, color: "#8A9AB0", marginTop: 6 }}>⏱ Durata tipica: <strong style={{ color: "#0A1628" }}>{selected.duration}</strong></div>
+        </div>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em" }}>S&P 500 medio</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: col(selected.spxImpact), letterSpacing: "-0.02em" }}>{fmtPct(selected.spxImpact, 0)}</div>
+        </div>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em" }}>Tuo portafoglio</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: col(impact.pct), letterSpacing: "-0.02em" }}>{fmtPct(impact.pct, 1)}</div>
+          <div style={{ fontSize: 10, color: col(impact.deltaUSD) }}>{sign(impact.deltaUSD)}{sym}{fmt(Math.abs(impact.deltaUSD))}</div>
+        </div>
+      </div>
+
+      {/* Layout 2 colonne */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+
+        {/* Grafico */}
+        <div className="card">
+          <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>
+            Performance storica media per asset class
+          </div>
+          <ResponsiveContainer width="100%" height={180}>
+            <LineChart data={chartData} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
+              <XAxis dataKey="m" tick={{ fontSize: 9, fill: "#8A9AB0" }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 9, fill: "#8A9AB0" }} axisLine={false} tickLine={false} width={36} tickFormatter={v => `${v > 0 ? "+" : ""}${v}%`} domain={["auto", "auto"]} />
+              <Tooltip contentStyle={{ background: "#fff", border: "1px solid #E8EBF4", borderRadius: 8, fontSize: 10, padding: "4px 10px" }}
+                formatter={(v, n) => [`${v >= 0 ? "+" : ""}${v}%`, n === "portfolio" ? "Il tuo portafoglio" : n]} />
+              <ReferenceLine y={0} stroke="#E0E4EF" strokeDasharray="4 3" />
+              {selected.lineKeys.map(lk => (
+                <Line key={lk.k} type="monotone" dataKey={lk.k} stroke={lk.c} strokeWidth={1.5} dot={false} name={lk.l} strokeDasharray="4 2" />
+              ))}
+              <Line type="monotone" dataKey="portfolio" stroke={selected.color} strokeWidth={2.5} dot={false} name="portfolio" />
+              <Legend wrapperStyle={{ fontSize: 9, color: "#8A9AB0" }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Impatto per settore (barre) */}
+        <div className="card">
+          <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>
+            Impatto per settore
+          </div>
+          <ResponsiveContainer width="100%" height={180}>
+            <BarChart
+              data={Object.entries(selected.impact).map(([sector, pct]) => ({ sector: sector.slice(0, 8), pct }))}
+              margin={{ top: 4, right: 0, bottom: 20, left: 0 }}
+            >
+              <XAxis dataKey="sector" tick={{ fontSize: 8, fill: "#8A9AB0" }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 8, fill: "#8A9AB0" }} axisLine={false} tickLine={false} width={30} tickFormatter={v => `${v}%`} />
+              <Tooltip contentStyle={{ background: "#fff", border: "1px solid #E8EBF4", borderRadius: 8, fontSize: 10, padding: "4px 8px" }}
+                formatter={v => [`${v >= 0 ? "+" : ""}${v}%`, "Impatto"]} />
+              <ReferenceLine y={0} stroke="#E0E4EF" />
+              <Bar dataKey="pct" radius={[3, 3, 0, 0]}>
+                {Object.entries(selected.impact).map(([sector, pct]) => (
+                  <Cell key={sector} fill={pct >= 0 ? "#16A34A" : "#DC2626"} fillOpacity={0.7} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Simulatore slider */}
+      <div className="card" style={{ marginBottom: 16, background: "linear-gradient(135deg, #F8FAFF, #EEF4FF)" }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "#0A1628", marginBottom: 12 }}>
+          🎯 Simulatore — Se investissi nei titoli consigliati
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+              <span style={{ fontSize: 11, color: "#8A9AB0" }}>Capitale da investire</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "#0A1628" }}>{sym}{investment.toLocaleString()}</span>
+            </div>
+            <input
+              type="range" min={100} max={50000} step={100} value={investment}
+              onChange={e => setInvestment(Number(e.target.value))}
+              style={{ width: "100%", accentColor: selected.color }}
+            />
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#C0C8D8" }}>
+              <span>{sym}100</span><span>{sym}50.000</span>
+            </div>
+          </div>
+          <div style={{ textAlign: "center", minWidth: 120 }}>
+            <div style={{ fontSize: 9, color: "#8A9AB0", marginBottom: 4 }}>Rendimento stimato</div>
+            <div style={{ fontSize: 26, fontWeight: 800, color: col(sliderReturn), letterSpacing: "-0.02em" }}>
+              {sign(sliderReturn)}{sym}{Math.abs(sliderReturn).toLocaleString("it-IT", { maximumFractionDigits: 0 })}
+            </div>
+            <div style={{ fontSize: 10, color: col(sliderReturn) }}>
+              {fmtPct(selected.topPicks.reduce((s, p) => s + p.perf, 0) / selected.topPicks.length, 1)} medio
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Titoli consigliati con prezzi live */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+        <div className="card">
+          <div style={{ fontSize: 9, color: "#16A34A", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>✅ Acquista in questo scenario</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {selected.topPicks.map(p => {
+              const ld = live[p.ticker];
+              return (
+                <div key={p.ticker} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 8, background: "#16A34A12", border: "1px solid #16A34A30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: "#16A34A", flexShrink: 0 }}>
+                    {p.ticker.slice(0, 3)}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#0A1628" }}>{p.ticker}</div>
+                    <div style={{ fontSize: 9, color: "#8A9AB0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.reason}</div>
+                  </div>
+                  <div style={{ textAlign: "right", flexShrink: 0 }}>
+                    {liveLoading ? (
+                      <div style={{ fontSize: 10, color: "#C0C8D8" }}>…</div>
+                    ) : ld?.price ? (
+                      <>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "#0A1628" }}>${ld.price.toFixed(2)}</div>
+                        <div style={{ fontSize: 9, color: col(ld.changePct) }}>{fmtPct(ld.changePct, 2)}</div>
+                      </>
+                    ) : (
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "#16A34A" }}>+{p.perf}%</div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="card">
+          <div style={{ fontSize: 9, color: "#DC2626", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>❌ Riduci o evita</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {selected.worstPicks.map(p => {
+              const ld = live[p.ticker];
+              return (
+                <div key={p.ticker} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 8, background: "#DC262612", border: "1px solid #DC262630", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: "#DC2626", flexShrink: 0 }}>
+                    {p.ticker.slice(0, 3)}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#0A1628" }}>{p.ticker}</div>
+                    <div style={{ fontSize: 9, color: "#8A9AB0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.reason}</div>
+                  </div>
+                  <div style={{ textAlign: "right", flexShrink: 0 }}>
+                    {liveLoading ? (
+                      <div style={{ fontSize: 10, color: "#C0C8D8" }}>…</div>
+                    ) : ld?.price ? (
+                      <>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "#0A1628" }}>${ld.price.toFixed(2)}</div>
+                        <div style={{ fontSize: 9, color: col(ld.changePct) }}>{fmtPct(ld.changePct, 2)}</div>
+                      </>
+                    ) : (
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "#DC2626" }}>{p.perf}%</div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Impatto sui tuoi titoli */}
+          {stocks.length > 0 && (
+            <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #F0F2F7" }}>
+              <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>Il tuo portafoglio</div>
+              {stocks.map(s => {
+                const imp = selected.impact[s.sector || "Altro"] ?? 0;
+                return (
+                  <div key={s.ticker} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: "#0A1628", width: 44, flexShrink: 0 }}>{s.ticker}</span>
+                    <div style={{ flex: 1, height: 4, background: "#F0F2F7", borderRadius: 2, overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${Math.min(Math.abs(imp), 50) * 2}%`, background: col(imp), borderRadius: 2 }} />
+                    </div>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: col(imp), width: 44, textAlign: "right", flexShrink: 0 }}>{fmtPct(imp, 0)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Sezione 3: Confronto scenari ──────────────────────────────────────────────
+function ConfrونtoScenari({ stocks, sym, rate, fmt, eurRate }) {
+  const totalValue = stocks.reduce((s, x) => s + (parseFloat(x.qty)||0) * toUSD(parseFloat(x.currentPrice)||0, x.currency, eurRate), 0);
+
+  const rows = MACRO_SCENARI.map(sc => {
+    let totalImp = 0, totalW = 0;
+    stocks.forEach(s => {
+      const val = (parseFloat(s.qty)||0) * (parseFloat(s.currentPrice)||0);
+      const imp = sc.impact[s.sector || "Altro"] ?? 0;
+      totalImp += imp * val;
+      totalW   += val;
+    });
+    const pct = totalW > 0 ? totalImp / totalW : 0;
+    const deltaUSD = totalValue * rate * pct / 100;
+    return { ...sc, portPct: pct, deltaUSD };
+  }).sort((a, b) => b.portPct - a.portPct);
+
+  return (
+    <div>
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 18, fontWeight: 800, color: "#0A1628", letterSpacing: "-0.01em" }}>Confronto Scenari</div>
+        <div style={{ fontSize: 12, color: "#8A9AB0", marginTop: 4 }}>Tutti gli scenari macro a confronto — impatto stimato sul tuo portafoglio.</div>
+      </div>
+
+      <div className="card">
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 80px 100px 80px", gap: 8, padding: "8px 0 12px", borderBottom: "1px solid #F0F2F7", marginBottom: 8 }}>
+          {["Scenario", "Durata", "S&P 500", "Tuo portafoglio", "Delta USD"].map(h => (
+            <div key={h} style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 700 }}>{h}</div>
+          ))}
+        </div>
+        {rows.map((sc, i) => (
+          <div key={sc.id} style={{
+            display: "grid", gridTemplateColumns: "1fr 80px 80px 100px 80px",
+            gap: 8, padding: "12px 0",
+            borderBottom: i < rows.length - 1 ? "1px solid #F8FAFF" : "none",
+            background: sc.portPct >= 0 ? "transparent" : "#FFF8F8",
+            borderRadius: 8,
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ width: 4, height: 24, borderRadius: 2, background: sc.color, flexShrink: 0 }} />
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#0A1628" }}>{sc.label}</div>
+                <div style={{ fontSize: 9, color: "#8A9AB0" }}>{sc.desc.slice(0, 40)}…</div>
+              </div>
+            </div>
+            <div style={{ fontSize: 11, color: "#8A9AB0", display: "flex", alignItems: "center" }}>{sc.duration}</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: col(sc.spxImpact), display: "flex", alignItems: "center" }}>{fmtPct(sc.spxImpact, 0)}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ flex: 1, height: 6, background: "#F0F2F7", borderRadius: 3, overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${Math.min(Math.abs(sc.portPct), 50) * 2}%`, background: col(sc.portPct), borderRadius: 3 }} />
+              </div>
+              <span style={{ fontSize: 12, fontWeight: 700, color: col(sc.portPct), minWidth: 44, textAlign: "right" }}>{fmtPct(sc.portPct, 1)}</span>
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: col(sc.deltaUSD), display: "flex", alignItems: "center" }}>
+              {sign(sc.deltaUSD)}{sym}{fmt(Math.abs(sc.deltaUSD))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── EXPORT PRINCIPALE ─────────────────────────────────────────────────────────
+export function SimulazioniTabNew({ stocks, sym, rate, fmt, eurRate }) {
+  const [section, setSection] = useState("stress");
+
+  const tabs = [
+    { id: "stress",    label: "🔴 Stress Test Storico" },
+    { id: "macro",     label: "🌍 Scenari Macro" },
+    { id: "confronto", label: "📊 Confronto" },
+  ];
+
+  return (
+    <div className="fade-up" style={{ maxWidth: 1100, margin: "0 auto", padding: "0 0 40px" }}>
+      {/* Sub-nav */}
+      <div style={{ display: "flex", gap: 4, marginBottom: 28, borderBottom: "1px solid #E8EBF4", paddingBottom: 0 }}>
+        {tabs.map(t => (
+          <button key={t.id} onClick={() => setSection(t.id)} style={{
+            padding: "10px 16px", background: "none", border: "none",
+            fontSize: 12, fontWeight: section === t.id ? 700 : 500,
+            color: section === t.id ? "#0A1628" : "#8A9AB0",
+            cursor: "pointer", fontFamily: "inherit",
+            borderBottom: section === t.id ? "2px solid #0A1628" : "2px solid transparent",
+            marginBottom: -1, transition: "all 0.15s",
+          }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {section === "stress"    && <StressTest stocks={stocks} sym={sym} rate={rate} fmt={fmt} eurRate={eurRate} />}
+      {section === "macro"     && <MacroScenari stocks={stocks} sym={sym} rate={rate} fmt={fmt} eurRate={eurRate} />}
+      {section === "confronto" && <ConfrونtoScenari stocks={stocks} sym={sym} rate={rate} fmt={fmt} eurRate={eurRate} />}
+    </div>
+  );
+}

@@ -15,6 +15,7 @@ import { PortfolioMetrics } from "./components/PortfolioMetrics";
 import { ScenarioOverview } from "./components/ScenarioOverview";
 import { OverviewWidgets } from "./components/OverviewWidgets";
 import { OverviewDashboard } from "./components/OverviewDashboard";
+import { SimulazioniTabNew } from "./components/SimulazioniTabNew";
 import { MarketBadge } from "./components/MarketBadge";
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
@@ -4272,7 +4273,13 @@ export default function App() {
 
               {/* SIMULAZIONI */}
               {activeTab === "simulazioni" && (
-                <SimulazioniTab stocks={stocks} sym={sym} rate={rate} fmt={fmt} fmtPct={fmtPct} eurRate={eurRate} />
+                <SimulazioniTabNew
+                  stocks={stocks}
+                  sym={sym}
+                  rate={rate}
+                  fmt={fmt}
+                  eurRate={eurRate}
+                />
               )}
 
               {activeTab === "whatif" && (
