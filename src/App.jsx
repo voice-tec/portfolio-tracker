@@ -14,6 +14,7 @@ import { ChartCard } from "./components/ChartCard";
 import { PortfolioMetrics } from "./components/PortfolioMetrics";
 import { ScenarioOverview } from "./components/ScenarioOverview";
 import { OverviewWidgets } from "./components/OverviewWidgets";
+import { OverviewDashboard } from "./components/OverviewDashboard";
 import { MarketBadge } from "./components/MarketBadge";
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
@@ -2261,10 +2262,21 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
         sym={sym}
       />
 
-      {/* ── ALLOCAZIONE (torta stile GetQuin) ── */}
+      {/* ── ALLOCAZIONE ── */}
       <AllocationCard stocks={stocks} eurRate={eurRate} />
 
-      <ScenarioOverview stocks={stocks} totalValue={totalValue} fmt={fmt} sym={sym} />
+      {/* ── DASHBOARD OVERVIEW ── */}
+      <OverviewDashboard
+        stocks={stocks}
+        eurRate={eurRate}
+        totalValue={totalValue}
+        fmt={fmt}
+        sym={sym}
+        onNavigateSimulazioni={() => {
+          document.querySelector('[data-tab="simulazioni"]')?.click();
+        }}
+        onAddTicker={ticker => setShowForm(true)}
+      />
 
       {/* ── LISTA TITOLI COMPATTA ── */}
       <div className="card">
