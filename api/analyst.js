@@ -92,14 +92,25 @@ export default async function handler(req, res) {
   // ── ROUTE EARNINGS: ?earnings=true ──────────────────────────────────────────
   if (req.query.earnings === "true") {
     try {
-      const summaryUrl = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(sym)}?modules=earnings,earningsHistory,calendarEvents,defaultKeyStatistics`;
-      const er = await fetch(summaryUrl, { headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json" } });
+      // Prova v11 che ha più dati
+      const summaryUrl = `https://query2.finance.yahoo.com/v11/finance/quoteSummary/${encodeURIComponent(sym)}?modules=earningsHistory%2CcalendarEvents%2Cearnings`;
+      const er = await fetch(summaryUrl, { headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36", "Accept": "application/json", "Referer": "https://finance.yahoo.com/" } });
       if (!er.ok) return res.status(200).json({ earnings: [], stats: {} });
       const edata = await er.json();
       const eresult = edata?.quoteSummary?.result?.[0];
       if (!eresult) return res.status(200).json({ earnings: [], stats: {} });
 
-      const earningsHistory = eresult.earningsHistory?.history || [];
+      // Prova sia earningsHistory che earnings.earningsChart
+      const earningsHistory = eresult.earningsHistory?.history
+        || eresult.earnings?.earningsChart?.quarterly?.map(q => ({
+            quarter: { raw: new Date(q.date + '-01').getTime()/1000, fmt: q.date },
+            epsActual: { raw: q.actual?.raw },
+            epsEstimate: { raw: q.estimate?.raw },
+            surprisePercent: q.actual?.raw && q.estimate?.raw
+              ? { raw: ((q.actual.raw - q.estimate.raw) / Math.abs(q.estimate.raw)) * 100 }
+              : null,
+          }))
+        || [];
       const nextEarningsRaw = eresult.calendarEvents?.earnings?.earningsDate?.[0]?.raw;
 
       const nowTs = Math.floor(Date.now() / 1000);
