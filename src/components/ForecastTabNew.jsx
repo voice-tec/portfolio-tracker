@@ -224,7 +224,7 @@ function TechnicalsWidget({ technicals, currentPrice, fmt }) {
 }
 
 // ── Analisi storica migliorata ────────────────────────────────────────────────
-function HistoricalAnalysis({ d, ticker }) {
+function HistoricalAnalysis({ d, ticker, band, setBand, macroCtx }) {
   if (!d || d.occurrences === 0) return (
     <div className="card" style={{ padding: "16px 18px" }}>
       <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>
@@ -251,9 +251,38 @@ function HistoricalAnalysis({ d, ticker }) {
 
   return (
     <div className="card" style={{ padding: "16px 18px" }}>
-      <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 14 }}>
-        🔍 Analisi Storica — {ticker} a questo prezzo (±7%)
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
+        <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+          🔍 Analisi Storica — {ticker} a questo prezzo
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 9, color: "#8A9AB0" }}>Banda:</span>
+          {[3, 7, 15].map(b => (
+            <button key={b} onClick={() => setBand && setBand(b)} style={{
+              padding: "3px 10px", borderRadius: 20, cursor: "pointer",
+              fontFamily: "inherit", fontSize: 10, fontWeight: 600, border: "none",
+              background: band === b ? "#0A1628" : "#F0F2F7",
+              color: band === b ? "#fff" : "#8A9AB0",
+            }}>±{b}%</button>
+          ))}
+        </div>
       </div>
+
+      {macroCtx && (() => {
+        const vix = macroCtx.vix;
+        const t10y = macroCtx.treasury10y;
+        const spread = macroCtx.yieldSpread;
+        let label = null, color = "#8A9AB0";
+        if (vix > 25)        { label = "⚠️ Alta volatilità (VIX " + vix + ") — casi storici più variabili"; color = "#DC2626"; }
+        else if (t10y > 4.5) { label = "🏦 Tassi elevati (" + t10y + "%) — contesto simile 2022-2023"; color = "#7C3AED"; }
+        else if (spread < 0) { label = "📉 Curva invertita — storicamente precede rallentamento"; color = "#F97316"; }
+        else                  { label = "✅ Contesto macro stabile — dati storici ben rappresentativi"; color = "#16A34A"; }
+        return (
+          <div style={{ padding: "8px 12px", borderRadius: 8, background: color + "10", border: `1px solid ${color}25`, marginBottom: 14, fontSize: 10, color, lineHeight: 1.5 }}>
+            {label}
+          </div>
+        );
+      })()}
 
       {/* KPI */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8, marginBottom: 16 }}>
@@ -327,7 +356,16 @@ export function ForecastTabNew({ stocks, fmt, sym, rate, eurRate }) {
   const [analystData, setAnalystData]   = useState({});
   const [historyData, setHistoryData]   = useState({});
   const [loading, setLoading]     = useState(false);
+  const [band, setBand]           = useState(7);
+  const [macroCtx, setMacroCtx]   = useState(null);
   const allLoadedRef = useRef(false);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/macro`)
+      .then(r => r.json())
+      .then(d => setMacroCtx(d))
+      .catch(() => {});
+  }, []);
 
   // Carica forecast per tutti i titoli in background
   useEffect(() => {
@@ -371,6 +409,15 @@ export function ForecastTabNew({ stocks, fmt, sym, rate, eurRate }) {
         .catch(() => setLoading(false));
     }
   }, [selected?.ticker]);
+
+  useEffect(() => {
+    if (!selected) return;
+    setLoading(true);
+    fetch(`${API_BASE}/api/forecast?symbol=${encodeURIComponent(selected.ticker)}&price=${selected.currentPrice}&band=${band/100}`)
+      .then(r => r.json())
+      .then(d => { if (!d.error) setForecastData(p => ({ ...p, [selected.ticker]: d })); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [band]);
 
   // Portfolio forecast aggregato
   const portfolioForecast = useMemo(() => {
@@ -560,7 +607,7 @@ export function ForecastTabNew({ stocks, fmt, sym, rate, eurRate }) {
           </div>
 
           {/* Analisi storica */}
-          <HistoricalAnalysis d={d} ticker={selected.ticker} />
+          <HistoricalAnalysis d={d} ticker={selected.ticker} band={band} setBand={setBand} macroCtx={macroCtx} />
 
           {/* Stagionalità */}
           {d.seasonality?.length > 0 && (
