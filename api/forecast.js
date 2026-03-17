@@ -104,38 +104,19 @@ export default async function handler(req, res) {
       avgReturn: m.count > 0 ? parseFloat((m.sum / m.count).toFixed(2)) : 0,
     }));
 
-    // ── 5. PROIEZIONE 12 MESI — basata su percentili reali ───────────────────
-    // Calcoliamo i rendimenti annuali reali (finestre rolling di 52 settimane)
-    const annualReturns = [];
-    for (let i = 0; i + 52 < prices.length; i++) {
-      const r = ((prices[i + 52].price - prices[i].price) / prices[i].price) * 100;
-      annualReturns.push(r);
-    }
-    annualReturns.sort((a, b) => a - b);
-
-    const percentile = (arr, p) => {
-      if (arr.length === 0) return 0;
-      const idx = Math.max(0, Math.min(arr.length - 1, Math.floor((p / 100) * arr.length)));
-      return arr[idx];
-    };
-
-    // Cappato: ottimistico max +40%, pessimistico min -35%
-    const rawBase = annualizedReturn !== null ? annualizedReturn : (percentile(annualReturns, 50) || 0);
-    const rawPess = annualReturns.length >= 10 ? percentile(annualReturns, 15) : rawBase - annualVol * 0.8;
-    const rawOpt  = annualReturns.length >= 10 ? percentile(annualReturns, 85) : rawBase + annualVol * 0.8;
-
-    const cap = (v, min, max) => Math.max(min, Math.min(max, v));
-    const base = parseFloat(cap(rawBase, -30, 35).toFixed(2));
-    const pess = parseFloat(cap(rawPess, -35, 20).toFixed(2));
-    const opt  = parseFloat(cap(rawOpt,  -10, 40).toFixed(2));
-
+    // ── 5. PROIEZIONE 12 MESI ────────────────────────────────────────────────
+    // Base: trend storico annualizzato
+    // Pessimistico: base - 1.5σ
+    // Ottimistico:  base + 1.5σ
+    const base = annualizedReturn !== null ? annualizedReturn : (avgOutcome || 0);
+    const sigma = annualVol;
     const projection = {
-      base,
-      pessimistic: pess,
-      optimistic: opt,
+      base: parseFloat(base.toFixed(2)),
+      pessimistic: parseFloat((base - 1.5 * sigma).toFixed(2)),
+      optimistic: parseFloat((base + 1.5 * sigma).toFixed(2)),
       basePriceTarget: parseFloat((currentPrice * (1 + base / 100)).toFixed(2)),
-      pessimisticPriceTarget: parseFloat((currentPrice * (1 + pess / 100)).toFixed(2)),
-      optimisticPriceTarget: parseFloat((currentPrice * (1 + opt / 100)).toFixed(2)),
+      pessimisticPriceTarget: parseFloat((currentPrice * (1 + (base - 1.5 * sigma) / 100)).toFixed(2)),
+      optimisticPriceTarget: parseFloat((currentPrice * (1 + (base + 1.5 * sigma) / 100)).toFixed(2)),
     };
 
     // ── 6. GRAFICO PROIEZIONE MESE PER MESE ─────────────────────────────────
@@ -149,8 +130,8 @@ export default async function handler(req, res) {
       projectionChart.push({
         month: d.toLocaleDateString("it-IT", { month: "short", year: "2-digit" }),
         base: parseFloat((currentPrice * (1 + (base * factor) / 100)).toFixed(2)),
-        pessimistic: parseFloat((currentPrice * (1 + (pess * factor) / 100)).toFixed(2)),
-        optimistic: parseFloat((currentPrice * (1 + (opt * factor) / 100)).toFixed(2)),
+        pessimistic: parseFloat((currentPrice * (1 + ((base - 1.5 * sigma) * factor) / 100)).toFixed(2)),
+        optimistic: parseFloat((currentPrice * (1 + ((base + 1.5 * sigma) * factor) / 100)).toFixed(2)),
         seasonBoost: parseFloat(seasonBoost.toFixed(2)),
       });
     }
