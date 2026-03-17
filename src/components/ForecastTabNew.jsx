@@ -295,23 +295,22 @@ function HistoricalAnalysis({ d, ticker, band, setBand, macroCtx }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 220, overflowY: "auto" }}>
         {[...outcomes].reverse().map((o, i) => {
           const isPos = o.pct >= 0;
-          const barW  = maxAbs > 0 ? Math.abs(o.pct) / maxAbs * 45 : 0;
+          const barW  = maxAbs > 0 ? Math.abs(o.pct) / maxAbs * 100 : 0;
           return (
-            <div key={i} style={{ display: "grid", gridTemplateColumns: "70px 64px 1fr 64px 52px", gap: 8, alignItems: "center", padding: "3px 0", borderBottom: "1px solid #F8FAFF" }}>
-              <span style={{ fontSize: 9, color: "#8A9AB0", textAlign: "right" }}>{o.date}</span>
-              <div style={{ position: "relative", height: 14, background: "#F8FAFF", borderRadius: 2 }}>
-                <div style={{
-                  position: "absolute", top: 0, bottom: 0,
-                  left: isPos ? "50%" : `calc(50% - ${barW}%)`,
-                  width: `${barW}%`,
-                  background: isPos ? "#16A34A" : "#DC2626",
-                  opacity: 0.5, borderRadius: 2,
-                }} />
-                <div style={{ position: "absolute", top: 0, bottom: 0, left: "50%", width: 1, background: "#E0E4EF" }} />
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", borderBottom: "1px solid #F8FAFF" }}>
+              <div style={{ width: 56, fontSize: 9, color: "#8A9AB0", flexShrink: 0 }}>{o.date}</div>
+              <div style={{ width: 150, display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: "#0A1628" }}>{o.entryPrice ? `$${o.entryPrice.toFixed(2)}` : "—"}</span>
+                <span style={{ fontSize: 9, color: "#C0C8D8" }}>→</span>
+                <span style={{ fontSize: 11, fontWeight: 700, color: isPos ? "#16A34A" : "#DC2626" }}>{o.exitPrice ? `$${o.exitPrice.toFixed(2)}` : "—"}</span>
               </div>
-              <span style={{ fontSize: 10, fontWeight: 700, color: isPos ? "#16A34A" : "#DC2626" }}>
+              <div style={{ flex: 1, position: "relative", height: 8, background: "#F0F2F7", borderRadius: 4 }}>
+                <div style={{ position: "absolute", top: 0, bottom: 0, left: isPos ? "50%" : `calc(50% - ${barW/2}%)`, width: `${barW/2}%`, background: isPos ? "#16A34A" : "#DC2626", opacity: 0.7, borderRadius: 4 }} />
+                <div style={{ position: "absolute", top: 0, bottom: 0, left: "50%", width: 1, background: "#D0D4DF" }} />
+              </div>
+              <div style={{ width: 52, fontSize: 13, fontWeight: 800, color: isPos ? "#16A34A" : "#DC2626", textAlign: "right", flexShrink: 0 }}>
                 {isPos ? "+" : ""}{o.pct}%
-              </span>
+              </div>
             </div>
           );
         })}
