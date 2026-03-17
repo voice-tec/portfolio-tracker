@@ -92,7 +92,7 @@ export default async function handler(req, res) {
   // ── ROUTE EARNINGS: ?earnings=true ──────────────────────────────────────────
   if (req.query.earnings === "true") {
     try {
-      const summaryUrl = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(sym)}?modules=earningsHistory,calendarEvents`;
+      const summaryUrl = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(sym)}?modules=earnings,earningsHistory,calendarEvents,defaultKeyStatistics`;
       const er = await fetch(summaryUrl, { headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json" } });
       if (!er.ok) return res.status(200).json({ earnings: [], stats: {} });
       const edata = await er.json();
