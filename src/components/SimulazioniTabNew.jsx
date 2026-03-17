@@ -947,7 +947,6 @@ export function SimulazioniTabNew({ stocks, sym, rate, fmt, eurRate }) {
   const tabs = [
     { id: "stress",    label: "🔴 Stress Test Storico" },
     { id: "macro",     label: "🌍 Scenari Macro" },
-    { id: "confronto", label: "📊 Confronto" },
   ];
 
   return (
@@ -970,7 +969,7 @@ export function SimulazioniTabNew({ stocks, sym, rate, fmt, eurRate }) {
 
       {section === "stress"    && <StressTest stocks={stocks} sym={sym} rate={rate} fmt={fmt} eurRate={eurRate} />}
       {section === "macro"     && <MacroScenari stocks={stocks} sym={sym} rate={rate} fmt={fmt} eurRate={eurRate} />}
-      {section === "confronto" && <ConfrونtoScenari stocks={stocks} sym={sym} rate={rate} fmt={fmt} eurRate={eurRate} />}
+
     </div>
   );
 }
