@@ -300,7 +300,7 @@ function HistoricalAnalysis({ d, ticker }) {
             <div key={i} style={{ display: "grid", gridTemplateColumns: "60px 1fr 56px", gap: 8, alignItems: "center" }}>
               <div style={{ textAlign: "right" }}>
                 <div style={{ fontSize: 9, color: "#8A9AB0" }}>{o.date}</div>
-                {o.price && <div style={{ fontSize: 8, color: "#C0C8D8" }}>${typeof o.price === "number" ? o.price.toFixed(2) : o.price}</div>}
+                {o.entryPrice && <div style={{ fontSize: 8, color: "#C0C8D8" }}>${o.entryPrice.toFixed(2)}</div>}
               </div>
               <div style={{ position: "relative", height: 14, background: "#F8FAFF", borderRadius: 2 }}>
                 <div style={{
@@ -312,9 +312,10 @@ function HistoricalAnalysis({ d, ticker }) {
                 }} />
                 <div style={{ position: "absolute", top: 0, bottom: 0, left: "50%", width: 1, background: "#E0E4EF" }} />
               </div>
-              <span style={{ fontSize: 10, fontWeight: 700, color: isPos ? "#16A34A" : "#DC2626" }}>
-                {isPos ? "+" : ""}{o.pct}%
-              </span>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: isPos ? "#16A34A" : "#DC2626" }}>{isPos ? "+" : ""}{o.pct}%</div>
+                {o.exitPrice && <div style={{ fontSize: 8, color: "#C0C8D8" }}>→${o.exitPrice.toFixed(2)}</div>}
+              </div>
             </div>
           );
         })}
