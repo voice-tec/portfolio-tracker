@@ -18,6 +18,7 @@ const SCENARIOS_STORICI = [
 const MACRO_SCENARI = [
   {
     id: "high_inflation", label: "📈 Alta Inflazione", color: "#F97316",
+    from: "2021-06-01", to: "2022-12-31",
     desc: "Inflazione >5% come 2021-2022. Energia e commodities salgono, tech e bond scendono.",
     spxImpact: -12, duration: "12-18 mesi",
     impact: { "Tech": -25, "Finanza": +8, "Energia": +45, "Materiali": +30, "Salute": -5, "Consumer": -15, "Industriali": +10, "Utility": -12, "Real Estate": -20, "Telecom": -8, "ETF": -10, "Altro": -5 },
@@ -41,6 +42,7 @@ const MACRO_SCENARI = [
   },
   {
     id: "recession", label: "📊 Recessione", color: "#DC2626",
+    from: "2007-10-01", to: "2009-03-09",
     desc: "GDP negativo per 2+ trimestri. Difensivi, oro e bond governativi come rifugio.",
     spxImpact: -30, duration: "6-18 mesi",
     impact: { "Tech": -20, "Finanza": -30, "Energia": -25, "Materiali": -28, "Salute": +5, "Consumer": -15, "Industriali": -22, "Utility": +2, "Real Estate": -18, "Telecom": +2, "ETF": -18, "Altro": -15 },
@@ -63,6 +65,7 @@ const MACRO_SCENARI = [
   },
   {
     id: "boom", label: "🚀 Boom Economico", color: "#16A34A",
+    from: "2017-01-01", to: "2017-12-31",
     desc: "Crescita GDP >3%, piena occupazione. Ciclici, tech e small cap esplodono.",
     spxImpact: +28, duration: "12-36 mesi",
     impact: { "Tech": +30, "Finanza": +20, "Energia": +25, "Materiali": +35, "Salute": +8, "Consumer": +28, "Industriali": +32, "Utility": -5, "Real Estate": +15, "Telecom": +18, "ETF": +22, "Altro": +15 },
@@ -85,6 +88,7 @@ const MACRO_SCENARI = [
   },
   {
     id: "high_rates", label: "🏦 Tassi Alti", color: "#7C3AED",
+    from: "2022-01-01", to: "2023-12-31",
     desc: "Fed Funds Rate >4% come 2022-2023. Banche e valore outperformano.",
     spxImpact: -15, duration: "12-24 mesi",
     impact: { "Tech": -30, "Finanza": +15, "Energia": +5, "Materiali": -5, "Salute": +5, "Consumer": -12, "Industriali": -8, "Utility": -20, "Real Estate": -25, "Telecom": -10, "ETF": -8, "Altro": -10 },
@@ -106,6 +110,7 @@ const MACRO_SCENARI = [
   },
   {
     id: "low_rates", label: "💸 Tassi Bassi", color: "#0EA5E9",
+    from: "2009-03-01", to: "2015-12-31",
     desc: "Fed Funds Rate <1%. Risk-on, growth e credito salgono.",
     spxImpact: +25, duration: "24-36 mesi",
     impact: { "Tech": +35, "Finanza": -5, "Energia": +10, "Materiali": +12, "Salute": +10, "Consumer": +20, "Industriali": +15, "Utility": +10, "Real Estate": +30, "Telecom": +12, "ETF": +18, "Altro": +10 },
@@ -127,6 +132,7 @@ const MACRO_SCENARI = [
   },
   {
     id: "low_inflation", label: "📉 Bassa Inflazione", color: "#06B6D4",
+    from: "2012-01-01", to: "2016-12-31",
     desc: "Inflazione <2% con crescita stabile. Tech e bond in rally.",
     spxImpact: +18, duration: "12-24 mesi",
     impact: { "Tech": +25, "Finanza": +5, "Energia": -10, "Materiali": -8, "Salute": +12, "Consumer": +15, "Industriali": +8, "Utility": +15, "Real Estate": +20, "Telecom": +10, "ETF": +12, "Altro": +8 },
@@ -336,12 +342,53 @@ function StressTest({ stocks, sym, rate, fmt, eurRate }) {
 
 // ── Sezione 2: Scenari Macro ───────────────────────────────────────────────────
 function MacroScenari({ stocks, sym, rate, fmt, eurRate }) {
-  const [selected, setSelected]   = useState(MACRO_SCENARI[0]);
-  const [investment, setInvestment] = useState(1000); // slider: capitale aggiuntivo
-  const [liveData, setLiveData]   = useState({});
+  const [selected, setSelected]     = useState(MACRO_SCENARI[0]);
+  const [investment, setInvestment] = useState(1000);
+  const [liveData, setLiveData]     = useState({});
   const [liveLoading, setLiveLoading] = useState(false);
+  const [realCache, setRealCache]   = useState({});
+  const [realLoading, setRealLoading] = useState(false);
 
   const totalValue = stocks.reduce((s, x) => s + (parseFloat(x.qty)||0) * toUSD(parseFloat(x.currentPrice)||0, x.currency, eurRate), 0);
+
+  // Fetch dati storici reali per lo scenario selezionato (stesso metodo StressTest)
+  useEffect(() => {
+    if (!stocks.length || !selected.from) return;
+    if (realCache[selected.id]) return;
+    setRealLoading(true);
+    Promise.all(
+      stocks.map(s =>
+        fetch(`${API_BASE}/api/scenario?symbol=${encodeURIComponent(s.ticker)}&from=${selected.from}&to=${selected.to}`)
+          .then(r => r.json())
+          .catch(() => null)
+      )
+    ).then(results => {
+      const spyData = results.find(r => r?.spy)?.spy || null;
+      const candles = results.map(r => r?.candles || null);
+      const maxLen  = Math.max(...candles.map(r => r?.length || 0));
+
+      const portSeries = Array.from({ length: maxLen }, (_, i) => {
+        const date = candles.find(r => r)?.[i]?.date || "";
+        let totalPct = 0, totalW = 0;
+        candles.forEach((r, j) => {
+          if (r?.[i]) {
+            const w = (parseFloat(stocks[j]?.qty)||0) * (parseFloat(stocks[j]?.currentPrice)||0) / (totalValue || 1);
+            totalPct += r[i].pct * w;
+            totalW   += w;
+          }
+        });
+        return {
+          date,
+          label: date ? new Date(date + "T12:00:00").toLocaleDateString("it-IT", { day: "2-digit", month: "short" }) : "",
+          pct:   totalW > 0 ? parseFloat((totalPct / totalW).toFixed(2)) : 0,
+          spy:   spyData?.[i]?.pct ?? null,
+        };
+      });
+
+      setRealCache(c => ({ ...c, [selected.id]: { portSeries } }));
+      setRealLoading(false);
+    });
+  }, [selected.id, stocks.length]);
 
   // Fetch prezzi live dei titoli consigliati
   const fetchLive = useCallback(async (sc) => {
@@ -438,23 +485,32 @@ function MacroScenari({ stocks, sym, rate, fmt, eurRate }) {
 
         {/* Grafico */}
         <div className="card">
-          <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>
-            Performance storica media per asset class
+          <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>
+            Andamento reale portafoglio — {selected.from?.slice(0,4)} / {selected.to?.slice(0,4)}
           </div>
-          <ResponsiveContainer width="100%" height={180}>
-            <LineChart data={chartData} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
-              <XAxis dataKey="m" tick={{ fontSize: 9, fill: "#8A9AB0" }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 9, fill: "#8A9AB0" }} axisLine={false} tickLine={false} width={36} tickFormatter={v => `${v > 0 ? "+" : ""}${v}%`} domain={["auto", "auto"]} />
-              <Tooltip contentStyle={{ background: "#fff", border: "1px solid #E8EBF4", borderRadius: 8, fontSize: 10, padding: "4px 10px" }}
-                formatter={(v, n) => [`${v >= 0 ? "+" : ""}${v}%`, n === "portfolio" ? "Il tuo portafoglio" : n]} />
-              <ReferenceLine y={0} stroke="#E0E4EF" strokeDasharray="4 3" />
-              {selected.lineKeys.map(lk => (
-                <Line key={lk.k} type="monotone" dataKey={lk.k} stroke={lk.c} strokeWidth={1.5} dot={false} name={lk.l} strokeDasharray="4 2" />
-              ))}
-              <Line type="monotone" dataKey="portfolio" stroke={selected.color} strokeWidth={2.5} dot={false} name="portfolio" />
-              <Legend wrapperStyle={{ fontSize: 9, color: "#8A9AB0" }} />
-            </LineChart>
-          </ResponsiveContainer>
+          <div style={{ fontSize: 9, color: "#16A34A", marginBottom: 10 }}>● Dati storici reali da Yahoo Finance</div>
+          {realLoading ? (
+            <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, color: "#8A9AB0", fontSize: 11 }}>
+              <Spinner /> Caricamento dati reali…
+            </div>
+          ) : realCache[selected.id]?.portSeries?.length > 0 ? (
+            <ResponsiveContainer width="100%" height={180}>
+              <LineChart data={realCache[selected.id].portSeries} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
+                <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#8A9AB0" }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                <YAxis tick={{ fontSize: 9, fill: "#8A9AB0" }} axisLine={false} tickLine={false} width={36} tickFormatter={v => `${v > 0 ? "+" : ""}${v}%`} domain={["auto", "auto"]} />
+                <Tooltip contentStyle={{ background: "#fff", border: "1px solid #E8EBF4", borderRadius: 8, fontSize: 10, padding: "4px 10px" }}
+                  formatter={(v, n) => [`${v >= 0 ? "+" : ""}${v?.toFixed(2)}%`, n === "pct" ? "Portafoglio" : "S&P 500"]} />
+                <ReferenceLine y={0} stroke="#E0E4EF" strokeDasharray="4 3" />
+                <Line type="monotone" dataKey="pct" stroke={selected.color} strokeWidth={2} dot={false} name="pct" />
+                <Line type="monotone" dataKey="spy" stroke="#8A9AB0" strokeWidth={1} dot={false} strokeDasharray="4 2" name="spy" connectNulls />
+                <Legend wrapperStyle={{ fontSize: 9, color: "#8A9AB0" }} formatter={v => v === "pct" ? "Il tuo portafoglio" : "S&P 500"} />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", color: "#8A9AB0", fontSize: 11 }}>
+              Dati non disponibili
+            </div>
+          )}
         </div>
 
         {/* Impatto per settore (barre) */}
