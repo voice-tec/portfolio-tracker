@@ -637,9 +637,9 @@ export function ForecastTabNew({ stocks, fmt, sym, rate, eurRate }) {
                   <Tooltip contentStyle={{ background: "#fff", border: "1px solid #E8EBF4", borderRadius: 8, fontSize: 10, padding: "4px 8px" }}
                     formatter={v => [`${v}%`, "Media storica"]} />
                   <ReferenceLine y={0} stroke="#E0E4EF" />
-                  <Bar dataKey="avg" radius={[3, 3, 0, 0]}>
+                  <Bar dataKey="avgReturn" radius={[3, 3, 0, 0]}>
                     {d.seasonality.map((s, i) => (
-                      <Cell key={i} fill={s.avg >= 0 ? "#16A34A" : "#DC2626"} fillOpacity={0.7} />
+                      <Cell key={i} fill={s.avgReturn >= 0 ? "#16A34A" : "#DC2626"} fillOpacity={0.7} />
                     ))}
                   </Bar>
                 </BarChart>
