@@ -3,7 +3,7 @@ import {
   ResponsiveContainer, LineChart, Line, AreaChart, Area,
   XAxis, YAxis, Tooltip, ReferenceLine, Legend, BarChart, Bar, Cell,
 } from "recharts";
-import { fetchHistory, API_BASE } from "../utils/api";
+import { API_BASE } from "../utils/api";
 import { toUSD } from "../utils/currency";
 
 // ── Dati scenari ──────────────────────────────────────────────────────────────
@@ -164,75 +164,53 @@ function StressTest({ stocks, sym, rate, fmt, eurRate }) {
   const [loading, setLoading] = useState(false);
   const totalValue = stocks.reduce((s, x) => s + (parseFloat(x.qty)||0) * toUSD(parseFloat(x.currentPrice)||0, x.currency, eurRate), 0);
 
+  // Usa /api/scenario come il vecchio codice — funziona già
   const fetchScenario = useCallback(async (sc) => {
     if (cache[sc.id]) return;
     setLoading(true);
     try {
-      const fromTs = Math.floor(new Date(sc.from).getTime() / 1000);
-      const toTs   = Math.floor(new Date(sc.to).getTime()   / 1000);
-      const days   = Math.ceil((toTs - fromTs) / 86400);
+      const results = await Promise.all(
+        stocks.map(s =>
+          fetch(`${API_BASE}/api/scenario?symbol=${encodeURIComponent(s.ticker)}&from=${sc.from}&to=${sc.to}`)
+            .then(r => r.json())
+            .catch(() => null)
+        )
+      );
 
-      const results = await Promise.all([
-        ...stocks.map(s =>
-          fetchHistory(s.ticker, days + 30)
-            .then(c => ({ ticker: s.ticker, candles: c || [] }))
-            .catch(() => ({ ticker: s.ticker, candles: [] }))
-        ),
-        fetchHistory("SPY", days + 30)
-          .then(c => ({ ticker: "SPY", candles: c || [] }))
-          .catch(() => ({ ticker: "SPY", candles: [] })),
-      ]);
+      const spyData = results.find(r => r?.spy)?.spy || null;
+      const candles = results.map(r => r?.candles || null);
 
-      const spy = results.find(r => r.ticker === "SPY")?.candles || [];
-      const stockCandles = results.filter(r => r.ticker !== "SPY");
-
-      // Filtra per range scenario
-      const filter = (c) => c.filter(p => p.date >= sc.from && p.date <= sc.to);
-      const filteredSpy = filter(spy);
-
-      // Normalizza a 0% dall'inizio
-      const normalize = (candles) => {
-        const f = filter(candles);
-        if (!f.length) return [];
-        const base = f[0].price;
-        return f.map(p => ({ date: p.date, pct: parseFloat(((p.price - base) / base * 100).toFixed(2)) }));
-      };
-
-      // Serie portafoglio pesata
-      const allDates = [...new Set(stockCandles.flatMap(s => filter(s.candles).map(c => c.date)))].sort();
-      const spyNorm  = normalize(spy);
-      const spyMap   = Object.fromEntries(spyNorm.map(p => [p.date, p.pct]));
-
-      const portSeries = allDates.map(date => {
-        let totalPct = 0, totalW = 0;
-        stockCandles.forEach(({ ticker, candles }) => {
-          const f = filter(candles);
-          if (!f.length) return;
-          const base = f[0].price;
-          const pt   = f.find(p => p.date === date);
-          if (!pt) return;
-          const s = stocks.find(x => x.ticker === ticker);
-          const w = (parseFloat(s?.qty)||0) * (parseFloat(s?.currentPrice)||0) / (totalValue || 1);
-          totalPct += ((pt.price - base) / base * 100) * w;
-          totalW   += w;
-        });
-        return {
-          date,
-          label: new Date(date + "T12:00:00").toLocaleDateString("it-IT", { day: "2-digit", month: "short" }),
-          pct:   totalW > 0 ? parseFloat((totalPct / totalW).toFixed(2)) : 0,
-          spy:   spyMap[date] ?? null,
+      // Serie portafoglio pesata (identica al vecchio codice)
+      const maxLen = Math.max(...candles.map(r => r?.length || 0));
+      const portSeries = Array.from({ length: maxLen }, (_, i) => {
+        const point = {
+          date:  candles.find(r => r)?.[i]?.date || "",
+          label: candles.find(r => r)?.[i]?.date
+            ? new Date(candles.find(r => r)[i].date + "T12:00:00").toLocaleDateString("it-IT", { day: "2-digit", month: "short" })
+            : "",
         };
+        let totalPct = 0, totalW = 0;
+        candles.forEach((r, j) => {
+          if (r && r[i]) {
+            const w = (parseFloat(stocks[j]?.qty)||0) * (parseFloat(stocks[j]?.currentPrice)||0) / (totalValue || 1);
+            totalPct += r[i].pct * w;
+            totalW   += w;
+          }
+        });
+        point.pct = totalW > 0 ? parseFloat((totalPct / totalW).toFixed(2)) : 0;
+        if (spyData?.[i]) point.spy = spyData[i].pct;
+        return point;
       });
 
       // Impatto per titolo
-      const perStock = stocks.map(s => {
-        const c = filter(stockCandles.find(x => x.ticker === s.ticker)?.candles || []);
-        if (!c.length) {
+      const perStock = stocks.map((s, i) => {
+        const r = candles[i];
+        if (!r?.length) {
           const beta = s.sector === "Tech" ? 1.4 : s.sector === "Finanza" ? 1.2 : 1.0;
-          const pct  = sc.spx / 100 * beta * 100;
+          const pct  = sc.spx * beta;
           return { ...s, pct, pnl: (parseFloat(s.qty)||0) * (parseFloat(s.currentPrice)||0) * rate * pct / 100, noData: true };
         }
-        const pct = c[c.length - 1].pct ?? ((c[c.length-1].price - c[0].price) / c[0].price * 100);
+        const pct = r[r.length - 1].pct;
         return { ...s, pct: parseFloat(pct.toFixed(2)), pnl: (parseFloat(s.qty)||0) * (parseFloat(s.currentPrice)||0) * rate * pct / 100, noData: false };
       });
 
@@ -240,7 +218,7 @@ function StressTest({ stocks, sym, rate, fmt, eurRate }) {
       const totalPnl = totalValue * rate * finalPct / 100;
 
       setCache(c => ({ ...c, [sc.id]: { portSeries, perStock, totalPct: finalPct, totalPnl } }));
-    } catch {}
+    } catch(e) { console.error(e); }
     setLoading(false);
   }, [stocks, totalValue, rate, eurRate]);
 
