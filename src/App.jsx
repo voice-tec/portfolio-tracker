@@ -16,6 +16,7 @@ import { ScenarioOverview } from "./components/ScenarioOverview";
 import { OverviewWidgets } from "./components/OverviewWidgets";
 import { OverviewDashboard } from "./components/OverviewDashboard";
 import { SimulazioniTabNew } from "./components/SimulazioniTabNew";
+import { ForecastTabNew } from "./components/ForecastTabNew";
 import { MarketBadge } from "./components/MarketBadge";
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
@@ -4289,7 +4290,7 @@ export default function App() {
                 <DividendiTab stocks={stocks} fmt={fmt} fmtPct={fmtPct} sym={sym} rate={rate} />
               )}
               {activeTab === "previsioni" && (
-                <ForecastTab stocks={stocks} fmt={fmt} fmtPct={fmtPct} sym={sym} rate={rate} eurRate={eurRate} />
+                <ForecastTabNew stocks={stocks} fmt={fmt} sym={sym} rate={rate} eurRate={eurRate} />
               )}
 
             </div>
