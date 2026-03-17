@@ -298,7 +298,10 @@ function HistoricalAnalysis({ d, ticker }) {
           const barW  = maxAbs > 0 ? Math.abs(o.pct) / maxAbs * 45 : 0;
           return (
             <div key={i} style={{ display: "grid", gridTemplateColumns: "60px 1fr 56px", gap: 8, alignItems: "center" }}>
-              <span style={{ fontSize: 9, color: "#8A9AB0", textAlign: "right" }}>{o.date}</span>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: 9, color: "#8A9AB0" }}>{o.date}</div>
+                {o.price && <div style={{ fontSize: 8, color: "#C0C8D8" }}>${typeof o.price === "number" ? o.price.toFixed(2) : o.price}</div>}
+              </div>
               <div style={{ position: "relative", height: 14, background: "#F8FAFF", borderRadius: 2 }}>
                 <div style={{
                   position: "absolute", top: 0, bottom: 0,
@@ -575,9 +578,9 @@ export function ForecastTabNew({ stocks, fmt, sym, rate, eurRate }) {
                   <Tooltip contentStyle={{ background: "#fff", border: "1px solid #E8EBF4", borderRadius: 8, fontSize: 10, padding: "4px 8px" }}
                     formatter={v => [`${v}%`, "Media storica"]} />
                   <ReferenceLine y={0} stroke="#E0E4EF" />
-                  <Bar dataKey="avg" radius={[3, 3, 0, 0]}>
+                  <Bar dataKey="avgReturn" radius={[3, 3, 0, 0]}>
                     {d.seasonality.map((s, i) => (
-                      <Cell key={i} fill={s.avg >= 0 ? "#16A34A" : "#DC2626"} fillOpacity={0.7} />
+                      <Cell key={i} fill={s.avgReturn >= 0 ? "#16A34A" : "#DC2626"} fillOpacity={0.7} />
                     ))}
                   </Bar>
                 </BarChart>
