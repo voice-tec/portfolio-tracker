@@ -150,8 +150,8 @@ export default async function handler(req, res) {
       projectionChart.push({
         month: d.toLocaleDateString("it-IT", { month: "short", year: "2-digit" }),
         base: parseFloat((currentPrice * (1 + (base * factor) / 100)).toFixed(2)),
-        pessimistic: parseFloat((currentPrice * (1 + ((base - 1.5 * sigma) * factor) / 100)).toFixed(2)),
-        optimistic: parseFloat((currentPrice * (1 + ((base + 1.5 * sigma) * factor) / 100)).toFixed(2)),
+        pessimistic: parseFloat((currentPrice * (1 + (pess * factor) / 100)).toFixed(2)),
+        optimistic:  parseFloat((currentPrice * (1 + (opt  * factor) / 100)).toFixed(2)),
         seasonBoost: parseFloat(seasonBoost.toFixed(2)),
       });
     }
