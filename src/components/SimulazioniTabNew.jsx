@@ -500,8 +500,19 @@ function MacroScenari({ stocks, sym, rate, fmt, eurRate }) {
         </div>
         <div style={{ textAlign: "center" }}>
           <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em" }}>Tuo portafoglio</div>
-          <div style={{ fontSize: 22, fontWeight: 800, color: col(impact.pct), letterSpacing: "-0.02em" }}>{fmtPct(impact.pct, 1)}</div>
-          <div style={{ fontSize: 10, color: col(impact.deltaUSD) }}>{sign(impact.deltaUSD)}{sym}{fmt(Math.abs(impact.deltaUSD))}</div>
+          {(() => {
+            const series = realCache[selected.id]?.portSeries;
+            const realPct = series?.length ? series[series.length-1].pct : null;
+            const deltaUSD = realPct != null ? totalValue * rate * realPct / 100 : null;
+            return realPct != null ? (
+              <>
+                <div style={{ fontSize: 22, fontWeight: 800, color: col(realPct), letterSpacing: "-0.02em" }}>{fmtPct(realPct, 1)}</div>
+                <div style={{ fontSize: 10, color: col(deltaUSD) }}>{sign(deltaUSD)}{sym}{fmt(Math.abs(deltaUSD))}</div>
+              </>
+            ) : (
+              <div style={{ fontSize: 22, fontWeight: 800, color: "#8A9AB0" }}>—</div>
+            );
+          })()}
         </div>
       </div>
 
