@@ -251,40 +251,9 @@ function HistoricalAnalysis({ d, ticker, band, setBand, macroCtx }) {
 
   return (
     <div className="card" style={{ padding: "16px 18px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
-        <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em" }}>
-          🔍 Analisi Storica — {ticker} a questo prezzo
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 9, color: "#8A9AB0" }}>Banda:</span>
-          {[3, 7, 15].map(b => (
-            <button key={b} onClick={() => setBand && setBand(b)} style={{
-              padding: "3px 10px", borderRadius: 20, cursor: "pointer",
-              fontFamily: "inherit", fontSize: 10, fontWeight: 600, border: "none",
-              background: band === b ? "#0A1628" : "#F0F2F7",
-              color: band === b ? "#fff" : "#8A9AB0",
-            }}>±{b}%</button>
-          ))}
-        </div>
+      <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 14 }}>
+        🔍 Analisi Storica — {ticker} a questo prezzo (±7%)
       </div>
-
-      {macroCtx && (() => {
-        const vix = macroCtx.vix;
-        const t10y = macroCtx.treasury10y;
-        const spread = macroCtx.yieldSpread;
-        let label = null, color = "#8A9AB0";
-        if (vix > 30)             { label = `⚠️ VIX ${vix} — paura elevata, volatilità alta. I casi storici in periodi simili sono molto variabili.`; color = "#DC2626"; }
-        else if (vix > 20)        { label = `⚡ VIX ${vix} — incertezza moderata. Valuta i casi storici con cautela.`; color = "#F97316"; }
-        else if (spread < 0)      { label = `📉 Curva invertita (spread ${spread}%) — storicamente precede recessione. Peso maggiore ai casi pessimistici.`; color = "#F97316"; }
-        else if (t10y > 4.5)      { label = `🏦 Treasury 10Y al ${t10y}% — tassi elevati simili al 2022-2023. Tech e growth sotto pressione.`; color = "#7C3AED"; }
-        else if (t10y > 4.0)      { label = `🏦 Treasury 10Y al ${t10y}% — tassi moderatamente alti. Contesto simile a fine 2023.`; color = "#0EA5E9"; }
-        else                       { label = `✅ VIX ${vix} · 10Y ${t10y}% · Spread +${spread}% — contesto macro stabile, dati storici ben rappresentativi.`; color = "#16A34A"; }
-        return (
-          <div style={{ padding: "8px 12px", borderRadius: 8, background: color + "10", border: `1px solid ${color}25`, marginBottom: 14, fontSize: 10, color, lineHeight: 1.5 }}>
-            {label}
-          </div>
-        );
-      })()}
 
       {/* KPI */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8, marginBottom: 16 }}>
