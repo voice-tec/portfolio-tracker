@@ -252,21 +252,8 @@ function HistoricalAnalysis({ d, ticker, band, setBand, macroCtx }) {
   return (
     <div className="card" style={{ padding: "16px 18px" }}>
       {/* Header con slider */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
-        <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em" }}>
-          🔍 Analisi Storica — {ticker} a questo prezzo
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 9, color: "#8A9AB0" }}>Banda:</span>
-          {[3, 7, 15].map(b => (
-            <button key={b} onClick={() => setBand(b)} style={{
-              padding: "3px 10px", borderRadius: 20, cursor: "pointer",
-              fontFamily: "inherit", fontSize: 10, fontWeight: 600, border: "none",
-              background: band === b ? "#0A1628" : "#F0F2F7",
-              color: band === b ? "#fff" : "#8A9AB0",
-            }}>±{b}%</button>
-          ))}
-        </div>
+      <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 14 }}>
+        🔍 Analisi Storica — {ticker} a questo prezzo (±7%)
       </div>
 
       {/* Contesto macro — evidenzia periodi simili */}
