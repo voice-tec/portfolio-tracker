@@ -411,15 +411,18 @@ export function ForecastTabNew({ stocks, fmt, sym, rate, eurRate }) {
   }, [selected?.ticker]);
 
   useEffect(() => {
-    if (!selected) return;
+    if (!selected?.ticker) return;
+    const t = selected.ticker;
+    const p = selected.currentPrice;
     setLoading(true);
-    // Invalida cache per questo ticker e refetcha con nuova banda
-    setForecastData(p => { const n = {...p}; delete n[selected.ticker]; return n; });
-    fetch(`${API_BASE}/api/forecast?symbol=${encodeURIComponent(selected.ticker)}&price=${selected.currentPrice}&band=${band/100}`)
+    fetch(`${API_BASE}/api/forecast?symbol=${encodeURIComponent(t)}&price=${p}&band=${band/100}`)
       .then(r => r.json())
-      .then(d => { if (!d.error) setForecastData(p => ({ ...p, [selected.ticker]: d })); setLoading(false); })
+      .then(d => {
+        if (!d.error) setForecastData(prev => ({ ...prev, [t]: d }));
+        setLoading(false);
+      })
       .catch(() => setLoading(false));
-  }, [band]);
+  }, [band, selected?.ticker]);
 
   // Portfolio forecast aggregato
   const portfolioForecast = useMemo(() => {
