@@ -297,7 +297,7 @@ function HistoricalAnalysis({ d, ticker, band, setBand, macroCtx }) {
           const isPos = o.pct >= 0;
           const barW  = maxAbs > 0 ? Math.abs(o.pct) / maxAbs * 45 : 0;
           return (
-            <div key={i} style={{ display: "grid", gridTemplateColumns: "60px 1fr 56px", gap: 8, alignItems: "center" }}>
+            <div key={i} style={{ display: "grid", gridTemplateColumns: "70px 64px 1fr 64px 52px", gap: 8, alignItems: "center", padding: "3px 0", borderBottom: "1px solid #F8FAFF" }}>
               <span style={{ fontSize: 9, color: "#8A9AB0", textAlign: "right" }}>{o.date}</span>
               <div style={{ position: "relative", height: 14, background: "#F8FAFF", borderRadius: 2 }}>
                 <div style={{
