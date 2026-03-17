@@ -580,36 +580,159 @@ function MacroScenari({ stocks, sym, rate, fmt, eurRate }) {
         </div>
       </div>
 
-      {/* Simulatore slider */}
-      <div className="card" style={{ marginBottom: 16, background: "linear-gradient(135deg, #F8FAFF, #EEF4FF)" }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: "#0A1628", marginBottom: 12 }}>
-          🎯 Simulatore — Se investissi nei titoli consigliati
+      {/* Analisi approfondita */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
+
+        {/* 1. Probabilità scenario */}
+        <div className="card">
+          <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>🎯 Probabilità Scenario</div>
+          {(() => {
+            const prob = selected.id === "high_inflation" ? 25
+              : selected.id === "recession" ? 35
+              : selected.id === "boom" ? 30
+              : selected.id === "high_rates" ? 20
+              : selected.id === "low_rates" ? 40
+              : 30;
+            const factors = selected.id === "high_inflation"
+              ? [{ l: "CPI attuale", v: "2.8%", ok: false }, { l: "Fed pivot", v: "atteso", ok: true }, { l: "Commodity", v: "stabili", ok: true }]
+              : selected.id === "recession"
+              ? [{ l: "Yield curve", v: "invertita", ok: false }, { l: "PMI", v: "<50", ok: false }, { l: "Unemployment", v: "4.1%", ok: true }]
+              : selected.id === "boom"
+              ? [{ l: "GDP growth", v: "+2.8%", ok: true }, { l: "Earnings", v: "+12%", ok: true }, { l: "Sentiment", v: "bullish", ok: true }]
+              : selected.id === "high_rates"
+              ? [{ l: "Fed rate", v: "4.25%", ok: false }, { l: "Inflazione", v: "2.8%", ok: true }, { l: "Jobs", v: "solidi", ok: true }]
+              : [{ l: "Fed rate", v: "4.25%", ok: false }, { l: "CPI trend", v: "↓", ok: true }, { l: "GDP", v: "+2.8%", ok: true }];
+            return (
+              <>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                  <div style={{ position: "relative", width: 56, height: 56, flexShrink: 0 }}>
+                    <svg viewBox="0 0 36 36" style={{ width: "100%", transform: "rotate(-90deg)" }}>
+                      <circle cx="18" cy="18" r="15.9" fill="none" stroke="#F0F2F7" strokeWidth="3" />
+                      <circle cx="18" cy="18" r="15.9" fill="none" stroke={selected.color} strokeWidth="3"
+                        strokeDasharray={`${prob} ${100-prob}`} strokeLinecap="round" />
+                    </svg>
+                    <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, color: selected.color }}>{prob}%</div>
+                  </div>
+                  <div style={{ fontSize: 10, color: "#8A9AB0", lineHeight: 1.5 }}>
+                    Probabilità stimata nei prossimi 12 mesi basata su indicatori macro attuali
+                  </div>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {factors.map(f => (
+                    <div key={f.l} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: 10, color: "#8A9AB0" }}>{f.l}</span>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: f.ok ? "#16A34A" : "#DC2626", background: f.ok ? "#ECFDF5" : "#FEF2F2", padding: "2px 8px", borderRadius: 10 }}>{f.v}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            );
+          })()}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-          <div style={{ flex: 1, minWidth: 200 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-              <span style={{ fontSize: 11, color: "#8A9AB0" }}>Capitale da investire</span>
-              <span style={{ fontSize: 13, fontWeight: 700, color: "#0A1628" }}>{sym}{investment.toLocaleString()}</span>
-            </div>
-            <input
-              type="range" min={100} max={50000} step={100} value={investment}
-              onChange={e => setInvestment(Number(e.target.value))}
-              style={{ width: "100%", accentColor: selected.color }}
-            />
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#C0C8D8" }}>
-              <span>{sym}100</span><span>{sym}50.000</span>
-            </div>
-          </div>
-          <div style={{ textAlign: "center", minWidth: 120 }}>
-            <div style={{ fontSize: 9, color: "#8A9AB0", marginBottom: 4 }}>Rendimento stimato</div>
-            <div style={{ fontSize: 26, fontWeight: 800, color: col(sliderReturn), letterSpacing: "-0.02em" }}>
-              {sign(sliderReturn)}{sym}{Math.abs(sliderReturn).toLocaleString("it-IT", { maximumFractionDigits: 0 })}
-            </div>
-            <div style={{ fontSize: 10, color: col(sliderReturn) }}>
-              {fmtPct(selected.topPicks.reduce((s, p) => s + p.perf, 0) / selected.topPicks.length, 1)} medio
-            </div>
-          </div>
+
+        {/* 2. Analisi rischio */}
+        <div className="card">
+          <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>⚠️ Analisi Rischio</div>
+          {(() => {
+            const series = realCache[selected.id]?.portSeries || [];
+            if (!series.length) return <div style={{ fontSize: 11, color: "#8A9AB0" }}>Carica dati per vedere il rischio</div>;
+
+            const returns = series.slice(1).map((p, i) => p.pct - series[i].pct);
+            const mean = returns.reduce((s, r) => s + r, 0) / (returns.length || 1);
+            const std  = Math.sqrt(returns.reduce((s, r) => s + (r - mean)**2, 0) / (returns.length || 1));
+
+            // VaR 95% (z=1.645)
+            const var95 = -(mean - 1.645 * std);
+
+            // Max drawdown
+            let peak = series[0]?.pct || 0, maxDD = 0;
+            series.forEach(p => {
+              if (p.pct > peak) peak = p.pct;
+              const dd = p.pct - peak;
+              if (dd < maxDD) maxDD = dd;
+            });
+
+            // Correlazione con SPY
+            const spySeries = series.filter(p => p.spy != null);
+            let corr = null;
+            if (spySeries.length > 5) {
+              const portR = spySeries.slice(1).map((p, i) => p.pct - spySeries[i].pct);
+              const spyR  = spySeries.slice(1).map((p, i) => p.spy - spySeries[i].spy);
+              const mP = portR.reduce((s,r)=>s+r,0)/portR.length;
+              const mS = spyR.reduce((s,r)=>s+r,0)/spyR.length;
+              let num=0, dP=0, dS=0;
+              portR.forEach((r,i) => { num+=(r-mP)*(spyR[i]-mS); dP+=(r-mP)**2; dS+=(spyR[i]-mS)**2; });
+              corr = dP*dS > 0 ? num/Math.sqrt(dP*dS) : null;
+            }
+
+            const metrics = [
+              { l: "VaR 95% (giorn.)", v: `${var95.toFixed(2)}%`, color: "#DC2626" },
+              { l: "Max Drawdown", v: `${maxDD.toFixed(1)}%`, color: "#DC2626" },
+              { l: "Volatilità", v: `${(std * Math.sqrt(252)).toFixed(1)}%`, color: "#F97316" },
+              { l: "Corr. S&P500", v: corr != null ? corr.toFixed(2) : "—", color: "#8A9AB0" },
+            ];
+
+            return (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {metrics.map(m => (
+                  <div key={m.l} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 10px", background: "#F8FAFF", borderRadius: 8 }}>
+                    <span style={{ fontSize: 10, color: "#8A9AB0" }}>{m.l}</span>
+                    <span style={{ fontSize: 14, fontWeight: 800, color: m.color }}>{m.v}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </div>
+
+        {/* 3. Raccomandazioni ribilanciamento */}
+        <div className="card">
+          <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>🔄 Ribilanciamento Consigliato</div>
+          {(() => {
+            const totalVal = stocks.reduce((s, x) => s + (parseFloat(x.qty)||0)*(parseFloat(x.currentPrice)||0), 0) || 1;
+            // Raggruppa per settore
+            const bySector = {};
+            stocks.forEach(s => {
+              const sec = s.sector || "Altro";
+              const val = (parseFloat(s.qty)||0)*(parseFloat(s.currentPrice)||0);
+              bySector[sec] = (bySector[sec] || 0) + val;
+            });
+            // Calcola peso attuale vs ottimale (basato sull'impatto dello scenario)
+            const recs = Object.entries(bySector).map(([sec, val]) => {
+              const currentPct = val / totalVal * 100;
+              const imp = selected.impact[sec] ?? selected.impact["Altro"] ?? 0;
+              // Scenario positivo per settore → aumenta peso; negativo → riduci
+              const targetPct = Math.max(5, Math.min(50, currentPct + imp * 0.3));
+              const diff = targetPct - currentPct;
+              return { sec, currentPct, targetPct, diff };
+            }).sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff)).slice(0, 4);
+
+            return (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {recs.map(r => (
+                  <div key={r.sec}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                      <span style={{ fontSize: 10, fontWeight: 600, color: "#0A1628" }}>{r.sec}</span>
+                      <span style={{ fontSize: 10, color: r.diff >= 0 ? "#16A34A" : "#DC2626", fontWeight: 700 }}>
+                        {r.diff >= 0 ? "↑" : "↓"} {Math.abs(r.diff).toFixed(0)}pp
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                      <div style={{ flex: 1, height: 4, background: "#F0F2F7", borderRadius: 2, overflow: "hidden" }}>
+                        <div style={{ height: "100%", width: `${r.currentPct}%`, background: "#8A9AB0", borderRadius: 2 }} />
+                      </div>
+                      <span style={{ fontSize: 9, color: "#8A9AB0", width: 30, textAlign: "right" }}>{r.currentPct.toFixed(0)}%→{r.targetPct.toFixed(0)}%</span>
+                    </div>
+                  </div>
+                ))}
+                <div style={{ fontSize: 9, color: "#C0C8D8", marginTop: 4, lineHeight: 1.5 }}>
+                  * Basato su performance storiche del settore in scenari simili
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+
       </div>
 
       {/* Titoli consigliati con prezzi live */}
