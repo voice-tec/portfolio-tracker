@@ -429,7 +429,16 @@ function MacroScenari({ stocks, sym, rate, fmt, eurRate }) {
     let totalImp = 0, totalW = 0;
     stocks.forEach(s => {
       const val = (parseFloat(s.qty)||0) * (parseFloat(s.currentPrice)||0);
-      const imp = selected.impact[s.sector || "Altro"] ?? 0;
+      // Normalizza settore: "Tecnologia" → "Tech", ecc.
+      const normSector = (s.sector||"Altro")
+        .replace("Tecnologia","Tech").replace("Technology","Tech")
+        .replace("Financial","Finanza").replace("Finance","Finanza")
+        .replace("Energy","Energia").replace("Healthcare","Salute")
+        .replace("Health","Salute").replace("Materials","Materiali")
+        .replace("Industrial","Industriali").replace("Utilities","Utility")
+        .replace("Telecom","Telecom").replace("Consumer Disc","Consumer")
+        .replace("Consumer Staples","Consumer");
+      const imp = selected.impact[normSector] ?? selected.impact["Altro"] ?? 0;
       totalImp += imp * val;
       totalW   += val;
     });
@@ -662,7 +671,16 @@ function MacroScenari({ stocks, sym, rate, fmt, eurRate }) {
             <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #F0F2F7" }}>
               <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>Il tuo portafoglio</div>
               {stocks.map(s => {
-                const imp = selected.impact[s.sector || "Altro"] ?? 0;
+                // Normalizza settore: "Tecnologia" → "Tech", ecc.
+      const normSector = (s.sector||"Altro")
+        .replace("Tecnologia","Tech").replace("Technology","Tech")
+        .replace("Financial","Finanza").replace("Finance","Finanza")
+        .replace("Energy","Energia").replace("Healthcare","Salute")
+        .replace("Health","Salute").replace("Materials","Materiali")
+        .replace("Industrial","Industriali").replace("Utilities","Utility")
+        .replace("Telecom","Telecom").replace("Consumer Disc","Consumer")
+        .replace("Consumer Staples","Consumer");
+      const imp = selected.impact[normSector] ?? selected.impact["Altro"] ?? 0;
                 return (
                   <div key={s.ticker} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                     <span style={{ fontSize: 10, fontWeight: 700, color: "#0A1628", width: 44, flexShrink: 0 }}>{s.ticker}</span>
