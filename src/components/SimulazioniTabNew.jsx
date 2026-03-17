@@ -353,6 +353,11 @@ function MacroScenari({ stocks, sym, rate, fmt, eurRate }) {
   const [liveData, setLiveData]     = useState({});
   const [liveLoading, setLiveLoading] = useState(false);
   const [realCache, setRealCache]   = useState({});
+  const [macroData, setMacroData]   = useState(null);
+
+  useEffect(() => {
+    fetch("/api/macro").then(r => r.json()).then(setMacroData).catch(() => {});
+  }, []);
   const [realLoading, setRealLoading] = useState(false);
 
   const totalValue = stocks.reduce((s, x) => s + (parseFloat(x.qty)||0) * toUSD(parseFloat(x.currentPrice)||0, x.currency, eurRate), 0);
@@ -587,21 +592,60 @@ function MacroScenari({ stocks, sym, rate, fmt, eurRate }) {
         <div className="card">
           <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>🎯 Probabilità Scenario</div>
           {(() => {
-            const prob = selected.id === "high_inflation" ? 25
-              : selected.id === "recession" ? 35
-              : selected.id === "boom" ? 30
-              : selected.id === "high_rates" ? 20
-              : selected.id === "low_rates" ? 40
-              : 30;
-            const factors = selected.id === "high_inflation"
-              ? [{ l: "CPI attuale", v: "2.8%", ok: false }, { l: "Fed pivot", v: "atteso", ok: true }, { l: "Commodity", v: "stabili", ok: true }]
-              : selected.id === "recession"
-              ? [{ l: "Yield curve", v: "invertita", ok: false }, { l: "PMI", v: "<50", ok: false }, { l: "Unemployment", v: "4.1%", ok: true }]
-              : selected.id === "boom"
-              ? [{ l: "GDP growth", v: "+2.8%", ok: true }, { l: "Earnings", v: "+12%", ok: true }, { l: "Sentiment", v: "bullish", ok: true }]
-              : selected.id === "high_rates"
-              ? [{ l: "Fed rate", v: "4.25%", ok: false }, { l: "Inflazione", v: "2.8%", ok: true }, { l: "Jobs", v: "solidi", ok: true }]
-              : [{ l: "Fed rate", v: "4.25%", ok: false }, { l: "CPI trend", v: "↓", ok: true }, { l: "GDP", v: "+2.8%", ok: true }];
+            // Calcola probabilità da dati macro live
+            const m = macroData;
+            const fedRate = m?.fedRate ?? 3.75;
+            const t10y    = m?.treasury10y ?? 4.3;
+            const vix     = m?.vix ?? 18;
+            const spread  = m?.yieldSpread ?? 0.5;
+            const inflation = m?.impliedInflation ?? 2.5;
+
+            let prob = 25;
+            let factors = [];
+
+            if (selected.id === "high_inflation") {
+              prob = inflation > 3.5 ? 60 : inflation > 2.5 ? 35 : 20;
+              factors = [
+                { l: "Inflazione implicita", v: `${inflation.toFixed(1)}%`, ok: inflation > 2.5 },
+                { l: "Treasury 10Y", v: `${t10y.toFixed(2)}%`, ok: t10y > 4 },
+                { l: "Oro", v: m?.gold ? `$${m.gold}` : "—", ok: (m?.goldChange ?? 0) > 0 },
+              ];
+            } else if (selected.id === "recession") {
+              prob = spread < 0 ? 55 : vix > 25 ? 45 : 25;
+              factors = [
+                { l: "Yield spread", v: `${spread.toFixed(2)}%`, ok: spread > 0 },
+                { l: "VIX", v: vix.toFixed(1), ok: vix < 20 },
+                { l: "Fed Rate", v: `${fedRate.toFixed(2)}%`, ok: fedRate < 4 },
+              ];
+            } else if (selected.id === "boom") {
+              prob = vix < 15 && t10y < 5 ? 50 : vix < 20 ? 35 : 20;
+              factors = [
+                { l: "VIX (bassa paura)", v: vix.toFixed(1), ok: vix < 20 },
+                { l: "S&P500 trend", v: m?.sp500Change ? `${m.sp500Change > 0 ? "+" : ""}${m.sp500Change}%` : "—", ok: (m?.sp500Change ?? 0) > 0 },
+                { l: "Treasury 10Y", v: `${t10y.toFixed(2)}%`, ok: t10y < 5 },
+              ];
+            } else if (selected.id === "high_rates") {
+              prob = fedRate > 4 ? 45 : fedRate > 3 ? 30 : 15;
+              factors = [
+                { l: "Fed Rate", v: `${fedRate.toFixed(2)}%`, ok: fedRate > 3.5 },
+                { l: "Inflazione", v: `${inflation.toFixed(1)}%`, ok: inflation < 3 },
+                { l: "Spread curva", v: `${spread.toFixed(2)}%`, ok: spread > 0 },
+              ];
+            } else if (selected.id === "low_rates") {
+              prob = fedRate < 2 ? 55 : fedRate < 3.5 ? 30 : 15;
+              factors = [
+                { l: "Fed Rate", v: `${fedRate.toFixed(2)}%`, ok: fedRate < 3 },
+                { l: "Inflazione", v: `${inflation.toFixed(1)}%`, ok: inflation < 2.5 },
+                { l: "VIX", v: vix.toFixed(1), ok: vix < 20 },
+              ];
+            } else {
+              prob = inflation < 2.5 && vix < 20 ? 45 : 30;
+              factors = [
+                { l: "Inflazione", v: `${inflation.toFixed(1)}%`, ok: inflation < 2.5 },
+                { l: "Fed Rate", v: `${fedRate.toFixed(2)}%`, ok: fedRate < 4 },
+                { l: "Treasury 10Y", v: `${t10y.toFixed(2)}%`, ok: t10y < 4.5 },
+              ];
+            }
             return (
               <>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
