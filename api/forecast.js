@@ -17,7 +17,7 @@ export default async function handler(req, res) {
     const s = symbol.toUpperCase();
     const currentPrice = parseFloat(price);
     const now = Math.floor(Date.now() / 1000);
-    const from5y = now - 5 * 365 * 86400;
+    const from5y = now - 10 * 365 * 86400;
     const from3y = now - 3 * 365 * 86400;
 
     // Fetch 5 anni dati settimanali da Yahoo Finance
@@ -37,7 +37,7 @@ export default async function handler(req, res) {
       .map((ts, i) => ({ ts, price: closes[i] }))
       .filter(p => p.price != null && p.price > 0);
 
-    if (prices.length < 52) return res.status(400).json({ error: "Not enough historical data" });
+    if (prices.length < 104) return res.status(400).json({ error: "Not enough historical data" });
 
     // ── 1. ANALISI STORICA A QUESTO PREZZO ──────────────────────────────────
     const band = 0.07; // ±7% del prezzo attuale
