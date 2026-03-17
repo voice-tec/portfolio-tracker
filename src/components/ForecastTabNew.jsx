@@ -535,16 +535,6 @@ export function ForecastTabNew({ stocks, fmt, sym, rate, eurRate }) {
               </AreaChart>
             </ResponsiveContainer>
 
-            {/* Nota metodologia */}
-            {d.methodology && (
-              <div style={{ marginTop: 12, padding: "8px 12px", background: "#F8FAFF", borderRadius: 8, fontSize: 9, color: "#8A9AB0", lineHeight: 1.6 }}>
-                📊 <strong style={{ color: "#0A1628" }}>Metodologia:</strong> {d.methodology.note}
-                {d.methodology.analystWeight > 0 && (
-                  <span style={{ marginLeft: 6, color: "#4361ee" }}>· Target analisti: ${d.methodology.analystTarget?.toFixed(2)}</span>
-                )}
-              </div>
-            )}
-
             {/* Legenda + scenari */}
             <div style={{ display: "flex", gap: 12, marginTop: 12, flexWrap: "wrap", alignItems: "center" }}>
               {[
