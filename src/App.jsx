@@ -2243,21 +2243,23 @@ function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, tota
   return (
     <div className="fade-up">
 
-      {/* ── HEADER KPI ── */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
-        <div>
-          <div style={{ fontSize: 34, fontWeight: 800, lineHeight: 1, letterSpacing: "-0.02em", color: "#0A1628" }}>
-            ${fmt(totalValue)}
-          </div>
-          <div style={{ display: "flex", gap: 16, marginTop: 8, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 12, color: col(totalPnL) }}>{sign(totalPnL)}${fmt(Math.abs(totalPnL))} totale</span>
-            <span style={{ fontSize: 12, color: col(totalPct), fontWeight: 500 }}>{sign(totalPct)}{totalPct.toFixed(2)}%</span>
-          </div>
+      {/* ── HEADER ── */}
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 32, fontWeight: 800, lineHeight: 1, letterSpacing: "-0.02em", color: "#0A1628" }}>
+          {sym}{fmt(totalValue)}
         </div>
-
       </div>
 
-      <PortfolioMetrics stocks={stocks} eurRate={eurRate} totalValue={totalValue} totalPnL={totalPnL} totalPct={totalPct} fmt={fmt} sym={sym} />
+      <OverviewWidgets
+        stocks={stocks}
+        eurRate={eurRate}
+        totalValue={totalValue}
+        totalInvested={totalInvested}
+        totalPnL={totalPnL}
+        totalPct={totalPct}
+        fmt={fmt}
+        sym={sym}
+      />
 
       {/* ── ALLOCAZIONE (torta stile GetQuin) ── */}
       <AllocationCard stocks={stocks} eurRate={eurRate} />
