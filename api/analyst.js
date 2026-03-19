@@ -143,26 +143,28 @@ export default async function handler(req, res) {
         return null;
       };
 
+      // Finnhub formato: { period, actual, estimate, surprise, surprisePercent }
       const earnings = earningsHistory
-        .filter(e => e.quarter?.raw)
+        .filter(e => e.actual != null && e.period)
         .map(e => {
-          const dateStr   = e.quarter?.fmt || new Date(e.quarter.raw * 1000).toISOString().slice(0, 10);
-          const epsActual = e.epsActual?.raw  ?? null;
-          const epsEst    = e.epsEstimate?.raw ?? null;
-          const surprise  = e.surprisePercent?.raw ?? null;
+          const dateStr = e.period; // già in formato YYYY-MM-DD
+          const surprise = e.actual != null && e.estimate != null
+            ? parseFloat(((e.actual - e.estimate) / Math.abs(e.estimate || 1) * 100).toFixed(2))
+            : null;
           const pb = getNear(dateStr, -1), pd = getNear(dateStr, 0), p2w = getNear(dateStr, 10);
           const moveDay = pb && pd  ? parseFloat(((pd  - pb) / pb * 100).toFixed(2)) : null;
           const move2w  = pb && p2w ? parseFloat(((p2w - pb) / pb * 100).toFixed(2)) : null;
-          const qd = new Date(e.quarter.raw * 1000);
+          const qd = new Date(dateStr);
           return {
             date: dateStr,
             quarter: `Q${Math.floor(qd.getMonth()/3)+1} ${qd.getFullYear()}`,
-            epsActual, epsEstimate: epsEst, surprise,
+            epsActual:   e.actual   ?? null,
+            epsEstimate: e.estimate ?? null,
+            surprise,
             beat: surprise != null ? surprise > 0 : null,
             moveDay, move2w,
           };
         })
-        .filter(e => e.epsActual !== null)
         .sort((a, b) => b.date.localeCompare(a.date))
         .slice(0, 12);
 
@@ -174,7 +176,7 @@ export default async function handler(req, res) {
 
       return res.status(200).json({
         symbol: sym,
-        nextEarnings: nextEarningsRaw ? new Date(nextEarningsRaw * 1000).toISOString().slice(0, 10) : null,
+        nextEarnings,
         earnings,
         stats: {
           totalReported: earnings.length,
