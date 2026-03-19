@@ -5,6 +5,7 @@ import {
 } from "recharts";
 import { toUSD } from "../utils/currency";
 import { API_BASE } from "../utils/api";
+import { EarningsImpact, RiskConcentration } from "./AnalysisWidgets";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const col  = v => v == null ? "#8A9AB0" : v > 0 ? "#16A34A" : v < 0 ? "#DC2626" : "#8A9AB0";
@@ -633,6 +634,9 @@ export function ForecastTabNew({ stocks, fmt, sym, rate, eurRate }) {
               </ResponsiveContainer>
             </div>
           )}
+
+          {/* Earnings Impact */}
+          <EarningsImpact ticker={selected.ticker} />
 
           <div style={{ fontSize: 9, color: "#C0C8D8", textAlign: "center" }}>
             ⚠️ Stime statistiche basate su dati storici. Non costituisce consulenza finanziaria ai sensi MiFID II.
