@@ -24,20 +24,20 @@ export default async function handler(req, res) {
       headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json" }
     });
 
-    if (!response.ok) return res.status(response.status).json({ error: "Yahoo Finance error" });
+    if (!response.ok) return res.status(200).json({ candles: [], spy: [], error: "No data available" });
 
     const data = await response.json();
     const result = data?.chart?.result?.[0];
 
     if (!result || !result.timestamp || result.timestamp.length === 0) {
-      return res.status(404).json({ error: `No data for ${symbol} in this period` });
+      return res.status(200).json({ candles: [], spy: [], error: `No data for ${symbol} in this period` });
     }
 
     const timestamps = result.timestamp;
     const closes = result.indicators?.quote?.[0]?.close;
 
     if (!closes || closes.length === 0) {
-      return res.status(404).json({ error: "No price data available" });
+      return res.status(200).json({ candles: [], spy: [] });
     }
 
     // Build candles, skip null values
@@ -49,7 +49,7 @@ export default async function handler(req, res) {
         price: parseFloat(c.price.toFixed(2)),
       }));
 
-    if (candles.length === 0) return res.status(404).json({ error: "No valid candles" });
+    if (candles.length === 0) return res.status(200).json({ candles: [], spy: [] });
 
     // Normalize to % change from first candle
     const base = candles[0].price;
