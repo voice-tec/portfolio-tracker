@@ -362,10 +362,12 @@ function MacroScenari({ stocks, sym, rate, fmt, eurRate }) {
 
   const totalValue = stocks.reduce((s, x) => s + (parseFloat(x.qty)||0) * toUSD(parseFloat(x.currentPrice)||0, x.currency, eurRate), 0);
 
-  // Fetch dati storici reali per lo scenario selezionato (stesso metodo StressTest)
+  // Fetch dati storici reali — solo se l'utente ha selezionato esplicitamente
+  const [userSelected, setUserSelected] = useState(false);
   useEffect(() => {
     if (!stocks.length || !selected.from) return;
     if (realCache[selected.id]) return;
+    if (!userSelected) return;
     setRealLoading(true);
     Promise.all(
       stocks.map(s =>
@@ -479,7 +481,7 @@ function MacroScenari({ stocks, sym, rate, fmt, eurRate }) {
       {/* Selector */}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 20 }}>
         {MACRO_SCENARI.map(sc => (
-          <button key={sc.id} onClick={() => setSelected(sc)} style={{
+          <button key={sc.id} onClick={() => { setSelected(sc); setUserSelected(true); }} style={{
             padding: "7px 14px", borderRadius: 20, cursor: "pointer",
             fontFamily: "inherit", fontSize: 11, fontWeight: 600,
             border: "none", transition: "all 0.15s",
