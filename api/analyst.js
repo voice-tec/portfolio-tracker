@@ -143,13 +143,13 @@ export default async function handler(req, res) {
         return null;
       };
 
-      // Finnhub formato: { period, actual, estimate, surprise, surprisePercent }
+      // FMP formato: { date, eps, epsEstimated, revenue, revenueEstimated }
       const earnings = earningsHistory
-        .filter(e => e.actual != null && e.period)
+        .filter(e => e.eps != null && e.date)
         .map(e => {
-          const dateStr = e.period; // già in formato YYYY-MM-DD
-          const surprise = e.actual != null && e.estimate != null
-            ? parseFloat(((e.actual - e.estimate) / Math.abs(e.estimate || 1) * 100).toFixed(2))
+          const dateStr = e.date;
+          const surprise = e.eps != null && e.epsEstimated != null
+            ? parseFloat(((e.eps - e.epsEstimated) / Math.abs(e.epsEstimated || 1) * 100).toFixed(2))
             : null;
           const pb = getNear(dateStr, -1), pd = getNear(dateStr, 0), p2w = getNear(dateStr, 10);
           const moveDay = pb && pd  ? parseFloat(((pd  - pb) / pb * 100).toFixed(2)) : null;
@@ -158,8 +158,8 @@ export default async function handler(req, res) {
           return {
             date: dateStr,
             quarter: `Q${Math.floor(qd.getMonth()/3)+1} ${qd.getFullYear()}`,
-            epsActual:   e.actual   ?? null,
-            epsEstimate: e.estimate ?? null,
+            epsActual:   e.eps          ?? null,
+            epsEstimate: e.epsEstimated ?? null,
             surprise,
             beat: surprise != null ? surprise > 0 : null,
             moveDay, move2w,
