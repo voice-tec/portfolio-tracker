@@ -89,20 +89,29 @@ export default async function handler(req, res) {
   const fmpKey     = process.env.FMP_API_KEY;
   const sym        = symbol.toUpperCase();
 
-  // ── ROUTE EARNINGS: ?earnings=true — usa FMP ──────────────────────────────
+  // ── ROUTE EARNINGS: ?earnings=true ──────────────────────────────────────────
   if (req.query.earnings === "true") {
     try {
-      const fmpKey2 = process.env.FMP_API_KEY;
-      if (!fmpKey2) return res.status(200).json({ earnings: [], stats: {}, error: "No FMP key" });
+      // Prova v11 che ha più dati
+      const summaryUrl = `https://query2.finance.yahoo.com/v11/finance/quoteSummary/${encodeURIComponent(sym)}?modules=earningsHistory%2CcalendarEvents%2Cearnings`;
+      const er = await fetch(summaryUrl, { headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36", "Accept": "application/json", "Referer": "https://finance.yahoo.com/" } });
+      if (!er.ok) return res.status(200).json({ earnings: [], stats: {} });
+      const edata = await er.json();
+      const eresult = edata?.quoteSummary?.result?.[0];
+      if (!eresult) return res.status(200).json({ earnings: [], stats: {} });
 
-      const [epsRes, calRes] = await Promise.all([
-        fetch(`https://financialmodelingprep.com/api/v3/historical/earning_calendar/${sym}?limit=12&apikey=${fmpKey2}`),
-        fetch(`https://financialmodelingprep.com/api/v3/earning_calendar?symbol=${sym}&apikey=${fmpKey2}`),
-      ]);
-
-      const epsData = epsRes.ok ? await epsRes.json() : [];
-      const calData = calRes.ok ? await calRes.json() : [];
-      const nextEarnings = Array.isArray(calData) && calData.length ? calData[0]?.date : null;
+      // Prova sia earningsHistory che earnings.earningsChart
+      const earningsHistory = eresult.earningsHistory?.history
+        || eresult.earnings?.earningsChart?.quarterly?.map(q => ({
+            quarter: { raw: new Date(q.date + '-01').getTime()/1000, fmt: q.date },
+            epsActual: { raw: q.actual?.raw },
+            epsEstimate: { raw: q.estimate?.raw },
+            surprisePercent: q.actual?.raw && q.estimate?.raw
+              ? { raw: ((q.actual.raw - q.estimate.raw) / Math.abs(q.estimate.raw)) * 100 }
+              : null,
+          }))
+        || [];
+      const nextEarningsRaw = eresult.calendarEvents?.earnings?.earningsDate?.[0]?.raw;
 
       const nowTs = Math.floor(Date.now() / 1000);
       const from3y = nowTs - 3 * 365 * 86400;
@@ -118,7 +127,7 @@ export default async function handler(req, res) {
           if (pres) {
             const ts = pres.timestamp || [];
             const cl = pres.indicators?.quote?.[0]?.close || [];
-            ts.forEach((t, i) => { if (cl[i] != null) priceMap[new Date(t*1000).toISOString().slice(0,10)] = cl[i]; });
+            ts.forEach((t, i) => { if (cl[i] != null) priceMap[new Date(t * 1000).toISOString().slice(0, 10)] = cl[i]; });
           }
         }
       } catch {}
@@ -134,8 +143,8 @@ export default async function handler(req, res) {
         return null;
       };
 
-      const rawList = Array.isArray(epsData) ? epsData : (epsData?.historical || []);
-      const earnings = rawList
+      // FMP formato: { date, eps, epsEstimated, revenue, revenueEstimated }
+      const earnings = earningsHistory
         .filter(e => e.eps != null && e.date)
         .map(e => {
           const dateStr = e.date;
@@ -149,28 +158,32 @@ export default async function handler(req, res) {
           return {
             date: dateStr,
             quarter: `Q${Math.floor(qd.getMonth()/3)+1} ${qd.getFullYear()}`,
-            epsActual: e.eps ?? null, epsEstimate: e.epsEstimated ?? null,
-            surprise, beat: surprise != null ? surprise > 0 : null,
+            epsActual:   e.eps          ?? null,
+            epsEstimate: e.epsEstimated ?? null,
+            surprise,
+            beat: surprise != null ? surprise > 0 : null,
             moveDay, move2w,
           };
         })
         .sort((a, b) => b.date.localeCompare(a.date))
         .slice(0, 12);
 
-      const beats = earnings.filter(e => e.beat === true);
+      const beats  = earnings.filter(e => e.beat === true);
       const misses = earnings.filter(e => e.beat === false);
       const avg = (arr, key) => arr.filter(e => e[key] != null).length
         ? parseFloat((arr.filter(e => e[key] != null).reduce((s, e) => s + e[key], 0) / arr.filter(e => e[key] != null).length).toFixed(2))
         : null;
 
       return res.status(200).json({
-        symbol: sym, nextEarnings, earnings,
+        symbol: sym,
+        nextEarnings,
+        earnings,
         stats: {
           totalReported: earnings.length,
           beatRate: earnings.length ? Math.round(beats.length / earnings.length * 100) : null,
           avgMoveOnBeat: avg(beats, "moveDay"),
           avgMoveOnMiss: avg(misses, "moveDay"),
-          avgMove2w: avg(earnings, "move2w"),
+          avgMove2w:     avg(earnings, "move2w"),
         },
       });
     } catch (err) {
@@ -179,3 +192,44 @@ export default async function handler(req, res) {
   }
 
 
+  // ETF sectors: cerca ticker esatto poi senza suffisso borsa (.MI .DE .AS ecc.)
+  const baseSym = sym.replace(/\.(MI|DE|AS|PA|SW|L|BR|MA)$/i, "");
+  const sectorWeights = ETF_SECTORS[sym] || ETF_SECTORS[baseSym] || [];
+
+  try {
+    const [recRes, fmpTargetRes] = await Promise.all([
+      fetch(`https://finnhub.io/api/v1/stock/recommendation?symbol=${sym}&token=${finnhubKey}`),
+      fetch(`https://financialmodelingprep.com/stable/price-target-consensus?symbol=${sym}&apikey=${fmpKey}`),
+    ]);
+
+    const recData   = await recRes.json();
+    const fmpTarget = await fmpTargetRes.json();
+    const rec0      = recData?.[0] || {};
+    const tgt       = Array.isArray(fmpTarget) ? fmpTarget[0] : fmpTarget;
+
+    console.log(`[analyst] ${sym} target:${tgt?.targetConsensus} rec:${rec0.buy}/${rec0.hold}/${rec0.sell} etfSectors:${sectorWeights.length}`);
+
+    const analyst = {
+      targetMean:       tgt?.targetConsensus || tgt?.priceTarget || null,
+      targetHigh:       tgt?.targetHigh      || null,
+      targetLow:        tgt?.targetLow       || null,
+      currentPrice:     tgt?.lastPrice       || null,
+      recommendation:   getConsensus(rec0),
+      numberOfAnalysts: (rec0.buy||0)+(rec0.hold||0)+(rec0.sell||0)+(rec0.strongBuy||0)+(rec0.strongSell||0) || null,
+      strongBuy:  rec0.strongBuy  || 0,
+      buy:        rec0.buy        || 0,
+      hold:       rec0.hold       || 0,
+      sell:       rec0.sell       || 0,
+      strongSell: rec0.strongSell || 0,
+      forwardPE:  null,
+      beta:       null,
+    };
+
+    return res.status(200).json({ analyst, sectorWeights, topHoldings: [] });
+
+  } catch (err) {
+    console.error(`[analyst] ${sym} error:`, err.message);
+    // Anche in caso di errore API, ritorna i sector weights hardcoded
+    return res.status(200).json({ analyst: { targetMean:null, recommendation:null, strongBuy:0, buy:0, hold:0, sell:0, strongSell:0 }, sectorWeights, topHoldings: [] });
+  }
+}
