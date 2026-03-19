@@ -92,26 +92,17 @@ export default async function handler(req, res) {
   // ── ROUTE EARNINGS: ?earnings=true ──────────────────────────────────────────
   if (req.query.earnings === "true") {
     try {
-      // Prova v11 che ha più dati
-      const summaryUrl = `https://query2.finance.yahoo.com/v11/finance/quoteSummary/${encodeURIComponent(sym)}?modules=earningsHistory%2CcalendarEvents%2Cearnings`;
-      const er = await fetch(summaryUrl, { headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36", "Accept": "application/json", "Referer": "https://finance.yahoo.com/" } });
-      if (!er.ok) return res.status(200).json({ earnings: [], stats: {} });
-      const edata = await er.json();
-      const eresult = edata?.quoteSummary?.result?.[0];
-      if (!eresult) return res.status(200).json({ earnings: [], stats: {} });
+      const fmpKey2 = process.env.FMP_API_KEY;
+      if (!fmpKey2) return res.status(200).json({ earnings: [], stats: {}, error: "No FMP key" });
 
-      // Prova sia earningsHistory che earnings.earningsChart
-      const earningsHistory = eresult.earningsHistory?.history
-        || eresult.earnings?.earningsChart?.quarterly?.map(q => ({
-            quarter: { raw: new Date(q.date + '-01').getTime()/1000, fmt: q.date },
-            epsActual: { raw: q.actual?.raw },
-            epsEstimate: { raw: q.estimate?.raw },
-            surprisePercent: q.actual?.raw && q.estimate?.raw
-              ? { raw: ((q.actual.raw - q.estimate.raw) / Math.abs(q.estimate.raw)) * 100 }
-              : null,
-          }))
-        || [];
-      const nextEarningsRaw = eresult.calendarEvents?.earnings?.earningsDate?.[0]?.raw;
+      const [epsRes, calRes] = await Promise.all([
+        fetch(`https://financialmodelingprep.com/api/v3/historical/earning_calendar/${sym}?limit=12&apikey=${fmpKey2}`),
+        fetch(`https://financialmodelingprep.com/api/v3/earning_calendar?symbol=${sym}&apikey=${fmpKey2}`),
+      ]);
+      const epsData = epsRes.ok ? await epsRes.json() : [];
+      const calData = calRes.ok ? await calRes.json() : [];
+      const nextEarnings = Array.isArray(calData) && calData.length ? calData[0]?.date : null;
+      const earningsHistory = Array.isArray(epsData) ? epsData : (epsData?.historical || []);
 
       const nowTs = Math.floor(Date.now() / 1000);
       const from3y = nowTs - 3 * 365 * 86400;
