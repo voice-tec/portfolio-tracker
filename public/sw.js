@@ -30,8 +30,9 @@ self.addEventListener("activate", event => {
 self.addEventListener("fetch", event => {
   const url = new URL(event.request.url);
 
-  // Non cachare API calls
+  // Non cachare API calls né Supabase
   if (url.pathname.startsWith("/api/")) return;
+  if (url.hostname.includes("supabase.co")) return;
 
   // Network first per tutto il resto
   event.respondWith(
