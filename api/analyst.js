@@ -92,17 +92,23 @@ export default async function handler(req, res) {
   // ── ROUTE EARNINGS: ?earnings=true ──────────────────────────────────────────
   if (req.query.earnings === "true") {
     try {
-      const fmpKey2 = process.env.FMP_API_KEY;
-      if (!fmpKey2) return res.status(200).json({ earnings: [], stats: {}, error: "No FMP key" });
+      // Usa Yahoo Finance quoteSummary con modulo earningsTrend
+      const yhUrl = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(sym)}?modules=earningsTrend%2CearningsHistory%2CcalendarEvents`;
+      const er = await fetch(yhUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Accept": "application/json",
+          "Accept-Language": "en-US,en;q=0.9",
+          "Referer": "https://finance.yahoo.com/quote/" + sym,
+        }
+      });
+      if (!er.ok) return res.status(200).json({ earnings: [], stats: {}, error: `Yahoo HTTP ${er.status}` });
+      const edata = await er.json();
+      const eresult = edata?.quoteSummary?.result?.[0];
+      if (!eresult) return res.status(200).json({ earnings: [], stats: {}, error: "no result" });
 
-      const [epsRes, calRes] = await Promise.all([
-        fetch(`https://financialmodelingprep.com/api/v3/historical/earning_calendar/${sym}?limit=12&apikey=${fmpKey2}`),
-        fetch(`https://financialmodelingprep.com/api/v3/earning_calendar?symbol=${sym}&apikey=${fmpKey2}`),
-      ]);
-      const epsData = epsRes.ok ? await epsRes.json() : [];
-      const calData = calRes.ok ? await calRes.json() : [];
-      const nextEarnings = Array.isArray(calData) && calData.length ? calData[0]?.date : null;
-      const earningsHistory = Array.isArray(epsData) ? epsData : (epsData?.historical || []);
+      const nextEarnings = eresult.calendarEvents?.earnings?.earningsDate?.[0]?.fmt || null;
+      const earningsHistory = eresult.earningsHistory?.history || [];
 
       const nowTs = Math.floor(Date.now() / 1000);
       const from3y = nowTs - 3 * 365 * 86400;
@@ -149,8 +155,8 @@ export default async function handler(req, res) {
           return {
             date: dateStr,
             quarter: `Q${Math.floor(qd.getMonth()/3)+1} ${qd.getFullYear()}`,
-            epsActual:   e.eps          ?? null,
-            epsEstimate: e.epsEstimated ?? null,
+            epsActual:   actual,
+            epsEstimate: estimate,
             surprise,
             beat: surprise != null ? surprise > 0 : null,
             moveDay, move2w,
