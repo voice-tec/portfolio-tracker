@@ -3683,10 +3683,28 @@ export default function App() {
         buyDate: r.buyDate || new Date().toLocaleDateString("it-IT", { day:"2-digit", month:"2-digit", year:"2-digit" }),
       };
     }));
-    setStocks(prev => [...prev, ...imported]);
+    // Salva su Supabase
+    const saved = await Promise.all(imported.map(async stock => {
+      try {
+        const dbRow = await saveStock(user.id, {
+          ticker:       stock.ticker,
+          qty:          stock.qty,
+          buyPrice:     stock.buyPrice,
+          currentPrice: stock.currentPrice,
+          sector:       stock.sector,
+          buyDate:      stock.buyDate,
+          priceReal:    stock.priceReal,
+        });
+        return { ...stock, dbId: dbRow.id, id: dbRow.id };
+      } catch (e) {
+        console.error('saveStock error:', e);
+        return stock;
+      }
+    }));
+    setStocks(prev => [...prev, ...saved]);
     setImportPreview([]);
     setShowImport(false);
-    setSelectedId(imported[0]?.id);
+    setSelectedId(saved[0]?.id);
   }
 
   // PDF Report
