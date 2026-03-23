@@ -17,6 +17,7 @@ import { OverviewWidgets } from "./components/OverviewWidgets";
 import { OverviewDashboard } from "./components/OverviewDashboard";
 import { SimulazioniTabNew } from "./components/SimulazioniTabNew";
 import { ForecastTabNew } from "./components/ForecastTabNew";
+import { ScreenerTabNew } from "./components/ScreenerTabNew";
 import { MarketBadge } from "./components/MarketBadge";
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
@@ -4238,11 +4239,15 @@ export default function App() {
 
               {/* ALERT */}
               {activeTab === "screener" && (
-                <ScreenerTab fmt={fmt} onAddTicker={ticker => {
-                  setForm(f => ({ ...f, ticker }));
-                  setShowWizard(true);
-                  window.scrollTo({ top: 0, behavior: "smooth" });
-                }} />
+                <ScreenerTabNew
+                  fmt={fmt}
+                  onAddTicker={ticker => {
+                    setShowWizard(false);
+                    setForm(prev => ({ ...prev, ticker }));
+                    setShowForm(true);
+                  }}
+                  portfolioTickers={stocks.map(s => s.ticker)}
+                />
               )}
               {activeTab === "alert" && (
                 <div className="fade-up">
