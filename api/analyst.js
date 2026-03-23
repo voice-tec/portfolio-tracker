@@ -92,23 +92,19 @@ export default async function handler(req, res) {
   // ── ROUTE EARNINGS: ?earnings=true ──────────────────────────────────────────
   if (req.query.earnings === "true") {
     try {
-      // Usa Yahoo Finance quoteSummary con modulo earningsTrend
-      const yhUrl = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(sym)}?modules=earningsTrend%2CearningsHistory%2CcalendarEvents`;
-      const er = await fetch(yhUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "Accept": "application/json",
-          "Accept-Language": "en-US,en;q=0.9",
-          "Referer": "https://finance.yahoo.com/quote/" + sym,
-        }
-      });
-      if (!er.ok) return res.status(200).json({ earnings: [], stats: {}, error: `Yahoo HTTP ${er.status}` });
-      const edata = await er.json();
-      const eresult = edata?.quoteSummary?.result?.[0];
-      if (!eresult) return res.status(200).json({ earnings: [], stats: {}, error: "no result" });
+      const avKey = process.env.ALPHA_VANTAGE_KEY;
+      if (!avKey) return res.status(200).json({ earnings: [], stats: {}, error: "No Alpha Vantage key" });
 
-      const nextEarnings = eresult.calendarEvents?.earnings?.earningsDate?.[0]?.fmt || null;
-      const earningsHistory = eresult.earningsHistory?.history || [];
+      const avUrl = `https://www.alphavantage.co/query?function=EARNINGS&symbol=${sym}&apikey=${avKey}`;
+      const er = await fetch(avUrl, { headers: { "Accept": "application/json" } });
+      if (!er.ok) return res.status(200).json({ earnings: [], stats: {}, error: `AV HTTP ${er.status}` });
+      const edata = await er.json();
+
+      // Alpha Vantage formato: { annualEarnings, quarterlyEarnings }
+      // quarterlyEarnings: { fiscalDateEnding, reportedDate, reportedEPS, estimatedEPS, surprise, surprisePercentage }
+      const quarterlyEarnings = edata?.quarterlyEarnings || [];
+      const nextEarnings = null; // Alpha Vantage free non ha next earnings date
+      const earningsHistory = quarterlyEarnings;
 
       const nowTs = Math.floor(Date.now() / 1000);
       const from3y = nowTs - 3 * 365 * 86400;
