@@ -136,14 +136,16 @@ export default async function handler(req, res) {
         return null;
       };
 
-      // FMP formato: { date, eps, epsEstimated, revenue, revenueEstimated }
+      // Alpha Vantage formato: { fiscalDateEnding, reportedDate, reportedEPS, estimatedEPS, surprisePercentage }
       const earnings = earningsHistory
-        .filter(e => e.eps != null && e.date)
+        .filter(e => e.reportedEPS && e.reportedEPS !== "None" && e.fiscalDateEnding)
         .map(e => {
-          const dateStr = e.date;
-          const surprise = e.eps != null && e.epsEstimated != null
-            ? parseFloat(((e.eps - e.epsEstimated) / Math.abs(e.epsEstimated || 1) * 100).toFixed(2))
-            : null;
+          const dateStr = e.reportedDate || e.fiscalDateEnding;
+          const actual   = parseFloat(e.reportedEPS) || null;
+          const estimate = e.estimatedEPS && e.estimatedEPS !== "None" ? parseFloat(e.estimatedEPS) : null;
+          const surprise = e.surprisePercentage && e.surprisePercentage !== "None"
+            ? parseFloat(e.surprisePercentage)
+            : (actual != null && estimate != null ? parseFloat(((actual - estimate) / Math.abs(estimate || 1) * 100).toFixed(2)) : null);
           const pb = getNear(dateStr, -1), pd = getNear(dateStr, 0), p2w = getNear(dateStr, 10);
           const moveDay = pb && pd  ? parseFloat(((pd  - pb) / pb * 100).toFixed(2)) : null;
           const move2w  = pb && p2w ? parseFloat(((p2w - pb) / pb * 100).toFixed(2)) : null;
