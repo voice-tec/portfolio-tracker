@@ -3860,6 +3860,29 @@ export default function App() {
               </button>
             </div>
           )}
+          {cookieBanner && (
+            <div style={{
+              position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 9999,
+              background: "#0A1628", color: "#E8EBF4",
+              padding: "12px 24px", display: "flex", alignItems: "center",
+              justifyContent: "space-between", gap: 16, flexWrap: "wrap",
+              boxShadow: "0 -2px 12px rgba(0,0,0,0.15)",
+            }}>
+              <span style={{ fontSize: 12, lineHeight: 1.6, flex: 1 }}>
+                🍪 Trackfolio usa cookie tecnici necessari al funzionamento (sessione di login).
+                Non usiamo cookie di profilazione o advertising.
+                Continuando ad usare il servizio ne accetti l&#39;utilizzo.
+              </span>
+              <button onClick={closeCookieBanner} style={{
+                background: "#4361ee", border: "none", color: "#fff",
+                borderRadius: 8, padding: "8px 20px", fontSize: 12,
+                fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+                whiteSpace: "nowrap", flexShrink: 0,
+              }}>
+                Ho capito
+              </button>
+            </div>
+          )}
 
           {/* Alert toasts */}
           {firedAlerts.length > 0 && (
