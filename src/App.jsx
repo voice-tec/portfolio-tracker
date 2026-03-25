@@ -3885,7 +3885,7 @@ export default function App() {
             <div style={{ display: "flex", alignItems: "center", gap: 0, overflowX: "auto", flex: 1, justifyContent: "center" }} className="desktop-tabs">
               {["overview","confronto","screener","simulazioni","whatif","dividendi","previsioni"].map(t => (
                 <button key={t} className={`tab-btn ${activeTab === t ? "active" : ""}`} onClick={() => setActiveTab(t)}>
-                  {t === "whatif" ? "e se?" : t === "dividendi" ? "💰 dividendi" : t === "previsioni" ? "🔮 previsioni" : t === "screener" ? "🔬 screener" : t}
+                  {t === "whatif" ? "e se?" : t === "dividendi" ? "💰 dividendi" : t === "previsioni" ? "🔮 previsioni" : t === "screener" ? "📊 screener" : t}
                 </button>
               ))}
             </div>
