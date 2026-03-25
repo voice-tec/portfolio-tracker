@@ -301,14 +301,6 @@ export function ScreenerTabNew({ fmt, onAddTicker, portfolioTickers = [] }) {
               Reset filtri
             </button>
           )}
-          <button onClick={updateCache} disabled={updating} style={{
-            background: "none", border: "1px solid #E0E8F4", borderRadius: 8,
-            padding: "9px 14px", fontSize: 11, color: "#8A9AB0",
-            cursor: updating ? "not-allowed" : "pointer", fontFamily: "inherit",
-            opacity: updating ? 0.6 : 1,
-          }}>
-            {updating ? "⏳ Aggiornando..." : "🔄 Aggiorna S&P 500"}
-          </button>
           {lastUpdate && (
             <span style={{ fontSize: 10, color: "#C0C8D8", alignSelf: "center" }}>
               Aggiornato: {lastUpdate}
