@@ -3206,6 +3206,14 @@ export default function App() {
     try { localStorage.setItem("trackfolio_cookie_ok", "1"); } catch {}
     setCookieBanner(false);
   }
+  const [cookieBanner, setCookieBanner] = useState(() => {
+    try { return !localStorage.getItem("trackfolio_cookie_ok"); }
+    catch { return true; }
+  });
+  function closeCookieBanner() {
+    try { localStorage.setItem("trackfolio_cookie_ok", "1"); } catch {}
+    setCookieBanner(false);
+  }
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
     navigator.serviceWorker.addEventListener("controllerchange", () => setSwUpdate(true));
