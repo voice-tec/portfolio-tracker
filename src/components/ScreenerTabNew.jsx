@@ -125,8 +125,10 @@ export function ScreenerTabNew({ fmt, onAddTicker, portfolioTickers = [] }) {
   const [results, setResults]   = useState([]);
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState(null);
-  const [loaded, setLoaded]     = useState(false);
-  const [expanded, setExpanded] = useState(null);
+  const [loaded, setLoaded]         = useState(false);
+  const [expanded, setExpanded]     = useState(null);
+  const [lastUpdate, setLastUpdate] = useState(null);
+  const [updating, setUpdating]     = useState(false);
 
   // Filtri
   const [exchange, setExchange] = useState("NASDAQ,NYSE");
@@ -142,6 +144,23 @@ export function ScreenerTabNew({ fmt, onAddTicker, portfolioTickers = [] }) {
   const [compareB, setCompareB] = useState(null);
   const [showCompare, setShowCompare] = useState(false);
 
+  async function updateCache() {
+    setUpdating(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/screener-update`);
+      const data = await res.json();
+      if (data.success) {
+        alert(`✅ Aggiornati ${data.saved} titoli S&P 500. Ricarica lo screener.`);
+        await runScreener();
+      } else {
+        alert("❌ Errore aggiornamento: " + (data.error || "sconosciuto"));
+      }
+    } catch (e) {
+      alert("❌ Errore: " + e.message);
+    }
+    setUpdating(false);
+  }
+
   async function runScreener() {
     setLoading(true); setError(null);
     try {
@@ -150,6 +169,8 @@ export function ScreenerTabNew({ fmt, onAddTicker, portfolioTickers = [] }) {
       if (data.error && !data.results?.length) throw new Error(data.error);
       setResults(data.results || []);
       setLoaded(true);
+      if (data.lastUpdate) setLastUpdate(data.lastUpdate);
+      if (data.source === "cache" && !data.lastUpdate) setLastUpdate("cache");
     } catch (e) {
       setError(e.message);
     } finally {
@@ -279,6 +300,19 @@ export function ScreenerTabNew({ fmt, onAddTicker, portfolioTickers = [] }) {
               style={{ background: "none", border: "1px solid #E0E8F4", borderRadius: 8, padding: "9px 14px", fontSize: 11, color: "#8A9AB0", cursor: "pointer", fontFamily: "inherit" }}>
               Reset filtri
             </button>
+          )}
+          <button onClick={updateCache} disabled={updating} style={{
+            background: "none", border: "1px solid #E0E8F4", borderRadius: 8,
+            padding: "9px 14px", fontSize: 11, color: "#8A9AB0",
+            cursor: updating ? "not-allowed" : "pointer", fontFamily: "inherit",
+            opacity: updating ? 0.6 : 1,
+          }}>
+            {updating ? "⏳ Aggiornando..." : "🔄 Aggiorna S&P 500"}
+          </button>
+          {lastUpdate && (
+            <span style={{ fontSize: 10, color: "#C0C8D8", alignSelf: "center" }}>
+              Aggiornato: {lastUpdate}
+            </span>
           )}
         </div>
       </div>
