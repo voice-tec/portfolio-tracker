@@ -3205,10 +3205,6 @@ export default function App() {
     try { return !localStorage.getItem("trackfolio_cookie_ok"); }
     catch { return true; }
   });
-  const [cookieBanner, setCookieBanner] = useState(() => {
-    try { return !localStorage.getItem("trackfolio_cookie_ok"); }
-    catch { return true; }
-  });
   function closeCookieBanner() {
     try { localStorage.setItem("trackfolio_cookie_ok", "1"); } catch {}
     setCookieBanner(false);
@@ -3314,14 +3310,6 @@ export default function App() {
     });
   }, [user?.id]);
 
-  function closeCookieBanner() {
-    try { localStorage.setItem("trackfolio_cookie_ok", "1"); } catch {}
-    setCookieBanner(false);
-  }
-  function closeCookieBanner() {
-    try { localStorage.setItem("trackfolio_cookie_ok", "1"); } catch {}
-    setCookieBanner(false);
-  }
   const setStocks = fn => setStocksRaw(prev => typeof fn === "function" ? fn(prev) : fn);
   const setNotes  = fn => setNotesRaw(prev => typeof fn === "function" ? fn(prev) : fn);
   const setAlerts = fn => setAlertsRaw(prev => typeof fn === "function" ? fn(prev) : fn);
