@@ -204,9 +204,15 @@ function StressTest({ stocks, sym, rate, fmt, eurRate }) {
         })();
 
         let totalPct = 0, totalW = 0;
+        // Calcola peso totale solo sui titoli con dati in questo punto
+        const availableW = validCandles.reduce((sum, r, j) => {
+          if (r && r[i]) return sum + (parseFloat(stocks[j]?.qty)||0) * (parseFloat(stocks[j]?.currentPrice)||0);
+          return sum;
+        }, 0);
+        if (availableW === 0) return null;
         validCandles.forEach((r, j) => {
           if (r && r[i]) {
-            const w = (parseFloat(stocks[j]?.qty)||0) * (parseFloat(stocks[j]?.currentPrice)||0) / tv;
+            const w = (parseFloat(stocks[j]?.qty)||0) * (parseFloat(stocks[j]?.currentPrice)||0) / availableW;
             totalPct += r[i].pct * w;
             totalW   += w;
           }
@@ -233,7 +239,8 @@ function StressTest({ stocks, sym, rate, fmt, eurRate }) {
       const finalPct = portSeries.length ? portSeries[portSeries.length - 1].pct : 0;
       const totalPnl = totalValue * rate * finalPct / 100;
 
-      setCache(c => ({ ...c, [sc.id]: { portSeries, perStock, totalPct: finalPct, totalPnl } }));
+      const filteredSeries = portSeries.filter(Boolean);
+      setCache(c => ({ ...c, [sc.id]: { portSeries: filteredSeries, perStock, totalPct: finalPct, totalPnl } }));
     } catch(e) { console.error(e); }
     setLoading(false);
   }, [stocks, totalValue, rate, eurRate]);
