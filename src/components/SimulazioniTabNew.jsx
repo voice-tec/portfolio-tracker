@@ -191,9 +191,10 @@ function StressTest({ stocks, sym, rate, fmt, eurRate }) {
       // Ricalcola totalValue qui per sicurezza
       const tv = stocks.reduce((s, x) => s + (parseFloat(x.qty)||0) * (parseFloat(x.currentPrice)||0), 0) || 1;
 
-      // Filtra candles con date invalide e tronca alla lunghezza minima comune
+      // Filtra candles con date invalide e tronca alla lunghezza minima comune tra TUTTI i titoli con dati
       const validCandles = candles.map(c => c ? c.filter(p => p.date && !isNaN(new Date(p.date))) : null);
-      const minLen = Math.min(...validCandles.map(c => c?.length || maxLen));
+      const lensWithData = validCandles.filter(c => c && c.length > 0).map(c => c.length);
+      const minLen = lensWithData.length > 0 ? Math.min(...lensWithData) : maxLen;
       const safeLen = Math.min(maxLen, minLen);
       const portSeries = Array.from({ length: safeLen }, (_, i) => {
         const refDate = validCandles.find(r => r)?.[i]?.date || "";
