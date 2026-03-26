@@ -45,7 +45,7 @@ export default async function handler(req, res) {
       .map((ts, i) => ({ ts, price: closes[i] }))
       .filter(c => c.price != null)
       .map(c => ({
-        date: new Date(c.ts * 1000).toLocaleDateString("it-IT", { day: "2-digit", month: "short", year: "2-digit" }),
+        date: new Date(c.ts * 1000).toISOString().slice(0, 10),
         price: parseFloat(c.price.toFixed(2)),
       }));
 
@@ -74,7 +74,7 @@ export default async function handler(req, res) {
               .map((ts, i) => ({ ts, price: spyCloses[i] }))
               .filter(c => c.price != null)
               .map(c => ({
-                date: new Date(c.ts * 1000).toLocaleDateString("it-IT", { day: "2-digit", month: "short", year: "2-digit" }),
+                date: new Date(c.ts * 1000).toISOString().slice(0, 10),
                 pct: parseFloat(((c.price - spyBase) / spyBase * 100).toFixed(2)),
               }));
           }
