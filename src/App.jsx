@@ -2104,7 +2104,9 @@ function AddStockWizard({ onClose, onAdd, sym, fmt }) {
               <div>
                 <div style={{ fontSize: 11, color: "#8A9AB0", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>Prezzo di acquisto</div>
                 <div style={{ position: "relative" }}>
-                  <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: "#8A9AB0", fontSize: 15 }}>$</span>
+                  <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: "#8A9AB0", fontSize: 15 }}>
+                    {chosen?.currency === "EUR" ? "€" : chosen?.ticker?.endsWith(".L") ? "p" : "$"}
+                  </span>
                   <input type="number" step="0.01" value={buyPrice}
                     onChange={e => setBuyPrice(e.target.value)}
                     style={{ width: "100%", padding: "14px 14px 14px 28px", fontSize: 16, border: "2px solid #E2E8F4", borderRadius: 10, outline: "none", fontFamily: "inherit", boxSizing: "border-box", colorScheme: "light", transition: "border-color 0.15s" }}
