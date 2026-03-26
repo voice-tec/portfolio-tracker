@@ -356,7 +356,7 @@ function MacroScenari({ stocks, sym, rate, fmt, eurRate }) {
   const [macroData, setMacroData]   = useState(null);
 
   useEffect(() => {
-    fetch("/api/macro").then(r => r.json()).then(setMacroData).catch(() => {});
+    fetch("/api/price?symbol=__MACRO__").then(r => r.json()).then(setMacroData).catch(() => {});
   }, []);
   const [realLoading, setRealLoading] = useState(false);
 
