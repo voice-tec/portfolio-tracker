@@ -51,9 +51,13 @@ export default async function handler(req, res) {
 
     if (candles.length === 0) return res.status(200).json({ candles: [], spy: [] });
 
+    // Rimuovi ultimo punto se anomalo (>15% dal penultimo) — common con dividend adjustments Yahoo
+    const trimmed = candles.length > 2 && Math.abs((candles[candles.length-1].price - candles[candles.length-2].price) / candles[candles.length-2].price) > 0.15
+      ? candles.slice(0, -1) : candles;
+
     // Normalize to % change from first candle
-    const base = candles[0].price;
-    const normalized = candles.map(c => ({
+    const base = trimmed[0].price;
+    const normalized = trimmed.map(c => ({
       ...c,
       pct: parseFloat(((c.price - base) / base * 100).toFixed(2)),
     }));
