@@ -239,7 +239,8 @@ function StressTest({ stocks, sym, rate, fmt, eurRate }) {
       const finalPct = portSeries.length ? portSeries[portSeries.length - 1].pct : 0;
       const totalPnl = totalValue * rate * finalPct / 100;
 
-      const filteredSeries = portSeries.filter(Boolean);
+      // Rimuovi null e ultimo punto anomalo
+      const filteredSeries = portSeries.filter(Boolean).slice(0, -1);
       setCache(c => ({ ...c, [sc.id]: { portSeries: filteredSeries, perStock, totalPct: finalPct, totalPnl } }));
     } catch(e) { console.error(e); }
     setLoading(false);
