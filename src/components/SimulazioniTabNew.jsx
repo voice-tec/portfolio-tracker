@@ -363,7 +363,7 @@ function MacroScenari({ stocks, sym, rate, fmt, eurRate }) {
   const totalValue = stocks.reduce((s, x) => s + (parseFloat(x.qty)||0) * toUSD(parseFloat(x.currentPrice)||0, x.currency, eurRate), 0);
 
   // Fetch dati storici reali — solo se l'utente ha selezionato esplicitamente
-  const [userSelected, setUserSelected] = useState(false);
+  const [userSelected, setUserSelected] = useState(true);
   useEffect(() => {
     if (!stocks.length || !selected.from) return;
     if (realCache[selected.id]) return;
