@@ -191,10 +191,12 @@ function StressTest({ stocks, sym, rate, fmt, eurRate }) {
       // Ricalcola totalValue qui per sicurezza
       const tv = stocks.reduce((s, x) => s + (parseFloat(x.qty)||0) * (parseFloat(x.currentPrice)||0), 0) || 1;
 
-      // Filtra candles con date invalide
+      // Filtra candles con date invalide e tronca alla lunghezza minima comune
       const validCandles = candles.map(c => c ? c.filter(p => p.date && !isNaN(new Date(p.date))) : null);
-      const portSeries = Array.from({ length: maxLen }, (_, i) => {
-        const refDate = candles.find(r => r)?.[i]?.date || "";
+      const minLen = Math.min(...validCandles.map(c => c?.length || maxLen));
+      const safeLen = Math.min(maxLen, minLen);
+      const portSeries = Array.from({ length: safeLen }, (_, i) => {
+        const refDate = validCandles.find(r => r)?.[i]?.date || "";
         const label = (() => {
           if (!refDate) return "";
           try { return new Date(refDate + "T12:00:00").toLocaleDateString("it-IT", { day: "2-digit", month: "short" }); }
@@ -202,7 +204,7 @@ function StressTest({ stocks, sym, rate, fmt, eurRate }) {
         })();
 
         let totalPct = 0, totalW = 0;
-        candles.forEach((r, j) => {
+        validCandles.forEach((r, j) => {
           if (r && r[i]) {
             const w = (parseFloat(stocks[j]?.qty)||0) * (parseFloat(stocks[j]?.currentPrice)||0) / tv;
             totalPct += r[i].pct * w;
