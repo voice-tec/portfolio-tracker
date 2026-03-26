@@ -191,37 +191,44 @@ function StressTest({ stocks, sym, rate, fmt, eurRate }) {
       // Ricalcola totalValue qui per sicurezza
       const tv = stocks.reduce((s, x) => s + (parseFloat(x.qty)||0) * (parseFloat(x.currentPrice)||0), 0) || 1;
 
-      // Filtra candles con date invalide e tronca alla lunghezza minima comune tra TUTTI i titoli con dati
+      // Allinea per data — usa solo le date presenti in TUTTI i titoli con dati
       const validCandles = candles.map(c => c ? c.filter(p => p.date && !isNaN(new Date(p.date))) : null);
-      const lensWithData = validCandles.filter(c => c && c.length > 0).map(c => c.length);
-      const minLen = lensWithData.length > 0 ? Math.min(...lensWithData) : maxLen;
-      const safeLen = Math.min(maxLen, minLen);
-      const portSeries = Array.from({ length: safeLen }, (_, i) => {
-        const refDate = validCandles.find(r => r)?.[i]?.date || "";
+      
+      // Crea mappa data→pct per ogni titolo
+      const candleByDate = validCandles.map(c => {
+        if (!c) return {};
+        return Object.fromEntries(c.map(p => [p.date, p.pct]));
+      });
+      
+      // Trova le date comuni a TUTTI i titoli con dati
+      const candlesWithData = candleByDate.filter(m => Object.keys(m).length > 0);
+      const commonDates = candlesWithData.length > 0
+        ? Object.keys(candlesWithData[0]).filter(date => candlesWithData.every(m => m[date] != null))
+        : [];
+      
+      // Crea mappa SPY per data
+      const spyByDate = {};
+      (spyData || []).forEach(p => { if (p.date) spyByDate[p.date] = p.pct; });
+      
+      const portSeries = commonDates.map(date => {
         const label = (() => {
-          if (!refDate) return "";
-          try { return new Date(refDate + "T12:00:00").toLocaleDateString("it-IT", { day: "2-digit", month: "short" }); }
-          catch { return refDate; }
+          try { return new Date(date + "T12:00:00").toLocaleDateString("it-IT", { day: "2-digit", month: "short" }); }
+          catch { return date; }
         })();
-
+        
         let totalPct = 0, totalW = 0;
-        // Calcola peso totale solo sui titoli con dati in questo punto
-        const availableW = validCandles.reduce((sum, r, j) => {
-          if (r && r[i]) return sum + (parseFloat(stocks[j]?.qty)||0) * (parseFloat(stocks[j]?.currentPrice)||0);
-          return sum;
-        }, 0);
-        if (availableW === 0) return null;
-        validCandles.forEach((r, j) => {
-          if (r && r[i]) {
-            const w = (parseFloat(stocks[j]?.qty)||0) * (parseFloat(stocks[j]?.currentPrice)||0) / availableW;
-            totalPct += r[i].pct * w;
+        candleByDate.forEach((m, j) => {
+          if (m[date] != null) {
+            const w = (parseFloat(stocks[j]?.qty)||0) * (parseFloat(stocks[j]?.currentPrice)||0) / tv;
+            totalPct += m[date] * w;
             totalW   += w;
           }
         });
+        
         return {
-          date: refDate, label,
+          date, label,
           pct: totalW > 0 ? parseFloat((totalPct / totalW).toFixed(2)) : 0,
-          spy: spyData?.[i]?.pct ?? null,
+          spy: spyByDate[date] ?? null,
         };
       });
 
