@@ -191,6 +191,8 @@ function StressTest({ stocks, sym, rate, fmt, eurRate }) {
       // Ricalcola totalValue qui per sicurezza
       const tv = stocks.reduce((s, x) => s + (parseFloat(x.qty)||0) * (parseFloat(x.currentPrice)||0), 0) || 1;
 
+      // Filtra candles con date invalide
+      const validCandles = candles.map(c => c ? c.filter(p => p.date && !isNaN(new Date(p.date))) : null);
       const portSeries = Array.from({ length: maxLen }, (_, i) => {
         const refDate = candles.find(r => r)?.[i]?.date || "";
         const label = (() => {
@@ -388,6 +390,7 @@ function MacroScenari({ stocks, sym, rate, fmt, eurRate }) {
 
       let portSeries = [];
       if (hasData) {
+        const validCandles2 = candles.map(c => c ? c.filter(p => p.date && !isNaN(new Date(p.date))) : null);
         portSeries = Array.from({ length: maxLen }, (_, i) => {
           const date = candles.find(r => r)?.[i]?.date || "";
           let totalPct = 0, totalW = 0;
