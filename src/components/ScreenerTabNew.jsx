@@ -125,8 +125,10 @@ export function ScreenerTabNew({ fmt, onAddTicker, portfolioTickers = [] }) {
   const [results, setResults]   = useState([]);
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState(null);
-  const [loaded, setLoaded]     = useState(false);
-  const [expanded, setExpanded] = useState(null);
+  const [loaded, setLoaded]         = useState(false);
+  const [expanded, setExpanded]     = useState(null);
+  const [lastUpdate, setLastUpdate] = useState(null);
+  const [updating, setUpdating]     = useState(false);
 
   // Filtri
   const [exchange, setExchange] = useState("NASDAQ,NYSE");
@@ -142,6 +144,23 @@ export function ScreenerTabNew({ fmt, onAddTicker, portfolioTickers = [] }) {
   const [compareB, setCompareB] = useState(null);
   const [showCompare, setShowCompare] = useState(false);
 
+  async function updateCache() {
+    setUpdating(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/screener-update`);
+      const data = await res.json();
+      if (data.success) {
+        alert(`✅ Aggiornati ${data.saved} titoli S&P 500. Ricarica lo screener.`);
+        await runScreener();
+      } else {
+        alert("❌ Errore aggiornamento: " + (data.error || "sconosciuto"));
+      }
+    } catch (e) {
+      alert("❌ Errore: " + e.message);
+    }
+    setUpdating(false);
+  }
+
   async function runScreener() {
     setLoading(true); setError(null);
     try {
@@ -150,6 +169,8 @@ export function ScreenerTabNew({ fmt, onAddTicker, portfolioTickers = [] }) {
       if (data.error && !data.results?.length) throw new Error(data.error);
       setResults(data.results || []);
       setLoaded(true);
+      if (data.lastUpdate) setLastUpdate(data.lastUpdate);
+      if (data.source === "cache" && !data.lastUpdate) setLastUpdate("cache");
     } catch (e) {
       setError(e.message);
     } finally {
@@ -218,6 +239,65 @@ export function ScreenerTabNew({ fmt, onAddTicker, portfolioTickers = [] }) {
         </div>
       </div>
 
+      {/* Factor Score della settimana */}
+      {loaded && filtered.length > 0 && (() => {
+        // Trova il titolo con maggior miglioramento score settimana, fallback al top score
+        const withImprovement = filtered.filter(r => r.scorePrev != null && r.scores.composite > r.scorePrev);
+        const top = withImprovement.length > 0
+          ? withImprovement.sort((a, b) => (b.scores.composite - b.scorePrev) - (a.scores.composite - a.scorePrev))[0]
+          : [...filtered].sort((a, b) => (b.scores.composite ?? 0) - (a.scores.composite ?? 0))[0];
+        if (!top) return null;
+        return (
+          <div style={{
+            marginBottom: 16, padding: "16px 20px", borderRadius: 12,
+            background: "linear-gradient(135deg, #0A1628 0%, #1E3A5F 100%)",
+            border: "1px solid #2A4A7F", position: "relative", overflow: "hidden",
+          }}>
+            <div style={{ position: "absolute", top: -20, right: -20, fontSize: 80, opacity: 0.06 }}>⭐</div>
+            <div style={{ fontSize: 9, color: "#8AB4D4", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8 }}>
+              ⭐ Factor Score della settimana
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+              <div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: "#fff", letterSpacing: "-0.01em" }}>{top.symbol}</div>
+                <div style={{ fontSize: 11, color: "#8AB4D4", marginTop: 2 }}>{top.name}</div>
+                {top.sector && <div style={{ fontSize: 10, color: "#4ADE80", marginTop: 4 }}>{top.sector}</div>}
+              </div>
+              <div style={{ marginLeft: "auto", textAlign: "right" }}>
+                <div style={{ fontSize: 32, fontWeight: 800, color: "#4ADE80" }}>{top.scores.composite}</div>
+                <div style={{ fontSize: 9, color: "#8AB4D4" }}>score composito</div>
+                {top.scorePrev != null && (
+                  <div style={{ fontSize: 11, fontWeight: 600, color: top.scores.composite > top.scorePrev ? "#4ADE80" : "#F87171", marginTop: 2 }}>
+                    {top.scores.composite > top.scorePrev ? "▲" : "▼"} {Math.abs(top.scores.composite - top.scorePrev)} vs settimana scorsa
+                  </div>
+                )}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 12, marginTop: 14, flexWrap: "wrap" }}>
+              {[
+                { l: "Value", v: top.scores.value, c: "#60A5FA" },
+                { l: "Size", v: top.scores.size, c: "#A78BFA" },
+                { l: "Profitability", v: top.scores.profitability, c: "#4ADE80" },
+                { l: "Momentum", v: top.scores.momentum, c: "#FBBF24" },
+              ].map(({ l, v, c }) => (
+                <div key={l} style={{ background: "rgba(255,255,255,0.06)", borderRadius: 8, padding: "6px 12px", minWidth: 80 }}>
+                  <div style={{ fontSize: 8, color: "#8AB4D4", marginBottom: 3 }}>{l}</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: c }}>{v ?? "—"}</div>
+                </div>
+              ))}
+              {top.pe && <div style={{ background: "rgba(255,255,255,0.06)", borderRadius: 8, padding: "6px 12px" }}>
+                <div style={{ fontSize: 8, color: "#8AB4D4", marginBottom: 3 }}>P/E</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#fff" }}>{top.pe}</div>
+              </div>}
+              {top.roe && <div style={{ background: "rgba(255,255,255,0.06)", borderRadius: 8, padding: "6px 12px" }}>
+                <div style={{ fontSize: 8, color: "#8AB4D4", marginBottom: 3 }}>ROE</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#fff" }}>{top.roe}%</div>
+              </div>}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Filtri */}
       <div className="card" style={{ marginBottom: 16, padding: "14px 18px" }}>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
@@ -279,6 +359,19 @@ export function ScreenerTabNew({ fmt, onAddTicker, portfolioTickers = [] }) {
               style={{ background: "none", border: "1px solid #E0E8F4", borderRadius: 8, padding: "9px 14px", fontSize: 11, color: "#8A9AB0", cursor: "pointer", fontFamily: "inherit" }}>
               Reset filtri
             </button>
+          )}
+          <button onClick={updateCache} disabled={updating} style={{
+            background: "none", border: "1px solid #E0E8F4", borderRadius: 8,
+            padding: "9px 14px", fontSize: 11, color: "#8A9AB0",
+            cursor: updating ? "not-allowed" : "pointer", fontFamily: "inherit",
+            opacity: updating ? 0.6 : 1,
+          }}>
+            {updating ? "⏳ Aggiornando..." : "🔄 Aggiorna S&P 500"}
+          </button>
+          {lastUpdate && (
+            <span style={{ fontSize: 10, color: "#C0C8D8", alignSelf: "center" }}>
+              Aggiornato: {lastUpdate}
+            </span>
           )}
         </div>
       </div>

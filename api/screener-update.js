@@ -66,6 +66,20 @@ async function finnhubGet(path) {
   return res.json();
 }
 
+async function supabaseGetScores(symbols) {
+  // Legge gli score attuali prima di aggiornarli
+  const url = `${SUPABASE_URL}/rest/v1/screener_cache?select=symbol,score_composite&symbol=in.(${symbols.map(s => `"${s}"`).join(',')})`;
+  const res = await fetch(url, {
+    headers: {
+      "apikey": SUPABASE_KEY,
+      "Authorization": `Bearer ${SUPABASE_KEY}`,
+    }
+  });
+  if (!res.ok) return {};
+  const data = await res.json();
+  return Object.fromEntries((data || []).map(r => [r.symbol, r.score_composite]));
+}
+
 async function supabaseUpsert(rows) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/screener_cache`, {
     method: "POST",
@@ -100,6 +114,9 @@ export default async function handler(req, res) {
   const errors = [];
 
   console.log(`[screener-update] Starting update for ${unique.length} tickers`);
+
+  // Leggi score precedenti prima di aggiornare
+  const prevScores = await supabaseGetScores(unique).catch(() => ({}));
 
   for (let i = 0; i < unique.length; i += BATCH) {
     const batch = unique.slice(i, i + BATCH);
@@ -165,6 +182,8 @@ export default async function handler(req, res) {
         score_profitability: profScore,
         score_momentum:      momentumScore,
         score_composite:     composite,
+        score_composite_prev: prevScores[sym] ?? null,
+        score_updated_week:  (() => { const n = new Date(); const w = Math.ceil((((n - new Date(n.getFullYear(),0,1))/86400000)+1)/7); return `${n.getFullYear()}-W${String(w).padStart(2,'0')}`; })(),
         change_1d:           change1d,
         updated_at:          new Date().toISOString(),
       });
