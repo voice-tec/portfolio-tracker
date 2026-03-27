@@ -125,10 +125,8 @@ export function ScreenerTabNew({ fmt, onAddTicker, portfolioTickers = [] }) {
   const [results, setResults]   = useState([]);
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState(null);
-  const [loaded, setLoaded]         = useState(false);
-  const [expanded, setExpanded]     = useState(null);
-  const [lastUpdate, setLastUpdate] = useState(null);
-  const [updating, setUpdating]     = useState(false);
+  const [loaded, setLoaded]     = useState(false);
+  const [expanded, setExpanded] = useState(null);
 
   // Filtri
   const [exchange, setExchange] = useState("NASDAQ,NYSE");
@@ -144,23 +142,6 @@ export function ScreenerTabNew({ fmt, onAddTicker, portfolioTickers = [] }) {
   const [compareB, setCompareB] = useState(null);
   const [showCompare, setShowCompare] = useState(false);
 
-  async function updateCache() {
-    setUpdating(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/screener-update`);
-      const data = await res.json();
-      if (data.success) {
-        alert(`✅ Aggiornati ${data.saved} titoli S&P 500. Ricarica lo screener.`);
-        await runScreener();
-      } else {
-        alert("❌ Errore aggiornamento: " + (data.error || "sconosciuto"));
-      }
-    } catch (e) {
-      alert("❌ Errore: " + e.message);
-    }
-    setUpdating(false);
-  }
-
   async function runScreener() {
     setLoading(true); setError(null);
     try {
@@ -169,8 +150,6 @@ export function ScreenerTabNew({ fmt, onAddTicker, portfolioTickers = [] }) {
       if (data.error && !data.results?.length) throw new Error(data.error);
       setResults(data.results || []);
       setLoaded(true);
-      if (data.lastUpdate) setLastUpdate(data.lastUpdate);
-      if (data.source === "cache" && !data.lastUpdate) setLastUpdate("cache");
     } catch (e) {
       setError(e.message);
     } finally {
@@ -231,10 +210,10 @@ export function ScreenerTabNew({ fmt, onAddTicker, portfolioTickers = [] }) {
       {/* Header */}
       <div style={{ marginBottom: 20 }}>
         <div style={{ fontSize: 22, fontWeight: 800, color: "#0A1628", letterSpacing: "-0.01em", marginBottom: 4 }}>
-          🔬 Screener Factor Score
+          🔬 Screener Fama-French
         </div>
         <div style={{ fontSize: 12, color: "#8A9AB0", lineHeight: 1.6 }}>
-          Factor Score analizza 4 dimensioni fondamentali per identificare i titoli migliori dell'S&P 500.
+          Titoli filtrati per <strong>Value</strong>, <strong>Size</strong>, <strong>Profitability</strong> e <strong>Momentum</strong>.
           {portfolioSet.size > 0 && <span style={{ color: "#4361ee", marginLeft: 8 }}>● = già in portafoglio</span>}
         </div>
       </div>
@@ -260,7 +239,7 @@ export function ScreenerTabNew({ fmt, onAddTicker, portfolioTickers = [] }) {
           <div>
             <div style={{ fontSize: 9, color: "#8A9AB0", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>Ordina per</div>
             <select value={sortBy} onChange={e => setSortBy(e.target.value)} style={selectStyle}>
-              <option value="composite">Factor Score</option>
+              <option value="composite">Score composito</option>
               <option value="value">Value</option>
               <option value="size">Size</option>
               <option value="prof">Profitability</option>
@@ -301,11 +280,6 @@ export function ScreenerTabNew({ fmt, onAddTicker, portfolioTickers = [] }) {
               Reset filtri
             </button>
           )}
-          {lastUpdate && (
-            <span style={{ fontSize: 10, color: "#C0C8D8", alignSelf: "center" }}>
-              Aggiornato: {lastUpdate}
-            </span>
-          )}
         </div>
       </div>
 
@@ -332,10 +306,10 @@ export function ScreenerTabNew({ fmt, onAddTicker, portfolioTickers = [] }) {
       {!loaded && !loading && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, marginBottom: 28 }}>
           {[
-            { icon: "💰", label: "Value", color: "#1E4FD8", desc: "P/E e P/B bassi rispetto al mercato. Le aziende sottovalutate tendono a sovraperformare nel lungo periodo (Fama & French, 1992)." },
-            { icon: "📐", label: "Size", color: "#7C3AED", desc: "Preferisce small/mid cap (cap 100M–50B). Le aziende più piccole hanno storicamente rendimenti superiori alle mega cap." },
-            { icon: "📈", label: "Profitability", color: "#16A34A", desc: "ROE e ROA elevati. Le aziende ad alta redditività operativa generano rendimenti superiori nel lungo termine." },
-            { icon: "🚀", label: "Momentum", color: "#F4A020", desc: "Posizione nel range 52 settimane. Titoli vicini ai massimi annuali tendono a continuare il trend positivo." },
+            { icon: "💰", label: "Value", color: "#1E4FD8", desc: "P/E e P/B bassi. Aziende sottovalutate dal mercato." },
+            { icon: "📐", label: "Size", color: "#7C3AED", desc: "Small/mid cap (100M–10B). Più spazio di crescita." },
+            { icon: "📈", label: "Profitability", color: "#16A34A", desc: "Alto ROE e ROA. Aziende realmente redditizie." },
+            { icon: "🚀", label: "Momentum", color: "#F4A020", desc: "Trend positivo 12 mesi. Il momentum tende a persistere." },
           ].map(f => (
             <div key={f.label} style={{ background: "#fff", border: `1px solid ${f.color}22`, borderRadius: 10, padding: "16px 14px" }}>
               <div style={{ fontSize: 22, marginBottom: 6 }}>{f.icon}</div>
@@ -350,7 +324,7 @@ export function ScreenerTabNew({ fmt, onAddTicker, portfolioTickers = [] }) {
       {filtered.length > 0 && (
         <div>
           <div style={{ fontSize: 11, color: "#8A9AB0", marginBottom: 12 }}>
-            {filtered.length} titoli {results.length !== filtered.length ? `(filtrati da ${results.length})` : ""} · Factor Score
+            {filtered.length} titoli {results.length !== filtered.length ? `(filtrati da ${results.length})` : ""} · score Fama-French
           </div>
 
           {/* Header colonne */}
@@ -446,7 +420,7 @@ export function ScreenerTabNew({ fmt, onAddTicker, portfolioTickers = [] }) {
           </div>
 
           <div style={{ fontSize: 9, color: "#C0C8D8", marginTop: 14, lineHeight: 1.8 }}>
-            📊 Factor Score basato su Value, Size, Profitability e Momentum. Dati via Finnhub. Non costituisce consulenza finanziaria.
+            📊 Dati via Financial Modeling Prep. Score calcolati internamente (Fama-French 1992, 1993). Non costituisce consulenza finanziaria.
           </div>
         </div>
       )}
