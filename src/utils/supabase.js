@@ -33,7 +33,7 @@ export async function signInWithGoogle() {
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo: 'https://www.trackfolio.eu',
+      redirectTo: window.location.origin,
       queryParams: { access_type: 'offline', prompt: 'consent' },
     }
   })
