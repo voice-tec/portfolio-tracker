@@ -4,6 +4,8 @@ import { PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaCh
 import { supabase, signIn, signUp, signOut, signInWithGoogle, updateProfile, updatePassword, deleteAccount, sendPasswordReset, getSession, loadStocks, saveStock, deleteStock, loadNotes, saveNote, loadAlerts, saveAlert, deleteAlert } from "./utils/supabase";
 import { AuthScreen } from "./components/AuthScreen";
 import { SettingsModal } from "./components/SettingsModal";
+import { AuthScreen } from "./components/AuthScreen";
+import { SettingsModal } from "./components/SettingsModal";
 import { toUSD, detectCurrency } from "./utils/currency";
 import { resolveMarketState } from "./utils/market";
 import { parseBuyDate, isoToDisplay } from "./utils/dates";
@@ -3042,6 +3044,7 @@ export default function App() {
   const eurRate = useEurRate(); // live EUR/USD rate
   const [swUpdate, setSwUpdate] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [cookieBanner, setCookieBanner] = useState(() => {
     try { return !localStorage.getItem("trackfolio_cookie_ok"); } catch { return true; }
   });
@@ -3696,6 +3699,16 @@ export default function App() {
             </div>
           )}
           {showSettings && (
+          <SettingsModal
+            user={user}
+            plan={plan}
+            stocks={stocks}
+            onClose={() => setShowSettings(false)}
+            onSignOut={() => { setUser(null); setShowSettings(false); }}
+            onPlanChange={p => { setPlanRaw(p); setShowSettings(false); }}
+          />
+        )}
+        {showSettings && (
           <SettingsModal
             user={user}
             plan={plan}
