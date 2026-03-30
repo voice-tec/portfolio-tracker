@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef, useCallback, createContext, useContext, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area, ReferenceLine, LineChart, Line, Legend, BarChart, Bar, ComposedChart } from "recharts";
-import { supabase, signIn, signUp, signOut, getSession, loadStocks, saveStock, deleteStock, loadNotes, saveNote, loadAlerts, saveAlert, deleteAlert } from "./utils/supabase";
+import { supabase, signIn, signUp, signOut, signInWithGoogle, updateProfile, updatePassword, deleteAccount, sendPasswordReset, getSession, loadStocks, saveStock, deleteStock, loadNotes, saveNote, loadAlerts, saveAlert, deleteAlert } from "./utils/supabase";
+import { AuthScreen } from "./components/AuthScreen";
+import { SettingsModal } from "./components/SettingsModal";
 import { toUSD, detectCurrency } from "./utils/currency";
 import { resolveMarketState } from "./utils/market";
 import { parseBuyDate, isoToDisplay } from "./utils/dates";
@@ -563,168 +565,7 @@ function UpgradeModal({ onClose }) {
 }
 
 // ─── AUTH SCREEN ──────────────────────────────────────────────────────────────
-function AuthScreen({ onAuth }) {
-  const [mode, setMode] = useState("register");
-  const [email, setEmail] = useState("");
-  const [pw, setPw] = useState("");
-  const [name, setName] = useState("");
-  const [err, setErr] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  async function submit() {
-    if (!email || !pw) return setErr("Compila tutti i campi.");
-    if (mode === "register" && !name) return setErr("Inserisci il tuo nome.");
-    setLoading(true); setErr("");
-    try {
-      let user;
-      if (mode === "register") {
-        user = await signUp(email, pw, name);
-        if (!user) { setErr("Controlla la tua email per confermare la registrazione."); setLoading(false); return; }
-      } else {
-        user = await signIn(email, pw);
-      }
-      onAuth({ id: user.id, email: user.email, name: user.user_metadata?.name || email.split("@")[0] });
-    } catch (e) {
-      setErr(e.message === "Invalid login credentials" ? "Email o password errati." : e.message);
-    }
-    setLoading(false);
-  }
-
-  const features = [
-    { icon: "📈", text: "Grafico performance con confronto S&P 500" },
-    { icon: "🎯", text: "Analisi settori e alert concentrazione" },
-    { icon: "🔔", text: "Alert prezzi su target e stop-loss" },
-    { icon: "🔮", text: "Simulazioni scenari macro e previsioni AI" },
-    { icon: "📰", text: "News e rating analisti in tempo reale" },
-  ];
-
-  return (
-    <div style={{ minHeight: "100vh", display: "flex", fontFamily: "'Geist', sans-serif" }}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&display=swap');
-        *{box-sizing:border-box;margin:0;padding:0}
-        html,body{height:100%;overflow-x:hidden;-webkit-tap-highlight-color:transparent}
-        .auth-input{background:#F8FAFF;border:1.5px solid #E0E8F4;color:#0A1628;font-family:inherit;font-size:13px;padding:12px 14px;border-radius:10px;outline:none;width:100%;transition:all 0.15s}
-        .auth-input:focus{border-color:#4361ee;background:#fff;box-shadow:0 0 0 3px rgba(67,97,238,0.08)}
-        .auth-input::placeholder{color:#A0AABF}
-        .auth-left{display:flex!important}
-        @media(max-width:767px){.auth-left{display:none!important}}
-        @keyframes spin{to{transform:rotate(360deg)}}
-        @keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
-        @keyframes floatIn{from{opacity:0;transform:translateX(-12px)}to{opacity:1;transform:translateX(0)}}
-      `}</style>
-
-      {/* Sinistra */}
-      <div className="auth-left" style={{
-        flex: 1, display: "flex",
-        background: "linear-gradient(145deg, #0f1f5c 0%, #1a3a8f 50%, #0d3d62 100%)",
-        padding: "60px 52px", flexDirection: "column", justifyContent: "space-between",
-        position: "relative", overflow: "hidden",
-      }}>
-        <div style={{ position: "absolute", top: -80, right: -80, width: 320, height: 320, borderRadius: "50%", background: "rgba(99,130,255,0.12)" }} />
-        <div style={{ position: "absolute", bottom: 60, left: -60, width: 240, height: 240, borderRadius: "50%", background: "rgba(6,214,160,0.08)" }} />
-
-        <div style={{ position: "relative" }}>
-          <TrackfolioLogo size={32} showText={true} textColor="#ffffff" />
-        </div>
-
-        <div style={{ position: "relative" }}>
-          <div style={{ fontSize: 11, color: "rgba(99,130,255,0.9)", fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 20 }}>
-            Il tuo portfolio, sotto controllo
-          </div>
-          <h2 style={{ fontSize: "clamp(26px, 3vw, 38px)", fontWeight: 800, color: "#ffffff", lineHeight: 1.15, letterSpacing: "-0.02em", marginBottom: 20 }}>
-            Investi con<br />
-            <span style={{ background: "linear-gradient(90deg, #6382ff, #06d6a0)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>
-              dati reali
-            </span>
-          </h2>
-          <p style={{ fontSize: 14, color: "rgba(255,255,255,0.55)", lineHeight: 1.75, marginBottom: 36, maxWidth: 340 }}>
-            Trackfolio aggrega prezzi live, storico e analisi in un'unica dashboard.
-          </p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
-            {features.map(({ icon, text }, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, animation: `floatIn 0.4s ease ${i * 0.07}s both` }}>
-                <div style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(255,255,255,0.08)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, flexShrink: 0 }}>{icon}</div>
-                <span style={{ fontSize: 13, color: "rgba(255,255,255,0.72)" }}>{text}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div style={{ position: "relative", fontSize: 10, color: "rgba(255,255,255,0.25)", lineHeight: 1.7 }}>
-          ⚠️ Strumento a scopo puramente informativo.<br />Non costituisce consulenza finanziaria ai sensi MiFID II.
-        </div>
-      </div>
-
-      {/* Destra */}
-      <div style={{ width: "100%", maxWidth: 480, background: "#ffffff", display: "flex", flexDirection: "column", justifyContent: "center", padding: "48px 40px" }}>
-        <div style={{ animation: "fadeUp 0.4s ease", width: "100%", maxWidth: 360, margin: "0 auto" }}>
-
-          <div style={{ marginBottom: 28 }}>
-            <h1 style={{ fontSize: 24, fontWeight: 800, color: "#0A1628", letterSpacing: "-0.02em", marginBottom: 6 }}>
-              {mode === "register" ? "Crea il tuo account" : "Bentornato"}
-            </h1>
-            <p style={{ fontSize: 13, color: "#8A9AB0" }}>
-              {mode === "register" ? "Inizia a tracciare il tuo portafoglio gratuitamente." : "Accedi per vedere il tuo portafoglio."}
-            </p>
-          </div>
-
-          <div style={{ display: "flex", background: "#F4F6FB", borderRadius: 10, padding: 4, marginBottom: 24, gap: 4 }}>
-            {[["register","Registrati"],["login","Accedi"]].map(([m, label]) => (
-              <button key={m} onClick={() => { setMode(m); setErr(""); }} style={{
-                flex: 1, background: mode === m ? "#ffffff" : "transparent",
-                border: "none", color: mode === m ? "#0A1628" : "#8A9AB0",
-                fontFamily: "inherit", fontSize: 12, padding: "9px", borderRadius: 7,
-                cursor: "pointer", fontWeight: mode === m ? 600 : 400,
-                boxShadow: mode === m ? "0 1px 4px rgba(0,0,0,0.08)" : "none",
-                transition: "all 0.15s",
-              }}>{label}</button>
-            ))}
-          </div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 6 }}>
-            {mode === "register" && <input className="auth-input" placeholder="Il tuo nome" value={name} onChange={e => setName(e.target.value)} />}
-            <input className="auth-input" placeholder="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} />
-            <input className="auth-input" placeholder="Password" type="password" value={pw} onChange={e => setPw(e.target.value)} onKeyDown={e => e.key === "Enter" && submit()} />
-          </div>
-
-          {err && <div style={{ fontSize: 11, color: "#ef4444", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 6, padding: "8px 12px", marginTop: 8 }}>{err}</div>}
-
-          <button onClick={submit} disabled={loading} style={{
-            marginTop: 18, width: "100%",
-            background: "linear-gradient(135deg, #4361ee, #3a0ca3)",
-            border: "none", color: "#fff", fontFamily: "inherit",
-            fontSize: 14, fontWeight: 700, padding: "14px", borderRadius: 10,
-            cursor: loading ? "not-allowed" : "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-            opacity: loading ? 0.75 : 1, boxShadow: "0 4px 16px rgba(67,97,238,0.3)",
-          }}>
-            {loading && <Spinner color="#fff" />}
-            {mode === "register" ? "Crea account gratuito →" : "Entra nel portafoglio →"}
-          </button>
-
-          <div style={{ textAlign: "center", marginTop: 20, fontSize: 12, color: "#8A9AB0" }}>
-            {mode === "register" ? "Hai già un account? " : "Non hai un account? "}
-            <button onClick={() => { setMode(mode === "register" ? "login" : "register"); setErr(""); }} style={{ background: "none", border: "none", color: "#4361ee", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", fontSize: 12, padding: 0 }}>
-              {mode === "register" ? "Accedi" : "Registrati"}
-            </button>
-          </div>
-
-          {mode === "register" && (
-            <div style={{ display: "flex", gap: 20, justifyContent: "center", marginTop: 28, paddingTop: 24, borderTop: "1px solid #F0F2F7" }}>
-              {[["Gratis","Per sempre"],["100%","Privacy"],["Live","Prezzi reali"]].map(([v,l]) => (
-                <div key={l} style={{ textAlign: "center" }}>
-                  <div style={{ fontSize: 15, fontWeight: 800, color: "#0A1628" }}>{v}</div>
-                  <div style={{ fontSize: 10, color: "#A0AABF", marginTop: 2 }}>{l}</div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
+// AuthScreen moved to src/components/AuthScreen.jsx
 
 // ─── TICKER AUTOCOMPLETE ──────────────────────────────────────────────────────
 function TickerAutocomplete({ value, onChange, onSelect }) {
@@ -3200,6 +3041,7 @@ export default function App() {
   const rate = 1;
   const eurRate = useEurRate(); // live EUR/USD rate
   const [swUpdate, setSwUpdate] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [cookieBanner, setCookieBanner] = useState(() => {
     try { return !localStorage.getItem("trackfolio_cookie_ok"); } catch { return true; }
   });
@@ -3853,7 +3695,17 @@ export default function App() {
               </button>
             </div>
           )}
-          {cookieBanner && (
+          {showSettings && (
+          <SettingsModal
+            user={user}
+            plan={plan}
+            stocks={stocks}
+            onClose={() => setShowSettings(false)}
+            onSignOut={() => { setUser(null); setShowSettings(false); }}
+            onPlanChange={p => { setPlanRaw(p); setShowSettings(false); }}
+          />
+        )}
+        {cookieBanner && (
             <div style={{
               position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 9999,
               background: "#0A1628", color: "#E8EBF4",
@@ -3940,9 +3792,9 @@ export default function App() {
               </button>
               <button className="add-btn" onClick={() => setShowWizard(true)} style={{ fontSize: 11, padding: "6px 14px", background: "#1E4FD8" }}>+ Aggiungi</button>
               {/* Mobile: user avatar button */}
-              <button onClick={() => signOut().then(() => setUser(null))}
+              <button onClick={() => setShowSettings(true)}
                 style={{ background: "#1a2d4a", border: "1px solid #2a4a6a", borderRadius: "50%", width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, color: "#8BA4C0", fontSize: 11, fontFamily: "inherit" }}
-                title={`${user.name} — Esci`}>
+                title={`${user.name} — Impostazioni`}>
                 {user.name?.charAt(0).toUpperCase() || "U"}
               </button>
             </div>
