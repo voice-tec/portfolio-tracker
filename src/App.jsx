@@ -4,8 +4,6 @@ import { PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaCh
 import { supabase, signIn, signUp, signOut, signInWithGoogle, updateProfile, updatePassword, deleteAccount, sendPasswordReset, getSession, loadStocks, saveStock, deleteStock, loadNotes, saveNote, loadAlerts, saveAlert, deleteAlert } from "./utils/supabase";
 import { AuthScreen } from "./components/AuthScreen";
 import { SettingsModal } from "./components/SettingsModal";
-import { AuthScreen } from "./components/AuthScreen";
-import { SettingsModal } from "./components/SettingsModal";
 import { toUSD, detectCurrency } from "./utils/currency";
 import { resolveMarketState } from "./utils/market";
 import { parseBuyDate, isoToDisplay } from "./utils/dates";
