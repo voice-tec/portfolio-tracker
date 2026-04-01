@@ -2028,7 +2028,7 @@ function AddStockWizard({ onClose, onAdd, sym, fmt }) {
 // ─── OVERVIEW TAB ─────────────────────────────────────────────────────────────
 function OverviewTab({ stocks, fmt, fmtPct, sym, rate, eurRate, totalValue, totalInvested,
   totalPnL, totalPct, sectorData, portfolioHistory, alerts, setSelectedId, setEditId,
-  handleRemove, setShowForm, marketOpen }) {
+  handleRemove, setShowForm, marketOpen, setShowWizard }) {
 
   const [variations, setVariations] = useState({ day: null, month: null, year: null });
   const [varLoading, setVarLoading] = useState(false);
