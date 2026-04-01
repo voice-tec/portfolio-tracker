@@ -3044,7 +3044,6 @@ export default function App() {
   const eurRate = useEurRate(); // live EUR/USD rate
   const [swUpdate, setSwUpdate] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
   const [cookieBanner, setCookieBanner] = useState(() => {
     try { return !localStorage.getItem("trackfolio_cookie_ok"); } catch { return true; }
   });
