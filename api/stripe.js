@@ -91,9 +91,14 @@ export default async function handler(req, res) {
   }
 
   // ── CHECKOUT SESSION ───────────────────────────────────────────────────────
-  const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
-  const body = JSON.parse(Buffer.concat(chunks).toString());
+  let body = {};
+  try {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    body = JSON.parse(Buffer.concat(chunks).toString());
+  } catch {
+    return res.status(400).json({ error: "Invalid JSON body" });
+  }
   const { priceId, userId, userEmail, plan } = body;
 
   if (!priceId || !userId) return res.status(400).json({ error: "Missing priceId or userId" });
