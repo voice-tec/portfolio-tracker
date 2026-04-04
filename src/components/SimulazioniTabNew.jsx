@@ -3,7 +3,7 @@ import {
   ResponsiveContainer, LineChart, Line, AreaChart, Area,
   XAxis, YAxis, Tooltip, ReferenceLine, Legend, BarChart, Bar, Cell,
 } from "recharts";
-import { API_BASE } from "../utils/api";
+import { fetchHistory, API_BASE } from "../utils/api";
 import { toUSD } from "../utils/currency";
 
 // ── Dati scenari ──────────────────────────────────────────────────────────────
@@ -18,7 +18,6 @@ const SCENARIOS_STORICI = [
 const MACRO_SCENARI = [
   {
     id: "high_inflation", label: "📈 Alta Inflazione", color: "#F97316",
-    from: "2021-06-01", to: "2022-12-31", periodLabel: "Giu 2021 – Dic 2022",
     desc: "Inflazione >5% come 2021-2022. Energia e commodities salgono, tech e bond scendono.",
     spxImpact: -12, duration: "12-18 mesi",
     impact: { "Tech": -25, "Finanza": +8, "Energia": +45, "Materiali": +30, "Salute": -5, "Consumer": -15, "Industriali": +10, "Utility": -12, "Real Estate": -20, "Telecom": -8, "ETF": -10, "Altro": -5 },
@@ -42,7 +41,6 @@ const MACRO_SCENARI = [
   },
   {
     id: "recession", label: "📊 Recessione", color: "#DC2626",
-    from: "2007-10-01", to: "2009-03-09", periodLabel: "Ott 2007 – Mar 2009",
     desc: "GDP negativo per 2+ trimestri. Difensivi, oro e bond governativi come rifugio.",
     spxImpact: -30, duration: "6-18 mesi",
     impact: { "Tech": -20, "Finanza": -30, "Energia": -25, "Materiali": -28, "Salute": +5, "Consumer": -15, "Industriali": -22, "Utility": +2, "Real Estate": -18, "Telecom": +2, "ETF": -18, "Altro": -15 },
@@ -65,7 +63,6 @@ const MACRO_SCENARI = [
   },
   {
     id: "boom", label: "🚀 Boom Economico", color: "#16A34A",
-    from: "2017-01-01", to: "2017-12-31", periodLabel: "Anno 2017",
     desc: "Crescita GDP >3%, piena occupazione. Ciclici, tech e small cap esplodono.",
     spxImpact: +28, duration: "12-36 mesi",
     impact: { "Tech": +30, "Finanza": +20, "Energia": +25, "Materiali": +35, "Salute": +8, "Consumer": +28, "Industriali": +32, "Utility": -5, "Real Estate": +15, "Telecom": +18, "ETF": +22, "Altro": +15 },
@@ -88,7 +85,6 @@ const MACRO_SCENARI = [
   },
   {
     id: "high_rates", label: "🏦 Tassi Alti", color: "#7C3AED",
-    from: "2022-01-01", to: "2023-12-31", periodLabel: "Gen 2022 – Dic 2023",
     desc: "Fed Funds Rate >4% come 2022-2023. Banche e valore outperformano.",
     spxImpact: -15, duration: "12-24 mesi",
     impact: { "Tech": -30, "Finanza": +15, "Energia": +5, "Materiali": -5, "Salute": +5, "Consumer": -12, "Industriali": -8, "Utility": -20, "Real Estate": -25, "Telecom": -10, "ETF": -8, "Altro": -10 },
@@ -110,7 +106,6 @@ const MACRO_SCENARI = [
   },
   {
     id: "low_rates", label: "💸 Tassi Bassi", color: "#0EA5E9",
-    from: "2009-03-01", to: "2015-12-31", periodLabel: "Mar 2009 – Dic 2015",
     desc: "Fed Funds Rate <1%. Risk-on, growth e credito salgono.",
     spxImpact: +25, duration: "24-36 mesi",
     impact: { "Tech": +35, "Finanza": -5, "Energia": +10, "Materiali": +12, "Salute": +10, "Consumer": +20, "Industriali": +15, "Utility": +10, "Real Estate": +30, "Telecom": +12, "ETF": +18, "Altro": +10 },
@@ -132,7 +127,6 @@ const MACRO_SCENARI = [
   },
   {
     id: "low_inflation", label: "📉 Bassa Inflazione", color: "#06B6D4",
-    from: "2012-01-01", to: "2016-12-31",
     desc: "Inflazione <2% con crescita stabile. Tech e bond in rally.",
     spxImpact: +18, duration: "12-24 mesi",
     impact: { "Tech": +25, "Finanza": +5, "Energia": -10, "Materiali": -8, "Salute": +12, "Consumer": +15, "Industriali": +8, "Utility": +15, "Real Estate": +20, "Telecom": +10, "ETF": +12, "Altro": +8 },
@@ -170,61 +164,75 @@ function StressTest({ stocks, sym, rate, fmt, eurRate }) {
   const [loading, setLoading] = useState(false);
   const totalValue = stocks.reduce((s, x) => s + (parseFloat(x.qty)||0) * toUSD(parseFloat(x.currentPrice)||0, x.currency, eurRate), 0);
 
-  // Usa /api/scenario come il vecchio codice — funziona già
   const fetchScenario = useCallback(async (sc) => {
     if (cache[sc.id]) return;
     setLoading(true);
     try {
-      const results = await Promise.all(
-        stocks.map(s =>
-          fetch(`${API_BASE}/api/scenario?symbol=${encodeURIComponent(s.ticker)}&from=${sc.from}&to=${sc.to}`)
-            .then(r => r.json())
-            .catch(() => null)
-        )
-      );
+      const fromTs = Math.floor(new Date(sc.from).getTime() / 1000);
+      const toTs   = Math.floor(new Date(sc.to).getTime()   / 1000);
+      const days   = Math.ceil((toTs - fromTs) / 86400);
 
-      const spyData = results.find(r => r?.spy)?.spy || null;
-      const candles = results.map(r => r?.candles || null);
+      const results = await Promise.all([
+        ...stocks.map(s =>
+          fetchHistory(s.ticker, days + 30)
+            .then(c => ({ ticker: s.ticker, candles: c || [] }))
+            .catch(() => ({ ticker: s.ticker, candles: [] }))
+        ),
+        fetchHistory("SPY", days + 30)
+          .then(c => ({ ticker: "SPY", candles: c || [] }))
+          .catch(() => ({ ticker: "SPY", candles: [] })),
+      ]);
 
-      // Serie portafoglio pesata (identica al vecchio codice)
-      const maxLen = Math.max(...candles.map(r => r?.length || 0));
-      // Ricalcola totalValue qui per sicurezza
-      const tv = stocks.reduce((s, x) => s + (parseFloat(x.qty)||0) * (parseFloat(x.currentPrice)||0), 0) || 1;
+      const spy = results.find(r => r.ticker === "SPY")?.candles || [];
+      const stockCandles = results.filter(r => r.ticker !== "SPY");
 
-      // Filtra candles con date invalide
-      const validCandles = candles.map(c => c ? c.filter(p => p.date && !isNaN(new Date(p.date))) : null);
-      const portSeries = Array.from({ length: maxLen }, (_, i) => {
-        const refDate = candles.find(r => r)?.[i]?.date || "";
-        const label = (() => {
-          if (!refDate) return "";
-          try { return new Date(refDate + "T12:00:00").toLocaleDateString("it-IT", { day: "2-digit", month: "short" }); }
-          catch { return refDate; }
-        })();
+      // Filtra per range scenario
+      const filter = (c) => c.filter(p => p.date >= sc.from && p.date <= sc.to);
+      const filteredSpy = filter(spy);
 
+      // Normalizza a 0% dall'inizio
+      const normalize = (candles) => {
+        const f = filter(candles);
+        if (!f.length) return [];
+        const base = f[0].price;
+        return f.map(p => ({ date: p.date, pct: parseFloat(((p.price - base) / base * 100).toFixed(2)) }));
+      };
+
+      // Serie portafoglio pesata
+      const allDates = [...new Set(stockCandles.flatMap(s => filter(s.candles).map(c => c.date)))].sort();
+      const spyNorm  = normalize(spy);
+      const spyMap   = Object.fromEntries(spyNorm.map(p => [p.date, p.pct]));
+
+      const portSeries = allDates.map(date => {
         let totalPct = 0, totalW = 0;
-        candles.forEach((r, j) => {
-          if (r && r[i]) {
-            const w = (parseFloat(stocks[j]?.qty)||0) * (parseFloat(stocks[j]?.currentPrice)||0) / tv;
-            totalPct += r[i].pct * w;
-            totalW   += w;
-          }
+        stockCandles.forEach(({ ticker, candles }) => {
+          const f = filter(candles);
+          if (!f.length) return;
+          const base = f[0].price;
+          const pt   = f.find(p => p.date === date);
+          if (!pt) return;
+          const s = stocks.find(x => x.ticker === ticker);
+          const w = (parseFloat(s?.qty)||0) * (parseFloat(s?.currentPrice)||0) / (totalValue || 1);
+          totalPct += ((pt.price - base) / base * 100) * w;
+          totalW   += w;
         });
         return {
-          date: refDate, label,
-          pct: totalW > 0 ? parseFloat((totalPct / totalW).toFixed(2)) : 0,
-          spy: spyData?.[i]?.pct ?? null,
+          date,
+          label: new Date(date + "T12:00:00").toLocaleDateString("it-IT", { day: "2-digit", month: "short" }),
+          pct:   totalW > 0 ? parseFloat((totalPct / totalW).toFixed(2)) : 0,
+          spy:   spyMap[date] ?? null,
         };
       });
 
       // Impatto per titolo
-      const perStock = stocks.map((s, i) => {
-        const r = candles[i];
-        if (!r?.length) {
+      const perStock = stocks.map(s => {
+        const c = filter(stockCandles.find(x => x.ticker === s.ticker)?.candles || []);
+        if (!c.length) {
           const beta = s.sector === "Tech" ? 1.4 : s.sector === "Finanza" ? 1.2 : 1.0;
-          const pct  = sc.spx * beta;
+          const pct  = sc.spx / 100 * beta * 100;
           return { ...s, pct, pnl: (parseFloat(s.qty)||0) * (parseFloat(s.currentPrice)||0) * rate * pct / 100, noData: true };
         }
-        const pct = r[r.length - 1].pct;
+        const pct = c[c.length - 1].pct ?? ((c[c.length-1].price - c[0].price) / c[0].price * 100);
         return { ...s, pct: parseFloat(pct.toFixed(2)), pnl: (parseFloat(s.qty)||0) * (parseFloat(s.currentPrice)||0) * rate * pct / 100, noData: false };
       });
 
@@ -232,7 +240,7 @@ function StressTest({ stocks, sym, rate, fmt, eurRate }) {
       const totalPnl = totalValue * rate * finalPct / 100;
 
       setCache(c => ({ ...c, [sc.id]: { portSeries, perStock, totalPct: finalPct, totalPnl } }));
-    } catch(e) { console.error(e); }
+    } catch {}
     setLoading(false);
   }, [stocks, totalValue, rate, eurRate]);
 
@@ -350,71 +358,12 @@ function StressTest({ stocks, sym, rate, fmt, eurRate }) {
 
 // ── Sezione 2: Scenari Macro ───────────────────────────────────────────────────
 function MacroScenari({ stocks, sym, rate, fmt, eurRate }) {
-  const [selected, setSelected]     = useState(MACRO_SCENARI[0]);
-  const [investment, setInvestment] = useState(1000);
-  const [liveData, setLiveData]     = useState({});
+  const [selected, setSelected]   = useState(MACRO_SCENARI[0]);
+  const [investment, setInvestment] = useState(1000); // slider: capitale aggiuntivo
+  const [liveData, setLiveData]   = useState({});
   const [liveLoading, setLiveLoading] = useState(false);
-  const [realCache, setRealCache]   = useState({});
-  const [macroData, setMacroData]   = useState(null);
-
-  useEffect(() => {
-    fetch("/api/price?symbol=__MACRO__").then(r => r.json()).then(setMacroData).catch(() => {});
-  }, []);
-  const [realLoading, setRealLoading] = useState(false);
 
   const totalValue = stocks.reduce((s, x) => s + (parseFloat(x.qty)||0) * toUSD(parseFloat(x.currentPrice)||0, x.currency, eurRate), 0);
-
-  // Fetch dati storici reali — solo se l'utente ha selezionato esplicitamente
-  const [userSelected, setUserSelected] = useState(true);
-  useEffect(() => {
-    if (!stocks.length || !selected.from) return;
-    if (realCache[selected.id]) return;
-    if (!userSelected) return;
-    setRealLoading(true);
-    Promise.all(
-      stocks.map(s =>
-        fetch(`${API_BASE}/api/scenario?symbol=${encodeURIComponent(s.ticker)}&from=${selected.from}&to=${selected.to}`)
-          .then(r => r.json())
-          .catch(() => null)
-      )
-    ).then(results => {
-      const spyData = results.find(r => r?.spy)?.spy || null;
-      const candles = results.map(r => r?.candles || null);
-      const maxLen  = Math.max(...candles.map(r => r?.length || 0));
-
-      // Ricalcola totalValue qui — non usare la closure
-      const tv = stocks.reduce((s, x) => s + (parseFloat(x.qty)||0) * (parseFloat(x.currentPrice)||0), 0) || 1;
-
-      // Controlla se ci sono candele valide
-      const hasData = candles.some(c => c && c.length > 0);
-
-      let portSeries = [];
-      if (hasData) {
-        const validCandles2 = candles.map(c => c ? c.filter(p => p.date && !isNaN(new Date(p.date))) : null);
-        portSeries = Array.from({ length: maxLen }, (_, i) => {
-          const date = candles.find(r => r)?.[i]?.date || "";
-          let totalPct = 0, totalW = 0;
-          candles.forEach((r, j) => {
-            if (r?.[i]) {
-              const w = (parseFloat(stocks[j]?.qty)||0) * (parseFloat(stocks[j]?.currentPrice)||0) / tv;
-              totalPct += r[i].pct * w;
-              totalW   += w;
-            }
-          });
-          return {
-            date,
-            label: date ? (() => { try { return new Date(date + "T12:00:00").toLocaleDateString("it-IT", { day: "2-digit", month: "short" }); } catch { return date; } })() : "",
-            pct:   totalW > 0 ? parseFloat((totalPct / totalW).toFixed(2)) : 0,
-            spy:   spyData?.[i]?.pct ?? null,
-          };
-        });
-      }
-
-      const allZero = !hasData || portSeries.every(p => p.pct === 0);
-      setRealCache(c => ({ ...c, [selected.id]: { portSeries, allZero } }));
-      setRealLoading(false);
-    });
-  }, [selected.id, stocks.length]);
 
   // Fetch prezzi live dei titoli consigliati
   const fetchLive = useCallback(async (sc) => {
@@ -439,16 +388,7 @@ function MacroScenari({ stocks, sym, rate, fmt, eurRate }) {
     let totalImp = 0, totalW = 0;
     stocks.forEach(s => {
       const val = (parseFloat(s.qty)||0) * (parseFloat(s.currentPrice)||0);
-      // Normalizza settore: "Tecnologia" → "Tech", ecc.
-      const normSector = (s.sector||"Altro")
-        .replace("Tecnologia","Tech").replace("Technology","Tech")
-        .replace("Financial","Finanza").replace("Finance","Finanza")
-        .replace("Energy","Energia").replace("Healthcare","Salute")
-        .replace("Health","Salute").replace("Materials","Materiali")
-        .replace("Industrial","Industriali").replace("Utilities","Utility")
-        .replace("Telecom","Telecom").replace("Consumer Disc","Consumer")
-        .replace("Consumer Staples","Consumer");
-      const imp = selected.impact[normSector] ?? selected.impact["Altro"] ?? 0;
+      const imp = selected.impact[s.sector || "Altro"] ?? 0;
       totalImp += imp * val;
       totalW   += val;
     });
@@ -484,7 +424,7 @@ function MacroScenari({ stocks, sym, rate, fmt, eurRate }) {
       {/* Selector */}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 20 }}>
         {MACRO_SCENARI.map(sc => (
-          <button key={sc.id} onClick={() => { setSelected(sc); setUserSelected(true); }} style={{
+          <button key={sc.id} onClick={() => setSelected(sc)} style={{
             padding: "7px 14px", borderRadius: 20, cursor: "pointer",
             fontFamily: "inherit", fontSize: 11, fontWeight: 600,
             border: "none", transition: "all 0.15s",
@@ -510,19 +450,8 @@ function MacroScenari({ stocks, sym, rate, fmt, eurRate }) {
         </div>
         <div style={{ textAlign: "center" }}>
           <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em" }}>Tuo portafoglio</div>
-          {(() => {
-            const series = realCache[selected.id]?.portSeries;
-            const realPct = series?.length ? series[series.length-1].pct : null;
-            const deltaUSD = realPct != null ? totalValue * rate * realPct / 100 : null;
-            return realPct != null ? (
-              <>
-                <div style={{ fontSize: 22, fontWeight: 800, color: col(realPct), letterSpacing: "-0.02em" }}>{fmtPct(realPct, 1)}</div>
-                <div style={{ fontSize: 10, color: col(deltaUSD) }}>{sign(deltaUSD)}{sym}{fmt(Math.abs(deltaUSD))}</div>
-              </>
-            ) : (
-              <div style={{ fontSize: 22, fontWeight: 800, color: "#8A9AB0" }}>—</div>
-            );
-          })()}
+          <div style={{ fontSize: 22, fontWeight: 800, color: col(impact.pct), letterSpacing: "-0.02em" }}>{fmtPct(impact.pct, 1)}</div>
+          <div style={{ fontSize: 10, color: col(impact.deltaUSD) }}>{sign(impact.deltaUSD)}{sym}{fmt(Math.abs(impact.deltaUSD))}</div>
         </div>
       </div>
 
@@ -531,38 +460,23 @@ function MacroScenari({ stocks, sym, rate, fmt, eurRate }) {
 
         {/* Grafico */}
         <div className="card">
-          <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>
-            Andamento reale portafoglio — {selected.from?.slice(0,4)} / {selected.to?.slice(0,4)}
+          <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>
+            Performance storica media per asset class
           </div>
-          <div style={{ fontSize: 9, color: "#16A34A", marginBottom: 10 }}>● Dati storici reali da Yahoo Finance</div>
-          {realLoading ? (
-            <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, color: "#8A9AB0", fontSize: 11 }}>
-              <Spinner /> Caricamento dati reali…
-            </div>
-          ) : realCache[selected.id]?.allZero ? (
-            <div style={{ height: 180, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#8A9AB0", fontSize: 11, textAlign: "center", gap: 8, padding: "0 20px" }}>
-              <span style={{ fontSize: 24 }}>📊</span>
-              <span>I tuoi titoli non erano quotati in questo periodo.</span>
-              <span style={{ fontSize: 10 }}>L'impatto è stimato in base al settore → <strong style={{ color: col(impact.pct) }}>{fmtPct(impact.pct, 1)}</strong></span>
-            </div>
-          ) : realCache[selected.id]?.portSeries?.length > 0 ? (
-            <ResponsiveContainer width="100%" height={180}>
-              <LineChart data={realCache[selected.id].portSeries} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
-                <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#8A9AB0" }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-                <YAxis tick={{ fontSize: 9, fill: "#8A9AB0" }} axisLine={false} tickLine={false} width={36} tickFormatter={v => `${v > 0 ? "+" : ""}${v}%`} domain={["auto", "auto"]} />
-                <Tooltip contentStyle={{ background: "#fff", border: "1px solid #E8EBF4", borderRadius: 8, fontSize: 10, padding: "4px 10px" }}
-                  formatter={(v, n) => [`${v >= 0 ? "+" : ""}${v?.toFixed(2)}%`, n === "pct" ? "Portafoglio" : "S&P 500"]} />
-                <ReferenceLine y={0} stroke="#E0E4EF" strokeDasharray="4 3" />
-                <Line type="monotone" dataKey="pct" stroke={selected.color} strokeWidth={2} dot={false} name="pct" />
-                <Line type="monotone" dataKey="spy" stroke="#8A9AB0" strokeWidth={1} dot={false} strokeDasharray="4 2" name="spy" connectNulls />
-                <Legend wrapperStyle={{ fontSize: 9, color: "#8A9AB0" }} formatter={v => v === "pct" ? "Il tuo portafoglio" : "S&P 500"} />
-              </LineChart>
-            </ResponsiveContainer>
-          ) : (
-            <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", color: "#8A9AB0", fontSize: 11 }}>
-              Dati non disponibili
-            </div>
-          )}
+          <ResponsiveContainer width="100%" height={180}>
+            <LineChart data={chartData} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
+              <XAxis dataKey="m" tick={{ fontSize: 9, fill: "#8A9AB0" }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 9, fill: "#8A9AB0" }} axisLine={false} tickLine={false} width={36} tickFormatter={v => `${v > 0 ? "+" : ""}${v}%`} domain={["auto", "auto"]} />
+              <Tooltip contentStyle={{ background: "#fff", border: "1px solid #E8EBF4", borderRadius: 8, fontSize: 10, padding: "4px 10px" }}
+                formatter={(v, n) => [`${v >= 0 ? "+" : ""}${v}%`, n === "portfolio" ? "Il tuo portafoglio" : n]} />
+              <ReferenceLine y={0} stroke="#E0E4EF" strokeDasharray="4 3" />
+              {selected.lineKeys.map(lk => (
+                <Line key={lk.k} type="monotone" dataKey={lk.k} stroke={lk.c} strokeWidth={1.5} dot={false} name={lk.l} strokeDasharray="4 2" />
+              ))}
+              <Line type="monotone" dataKey="portfolio" stroke={selected.color} strokeWidth={2.5} dot={false} name="portfolio" />
+              <Legend wrapperStyle={{ fontSize: 9, color: "#8A9AB0" }} />
+            </LineChart>
+          </ResponsiveContainer>
         </div>
 
         {/* Impatto per settore (barre) */}
@@ -590,198 +504,36 @@ function MacroScenari({ stocks, sym, rate, fmt, eurRate }) {
         </div>
       </div>
 
-      {/* Analisi approfondita */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
-
-        {/* 1. Probabilità scenario */}
-        <div className="card">
-          <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>🎯 Probabilità Scenario</div>
-          {(() => {
-            // Calcola probabilità da dati macro live
-            const m = macroData;
-            const fedRate = m?.fedRate ?? 3.75;
-            const t10y    = m?.treasury10y ?? 4.3;
-            const vix     = m?.vix ?? 18;
-            const spread  = m?.yieldSpread ?? 0.5;
-            const inflation = m?.impliedInflation ?? 2.5;
-
-            let prob = 25;
-            let factors = [];
-
-            if (selected.id === "high_inflation") {
-              prob = inflation > 3.5 ? 60 : inflation > 2.5 ? 35 : 20;
-              factors = [
-                { l: "Inflazione implicita", v: `${inflation.toFixed(1)}%`, ok: inflation > 2.5 },
-                { l: "Treasury 10Y", v: `${t10y.toFixed(2)}%`, ok: t10y > 4 },
-                { l: "Oro", v: m?.gold ? `$${m.gold}` : "—", ok: (m?.goldChange ?? 0) > 0 },
-              ];
-            } else if (selected.id === "recession") {
-              prob = spread < 0 ? 55 : vix > 25 ? 45 : 25;
-              factors = [
-                { l: "Yield spread", v: `${spread.toFixed(2)}%`, ok: spread > 0 },
-                { l: "VIX", v: vix.toFixed(1), ok: vix < 20 },
-                { l: "Fed Rate", v: `${fedRate.toFixed(2)}%`, ok: fedRate < 4 },
-              ];
-            } else if (selected.id === "boom") {
-              prob = vix < 15 && t10y < 5 ? 50 : vix < 20 ? 35 : 20;
-              factors = [
-                { l: "VIX (bassa paura)", v: vix.toFixed(1), ok: vix < 20 },
-                { l: "S&P500 trend", v: m?.sp500Change ? `${m.sp500Change > 0 ? "+" : ""}${m.sp500Change}%` : "—", ok: (m?.sp500Change ?? 0) > 0 },
-                { l: "Treasury 10Y", v: `${t10y.toFixed(2)}%`, ok: t10y < 5 },
-              ];
-            } else if (selected.id === "high_rates") {
-              prob = fedRate > 4 ? 45 : fedRate > 3 ? 30 : 15;
-              factors = [
-                { l: "Fed Rate", v: `${fedRate.toFixed(2)}%`, ok: fedRate > 3.5 },
-                { l: "Inflazione", v: `${inflation.toFixed(1)}%`, ok: inflation < 3 },
-                { l: "Spread curva", v: `${spread.toFixed(2)}%`, ok: spread > 0 },
-              ];
-            } else if (selected.id === "low_rates") {
-              prob = fedRate < 2 ? 55 : fedRate < 3.5 ? 30 : 15;
-              factors = [
-                { l: "Fed Rate", v: `${fedRate.toFixed(2)}%`, ok: fedRate < 3 },
-                { l: "Inflazione", v: `${inflation.toFixed(1)}%`, ok: inflation < 2.5 },
-                { l: "VIX", v: vix.toFixed(1), ok: vix < 20 },
-              ];
-            } else {
-              prob = inflation < 2.5 && vix < 20 ? 45 : 30;
-              factors = [
-                { l: "Inflazione", v: `${inflation.toFixed(1)}%`, ok: inflation < 2.5 },
-                { l: "Fed Rate", v: `${fedRate.toFixed(2)}%`, ok: fedRate < 4 },
-                { l: "Treasury 10Y", v: `${t10y.toFixed(2)}%`, ok: t10y < 4.5 },
-              ];
-            }
-            return (
-              <>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-                  <div style={{ position: "relative", width: 56, height: 56, flexShrink: 0 }}>
-                    <svg viewBox="0 0 36 36" style={{ width: "100%", transform: "rotate(-90deg)" }}>
-                      <circle cx="18" cy="18" r="15.9" fill="none" stroke="#F0F2F7" strokeWidth="3" />
-                      <circle cx="18" cy="18" r="15.9" fill="none" stroke={selected.color} strokeWidth="3"
-                        strokeDasharray={`${prob} ${100-prob}`} strokeLinecap="round" />
-                    </svg>
-                    <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, color: selected.color }}>{prob}%</div>
-                  </div>
-                  <div style={{ fontSize: 10, color: "#8A9AB0", lineHeight: 1.5 }}>
-                    Probabilità stimata nei prossimi 12 mesi basata su indicatori macro attuali
-                  </div>
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {factors.map(f => (
-                    <div key={f.l} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ fontSize: 10, color: "#8A9AB0" }}>{f.l}</span>
-                      <span style={{ fontSize: 10, fontWeight: 700, color: f.ok ? "#16A34A" : "#DC2626", background: f.ok ? "#ECFDF5" : "#FEF2F2", padding: "2px 8px", borderRadius: 10 }}>{f.v}</span>
-                    </div>
-                  ))}
-                </div>
-              </>
-            );
-          })()}
+      {/* Simulatore slider */}
+      <div className="card" style={{ marginBottom: 16, background: "linear-gradient(135deg, #F8FAFF, #EEF4FF)" }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "#0A1628", marginBottom: 12 }}>
+          🎯 Simulatore — Se investissi nei titoli consigliati
         </div>
-
-        {/* 2. Analisi rischio */}
-        <div className="card">
-          <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>⚠️ Analisi Rischio</div>
-          {(() => {
-            const series = realCache[selected.id]?.portSeries || [];
-            if (!series.length) return <div style={{ fontSize: 11, color: "#8A9AB0" }}>Carica dati per vedere il rischio</div>;
-
-            const returns = series.slice(1).map((p, i) => p.pct - series[i].pct);
-            const mean = returns.reduce((s, r) => s + r, 0) / (returns.length || 1);
-            const std  = Math.sqrt(returns.reduce((s, r) => s + (r - mean)**2, 0) / (returns.length || 1));
-
-            // VaR 95% (z=1.645)
-            const var95 = -(mean - 1.645 * std);
-
-            // Max drawdown
-            let peak = series[0]?.pct || 0, maxDD = 0;
-            series.forEach(p => {
-              if (p.pct > peak) peak = p.pct;
-              const dd = p.pct - peak;
-              if (dd < maxDD) maxDD = dd;
-            });
-
-            // Correlazione con SPY
-            const spySeries = series.filter(p => p.spy != null);
-            let corr = null;
-            if (spySeries.length > 5) {
-              const portR = spySeries.slice(1).map((p, i) => p.pct - spySeries[i].pct);
-              const spyR  = spySeries.slice(1).map((p, i) => p.spy - spySeries[i].spy);
-              const mP = portR.reduce((s,r)=>s+r,0)/portR.length;
-              const mS = spyR.reduce((s,r)=>s+r,0)/spyR.length;
-              let num=0, dP=0, dS=0;
-              portR.forEach((r,i) => { num+=(r-mP)*(spyR[i]-mS); dP+=(r-mP)**2; dS+=(spyR[i]-mS)**2; });
-              corr = dP*dS > 0 ? num/Math.sqrt(dP*dS) : null;
-            }
-
-            const metrics = [
-              { l: "VaR 95% (giorn.)", v: `${var95.toFixed(2)}%`, color: "#DC2626" },
-              { l: "Max Drawdown", v: `${maxDD.toFixed(1)}%`, color: "#DC2626" },
-              { l: "Volatilità", v: `${(std * Math.sqrt(252)).toFixed(1)}%`, color: "#F97316" },
-              { l: "Corr. S&P500", v: corr != null ? corr.toFixed(2) : "—", color: "#8A9AB0" },
-            ];
-
-            return (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {metrics.map(m => (
-                  <div key={m.l} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 10px", background: "#F8FAFF", borderRadius: 8 }}>
-                    <span style={{ fontSize: 10, color: "#8A9AB0" }}>{m.l}</span>
-                    <span style={{ fontSize: 14, fontWeight: 800, color: m.color }}>{m.v}</span>
-                  </div>
-                ))}
-              </div>
-            );
-          })()}
+        <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+              <span style={{ fontSize: 11, color: "#8A9AB0" }}>Capitale da investire</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "#0A1628" }}>{sym}{investment.toLocaleString()}</span>
+            </div>
+            <input
+              type="range" min={100} max={50000} step={100} value={investment}
+              onChange={e => setInvestment(Number(e.target.value))}
+              style={{ width: "100%", accentColor: selected.color }}
+            />
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#C0C8D8" }}>
+              <span>{sym}100</span><span>{sym}50.000</span>
+            </div>
+          </div>
+          <div style={{ textAlign: "center", minWidth: 120 }}>
+            <div style={{ fontSize: 9, color: "#8A9AB0", marginBottom: 4 }}>Rendimento stimato</div>
+            <div style={{ fontSize: 26, fontWeight: 800, color: col(sliderReturn), letterSpacing: "-0.02em" }}>
+              {sign(sliderReturn)}{sym}{Math.abs(sliderReturn).toLocaleString("it-IT", { maximumFractionDigits: 0 })}
+            </div>
+            <div style={{ fontSize: 10, color: col(sliderReturn) }}>
+              {fmtPct(selected.topPicks.reduce((s, p) => s + p.perf, 0) / selected.topPicks.length, 1)} medio
+            </div>
+          </div>
         </div>
-
-        {/* 3. Raccomandazioni ribilanciamento */}
-        <div className="card">
-          <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>🔄 Ribilanciamento Consigliato</div>
-          {(() => {
-            const totalVal = stocks.reduce((s, x) => s + (parseFloat(x.qty)||0)*(parseFloat(x.currentPrice)||0), 0) || 1;
-            // Raggruppa per settore
-            const bySector = {};
-            stocks.forEach(s => {
-              const sec = s.sector || "Altro";
-              const val = (parseFloat(s.qty)||0)*(parseFloat(s.currentPrice)||0);
-              bySector[sec] = (bySector[sec] || 0) + val;
-            });
-            // Calcola peso attuale vs ottimale (basato sull'impatto dello scenario)
-            const recs = Object.entries(bySector).map(([sec, val]) => {
-              const currentPct = val / totalVal * 100;
-              const imp = selected.impact[sec] ?? selected.impact["Altro"] ?? 0;
-              // Scenario positivo per settore → aumenta peso; negativo → riduci
-              const targetPct = Math.max(5, Math.min(50, currentPct + imp * 0.3));
-              const diff = targetPct - currentPct;
-              return { sec, currentPct, targetPct, diff };
-            }).sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff)).slice(0, 4);
-
-            return (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {recs.map(r => (
-                  <div key={r.sec}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                      <span style={{ fontSize: 10, fontWeight: 600, color: "#0A1628" }}>{r.sec}</span>
-                      <span style={{ fontSize: 10, color: r.diff >= 0 ? "#16A34A" : "#DC2626", fontWeight: 700 }}>
-                        {r.diff >= 0 ? "↑" : "↓"} {Math.abs(r.diff).toFixed(0)}pp
-                      </span>
-                    </div>
-                    <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                      <div style={{ flex: 1, height: 4, background: "#F0F2F7", borderRadius: 2, overflow: "hidden" }}>
-                        <div style={{ height: "100%", width: `${r.currentPct}%`, background: "#8A9AB0", borderRadius: 2 }} />
-                      </div>
-                      <span style={{ fontSize: 9, color: "#8A9AB0", width: 30, textAlign: "right" }}>{r.currentPct.toFixed(0)}%→{r.targetPct.toFixed(0)}%</span>
-                    </div>
-                  </div>
-                ))}
-                <div style={{ fontSize: 9, color: "#C0C8D8", marginTop: 4, lineHeight: 1.5 }}>
-                  * Basato su performance storiche del settore in scenari simili
-                </div>
-              </div>
-            );
-          })()}
-        </div>
-
       </div>
 
       {/* Titoli consigliati con prezzi live */}
@@ -854,16 +606,7 @@ function MacroScenari({ stocks, sym, rate, fmt, eurRate }) {
             <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #F0F2F7" }}>
               <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>Il tuo portafoglio</div>
               {stocks.map(s => {
-                // Normalizza settore: "Tecnologia" → "Tech", ecc.
-      const normSector = (s.sector||"Altro")
-        .replace("Tecnologia","Tech").replace("Technology","Tech")
-        .replace("Financial","Finanza").replace("Finance","Finanza")
-        .replace("Energy","Energia").replace("Healthcare","Salute")
-        .replace("Health","Salute").replace("Materials","Materiali")
-        .replace("Industrial","Industriali").replace("Utilities","Utility")
-        .replace("Telecom","Telecom").replace("Consumer Disc","Consumer")
-        .replace("Consumer Staples","Consumer");
-      const imp = selected.impact[normSector] ?? selected.impact["Altro"] ?? 0;
+                const imp = selected.impact[s.sector || "Altro"] ?? 0;
                 return (
                   <div key={s.ticker} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                     <span style={{ fontSize: 10, fontWeight: 700, color: "#0A1628", width: 44, flexShrink: 0 }}>{s.ticker}</span>
@@ -952,6 +695,7 @@ export function SimulazioniTabNew({ stocks, sym, rate, fmt, eurRate }) {
   const tabs = [
     { id: "stress",    label: "🔴 Stress Test Storico" },
     { id: "macro",     label: "🌍 Scenari Macro" },
+    { id: "confronto", label: "📊 Confronto" },
   ];
 
   return (
@@ -974,7 +718,7 @@ export function SimulazioniTabNew({ stocks, sym, rate, fmt, eurRate }) {
 
       {section === "stress"    && <StressTest stocks={stocks} sym={sym} rate={rate} fmt={fmt} eurRate={eurRate} />}
       {section === "macro"     && <MacroScenari stocks={stocks} sym={sym} rate={rate} fmt={fmt} eurRate={eurRate} />}
-
+      {section === "confronto" && <ConfrونtoScenari stocks={stocks} sym={sym} rate={rate} fmt={fmt} eurRate={eurRate} />}
     </div>
   );
 }
