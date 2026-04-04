@@ -239,82 +239,89 @@ function HistoricalAnalysis({ d, ticker }) {
   const outcomes = d.historicalOutcomes || [];
   const positive = outcomes.filter(o => o.pct > 0).length;
   const negative = outcomes.filter(o => o.pct < 0).length;
-  const maxAbs   = Math.max(...outcomes.map(o => Math.abs(o.pct)));
-
-  // Distribuzione dei rendimenti in bucket
-  const buckets = [-50, -30, -20, -10, -5, 0, 5, 10, 20, 30, 50];
-  const distribution = buckets.slice(0, -1).map((b, i) => ({
-    range: `${b}→${buckets[i+1]}`,
-    count: outcomes.filter(o => o.pct >= b && o.pct < buckets[i+1]).length,
-    positive: buckets[i+1] > 0,
-  }));
+  const price    = d.currentPrice ? `$${parseFloat(d.currentPrice).toFixed(2)}` : "questo prezzo";
 
   return (
     <div className="card" style={{ padding: "16px 18px" }}>
-      <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 14 }}>
-        🔍 Analisi Storica — {ticker} a questo prezzo (±7%)
+      <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>
+        Analisi storica — {ticker}
+      </div>
+      <div style={{ background: "#F8FAFF", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 12, color: "#4A5568", lineHeight: 1.6 }}>
+        In passato, ogni volta che <strong style={{ color: "#0A1628" }}>{ticker}</strong> era intorno a{" "}
+        <strong style={{ color: "#0A1628" }}>{price}</strong> (±{band}%),
+        nei <strong style={{ color: "#0A1628" }}>12 mesi successivi</strong> è andata così:
       </div>
 
-      {/* KPI */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8, marginBottom: 16 }}>
+      {macroCtx && (() => {
+        const vix = macroCtx.vix;
+        const t10y = macroCtx.treasury10y;
+        const spread = macroCtx.yieldSpread;
+        let label = null, color = "#8A9AB0";
+        if (vix > 25)        { label = "Alta volatilità (VIX " + vix + ") — i casi storici in periodi simili tendono ad essere più variabili"; color = "#DC2626"; }
+        else if (t10y > 4.5) { label = "Tassi elevati (10Y " + t10y + "%) — contesto simile a 2022-2023"; color = "#7C3AED"; }
+        else if (spread < 0) { label = "Curva invertita — storicamente precede rallentamento"; color = "#F97316"; }
+        else                  { label = "Contesto macro stabile — dati storici ben rappresentativi"; color = "#16A34A"; }
+        return label ? (
+          <div style={{ padding: "8px 12px", borderRadius: 8, background: color + "10", border: `1px solid ${color}25`, marginBottom: 14, fontSize: 10, color, lineHeight: 1.5 }}>
+            {label}
+          </div>
+        ) : null;
+      })()}
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 18 }}>
         {[
-          { l: "Casi", v: d.occurrences, c: "#0A1628", sub: "trovati" },
-          { l: "Win Rate", v: `${d.winRate}%`, c: d.winRate >= 50 ? "#16A34A" : "#DC2626", sub: "casi positivi" },
-          { l: "Medio", v: fmtPct(d.avgOutcome, 1), c: col(d.avgOutcome), sub: "dopo 12 mesi" },
-          { l: "Miglior", v: `+${d.maxGain}%`, c: "#16A34A", sub: "caso storico" },
-          { l: "Peggior", v: `${d.maxLoss}%`, c: "#DC2626", sub: "caso storico" },
+          { l: "Casi trovati", v: d.occurrences, sub: "su 10 anni di storia", c: "#0A1628" },
+          { l: "Positivi dopo 12m", v: `${d.winRate}%`, sub: `${positive} su ${d.occurrences} casi`, c: d.winRate >= 50 ? "#16A34A" : "#DC2626" },
+          { l: "Rendimento medio", v: fmtPct(d.avgOutcome, 1), sub: "a 12 mesi", c: col(d.avgOutcome) },
+          { l: "Range storico", v: `${d.maxLoss}% / +${d.maxGain}%`, sub: "peggior / miglior caso", c: "#0A1628" },
         ].map(k => (
-          <div key={k.l} style={{ textAlign: "center", background: "#F8FAFF", borderRadius: 8, padding: "10px 6px" }}>
-            <div style={{ fontSize: 16, fontWeight: 800, color: k.c, letterSpacing: "-0.01em" }}>{k.v}</div>
-            <div style={{ fontSize: 8, color: "#0A1628", fontWeight: 600, marginTop: 2 }}>{k.l}</div>
-            <div style={{ fontSize: 8, color: "#C0C8D8" }}>{k.sub}</div>
+          <div key={k.l} style={{ background: "#F8FAFF", borderRadius: 8, padding: "10px 12px" }}>
+            <div style={{ fontSize: 9, color: "#8A9AB0", marginBottom: 5 }}>{k.l}</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: k.c, letterSpacing: "-0.01em" }}>{k.v}</div>
+            <div style={{ fontSize: 9, color: "#C0C8D8", marginTop: 3 }}>{k.sub}</div>
           </div>
         ))}
       </div>
 
-      {/* Distribuzione rendimenti */}
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 9, color: "#8A9AB0", marginBottom: 8 }}>Distribuzione dei rendimenti storici</div>
-        <ResponsiveContainer width="100%" height={80}>
-          <BarChart data={distribution} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
-            <XAxis dataKey="range" tick={{ fontSize: 7, fill: "#8A9AB0" }} axisLine={false} tickLine={false} />
-            <YAxis hide />
-            <Tooltip contentStyle={{ background: "#fff", border: "1px solid #E8EBF4", borderRadius: 6, fontSize: 10, padding: "4px 8px" }}
-              formatter={v => [v, "casi"]} />
-            <Bar dataKey="count" radius={[3, 3, 0, 0]}>
-              {distribution.map((d, i) => (
-                <Cell key={i} fill={d.positive ? "#16A34A" : "#DC2626"} fillOpacity={0.6} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+      <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>
+        Come sono andate le ultime volte a questo prezzo
       </div>
-
-      {/* Casi storici barre */}
-      <div style={{ fontSize: 9, color: "#8A9AB0", marginBottom: 8 }}>Dettaglio casi ({positive} positivi, {negative} negativi)</div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 220, overflowY: "auto" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "70px 90px 1fr 60px 70px", gap: 6, alignItems: "center", paddingBottom: 8, borderBottom: "1px solid #F0F2F7", marginBottom: 6 }}>
+        {["Periodo", "Entrata", "Andamento", "Rend.", "Uscita"].map(h => (
+          <span key={h} style={{ fontSize: 9, color: "#8A9AB0" }}>{h}</span>
+        ))}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 5, maxHeight: 260, overflowY: "auto" }}>
         {[...outcomes].reverse().map((o, i) => {
           const isPos = o.pct >= 0;
-          const barW  = maxAbs > 0 ? Math.abs(o.pct) / maxAbs * 45 : 0;
+          const maxAbs = Math.max(...outcomes.map(x => Math.abs(x.pct)));
+          const barW = maxAbs > 0 ? Math.abs(o.pct) / maxAbs * 100 : 0;
+          const exitPrice = o.exitPrice ? `$${parseFloat(o.exitPrice).toFixed(2)}` : "—";
+          const entryPrice = o.entryPrice ? `$${parseFloat(o.entryPrice).toFixed(2)}` : "—";
           return (
-            <div key={i} style={{ display: "grid", gridTemplateColumns: "60px 1fr 56px", gap: 8, alignItems: "center" }}>
-              <span style={{ fontSize: 9, color: "#8A9AB0", textAlign: "right" }}>{o.date}</span>
-              <div style={{ position: "relative", height: 14, background: "#F8FAFF", borderRadius: 2 }}>
-                <div style={{
-                  position: "absolute", top: 0, bottom: 0,
-                  left: isPos ? "50%" : `calc(50% - ${barW}%)`,
-                  width: `${barW}%`,
-                  background: isPos ? "#16A34A" : "#DC2626",
-                  opacity: 0.5, borderRadius: 2,
-                }} />
-                <div style={{ position: "absolute", top: 0, bottom: 0, left: "50%", width: 1, background: "#E0E4EF" }} />
+            <div key={i} style={{
+              display: "grid", gridTemplateColumns: "70px 90px 1fr 60px 70px",
+              gap: 6, alignItems: "center",
+              background: i % 2 === 0 ? "transparent" : "#FAFBFF",
+              borderRadius: 4, padding: "3px 0",
+            }}>
+              <span style={{ fontSize: 10, color: "#8A9AB0" }}>{o.date}</span>
+              <span style={{ fontSize: 10, color: "#0A1628" }}>{entryPrice}</span>
+              <div style={{ height: 4, background: "#F0F2F7", borderRadius: 2, overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${barW}%`, background: isPos ? "#16A34A" : "#DC2626", borderRadius: 2 }} />
               </div>
-              <span style={{ fontSize: 10, fontWeight: 700, color: isPos ? "#16A34A" : "#DC2626" }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: isPos ? "#16A34A" : "#DC2626", textAlign: "right" }}>
                 {isPos ? "+" : ""}{o.pct}%
+              </span>
+              <span style={{ fontSize: 10, color: isPos ? "#16A34A" : "#DC2626", textAlign: "right" }}>
+                {exitPrice}
               </span>
             </div>
           );
         })}
+      </div>
+      <div style={{ fontSize: 9, color: "#C0C8D8", marginTop: 10, paddingTop: 8, borderTop: "1px solid #F0F2F7" }}>
+        Prezzi reali a 12 mesi dall'ingresso. La storia non garantisce il futuro.
       </div>
     </div>
   );
