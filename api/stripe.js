@@ -41,15 +41,17 @@ export default async function handler(req, res) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
   const isWebhook = !!req.headers["stripe-signature"];
 
+  // Leggi body una sola volta
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  const rawBody = Buffer.concat(chunks);
+
   // ── WEBHOOK ────────────────────────────────────────────────────────────────
   if (isWebhook) {
     const sig = req.headers["stripe-signature"];
     const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
     let event;
     try {
-      const chunks = [];
-      for await (const chunk of req) chunks.push(chunk);
-      const rawBody = Buffer.concat(chunks);
       event = stripe.webhooks.constructEvent(rawBody, sig, webhookSecret);
     } catch (err) {
       console.error("Webhook signature error:", err.message);
@@ -93,9 +95,7 @@ export default async function handler(req, res) {
   // ── CHECKOUT SESSION ───────────────────────────────────────────────────────
   let body = {};
   try {
-    const chunks = [];
-    for await (const chunk of req) chunks.push(chunk);
-    body = JSON.parse(Buffer.concat(chunks).toString());
+    body = JSON.parse(rawBody.toString());
   } catch {
     return res.status(400).json({ error: "Invalid JSON body" });
   }
