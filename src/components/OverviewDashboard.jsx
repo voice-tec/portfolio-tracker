@@ -1,3 +1,4 @@
+import { RiskConcentration } from "./AnalysisWidgets";
 import { useState, useEffect, useMemo } from "react";
 import { RadarChart, PolarGrid, PolarAngleAxis, Radar, ResponsiveContainer, Tooltip } from "recharts";
 import { fetchHistory, fetchAnalyst, API_BASE } from "../utils/api";
