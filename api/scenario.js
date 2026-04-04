@@ -51,9 +51,15 @@ export default async function handler(req, res) {
 
     if (candles.length === 0) return res.status(404).json({ error: "No valid candles" });
 
+    // Rimuovi ultima settimana parziale (Yahoo include spesso candela incompleta)
+    const toDate = new Date(req.query.to);
+    const lastCandle = new Date(candles[candles.length - 1].date);
+    const daysDiff = Math.abs((toDate - lastCandle) / (1000 * 60 * 60 * 24));
+    const trimmed = daysDiff < 5 && candles.length > 2 ? candles.slice(0, -1) : candles;
+
     // Normalize to % change from first candle
-    const base = candles[0].price;
-    const normalized = candles.map(c => ({
+    const base = trimmed[0].price;
+    const normalized = trimmed.map(c => ({
       ...c,
       pct: parseFloat(((c.price - base) / base * 100).toFixed(2)),
     }));
