@@ -252,7 +252,7 @@ function HistoricalAnalysis({ d, ticker }) {
         nei <strong style={{ color: "#0A1628" }}>12 mesi successivi</strong> è andata così:
       </div>
 
-      {macroCtx && (() => {
+      {null && (() => {
         const vix = macroCtx.vix;
         const t10y = macroCtx.treasury10y;
         const spread = macroCtx.yieldSpread;
