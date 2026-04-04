@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 
 // ── Dati portafogli ───────────────────────────────────────────────────────────
 const PORTFOLIOS = [
@@ -141,6 +141,39 @@ const CATEGORIES = [
   { id: "lazy", label: "Lazy" },
 ];
 
+
+// ── Mappa settori → asset class per confronto ─────────────────────────────────
+const SECTOR_TO_CLASS = {
+  "Tech": "azionario", "Tecnologia": "azionario", "Finanza": "azionario",
+  "Salute": "azionario", "Energia": "azionario", "Consumer": "azionario",
+  "Industriali": "azionario", "Materiali": "azionario", "Utility": "azionario",
+  "Telecom": "azionario", "Real Estate": "azionario", "Altro": "azionario",
+  "ETF": "azionario",
+};
+
+// Calcola somiglianza portafoglio utente con ogni modello (0-100)
+function calcSimilarity(stocks, portfolio) {
+  if (!stocks || stocks.length === 0) return 0;
+  const totalVal = stocks.reduce((s, x) => s + (parseFloat(x.qty)||0) * (parseFloat(x.currentPrice)||0), 0);
+  if (totalVal === 0) return 0;
+
+  // Calcola % azionario utente
+  const equityPct = stocks.reduce((s, x) => {
+    const w = ((parseFloat(x.qty)||0) * (parseFloat(x.currentPrice)||0)) / totalVal * 100;
+    return s + w;
+  }, 0);
+
+  // % azionario target del modello
+  const modelEquityPct = portfolio.etfs.reduce((s, e) => {
+    const isEquity = !["AGGH","IBCI","IBTM","VGOV","XEON","BND","TLT","IEF"].includes(e.ticker);
+    return s + (isEquity ? e.pct : 0);
+  }, 0);
+
+  // Distanza dal target (più vicino = più simile)
+  const dist = Math.abs(equityPct - modelEquityPct);
+  return Math.max(0, Math.round(100 - dist * 1.5));
+}
+
 const col = v => v >= 0 ? "#16A34A" : "#DC2626";
 const sign = v => v >= 0 ? "+" : "";
 
@@ -282,7 +315,114 @@ function PortfolioDetail({ p, onClose }) {
   );
 }
 
-export function PortafogliModelli() {
+
+// ── Gap Analysis ──────────────────────────────────────────────────────────────
+function GapAnalysis({ stocks }) {
+  const [selectedModel, setSelectedModel] = useState(null);
+
+  const totalVal = useMemo(() =>
+    stocks.reduce((s, x) => s + (parseFloat(x.qty)||0) * (parseFloat(x.currentPrice)||0), 0),
+    [stocks]
+  );
+
+  const similarities = useMemo(() =>
+    PORTFOLIOS.map(p => ({ ...p, score: calcSimilarity(stocks, p) }))
+      .sort((a, b) => b.score - a.score),
+    [stocks]
+  );
+
+  const best = similarities[0];
+
+  // Calcola % azionario utente
+  const equityPct = totalVal > 0
+    ? Math.round(stocks.reduce((s, x) => {
+        return s + ((parseFloat(x.qty)||0) * (parseFloat(x.currentPrice)||0)) / totalVal * 100;
+      }, 0))
+    : 0;
+
+  if (stocks.length === 0) return null;
+
+  const model = selectedModel || best;
+  const modelEquityPct = model.etfs.reduce((s, e) => {
+    const isEquity = !["AGGH","IBCI","IBTM","VGOV","XEON","BND","TLT","IEF"].includes(e.ticker);
+    return s + (isEquity ? e.pct : 0);
+  }, 0);
+  const modelBondPct = 100 - modelEquityPct;
+  const userBondPct = 100 - equityPct;
+  const diff = equityPct - modelEquityPct;
+
+  return (
+    <div className="card" style={{ marginTop: 32, padding: "20px 22px" }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: "#0A1628", marginBottom: 4 }}>Il tuo portafoglio vs i modelli</div>
+      <div style={{ fontSize: 11, color: "#8A9AB0", marginBottom: 20 }}>
+        Quanto assomiglia il tuo portafoglio a ciascuna strategia?
+      </div>
+
+      {/* Barre somiglianza */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 24 }}>
+        {similarities.map(p => (
+          <div key={p.id} onClick={() => setSelectedModel(p)}
+            style={{ display: "grid", gridTemplateColumns: "140px 1fr 40px", gap: 12, alignItems: "center", cursor: "pointer", padding: "6px 8px", borderRadius: 8,
+              background: (selectedModel?.id || best.id) === p.id ? "#F8FAFF" : "transparent" }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "#0A1628", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</div>
+            <div style={{ height: 6, background: "#F0F2F7", borderRadius: 3, overflow: "hidden" }}>
+              <div style={{ height: "100%", width: `${p.score}%`, background: p.score >= 70 ? "#16A34A" : p.score >= 40 ? "#F4A020" : "#DC2626", borderRadius: 3, transition: "width 0.5s" }} />
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: p.score >= 70 ? "#16A34A" : p.score >= 40 ? "#F4A020" : "#8A9AB0", textAlign: "right" }}>{p.score}%</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Dettaglio modello selezionato */}
+      <div style={{ borderTop: "1px solid #F0F2F7", paddingTop: 18 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "#0A1628", marginBottom: 12 }}>
+          Confronto con: <span style={{ color: model.color }}>{model.name}</span>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+          {/* Tuo portafoglio */}
+          <div>
+            <div style={{ fontSize: 10, color: "#8A9AB0", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.06em" }}>Il tuo portafoglio</div>
+            <div style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", marginBottom: 6 }}>
+              <div style={{ width: `${equityPct}%`, background: "#0A1628" }} />
+              <div style={{ width: `${userBondPct}%`, background: "#E0E4EF" }} />
+            </div>
+            <div style={{ display: "flex", gap: 12, fontSize: 11, color: "#8A9AB0" }}>
+              <span><span style={{ color: "#0A1628", fontWeight: 700 }}>{equityPct}%</span> azionario</span>
+              <span><span style={{ color: "#8A9AB0", fontWeight: 700 }}>{userBondPct}%</span> altro</span>
+            </div>
+          </div>
+          {/* Modello */}
+          <div>
+            <div style={{ fontSize: 10, color: "#8A9AB0", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.06em" }}>{model.name}</div>
+            <div style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", marginBottom: 6 }}>
+              <div style={{ width: `${modelEquityPct}%`, background: model.color }} />
+              <div style={{ width: `${modelBondPct}%`, background: "#E0E4EF" }} />
+            </div>
+            <div style={{ display: "flex", gap: 12, fontSize: 11, color: "#8A9AB0" }}>
+              <span><span style={{ color: model.color, fontWeight: 700 }}>{Math.round(modelEquityPct)}%</span> azionario</span>
+              <span><span style={{ color: "#8A9AB0", fontWeight: 700 }}>{Math.round(modelBondPct)}%</span> altro</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Suggerimento */}
+        <div style={{ padding: "10px 14px", borderRadius: 8, fontSize: 11, lineHeight: 1.6,
+          background: Math.abs(diff) < 10 ? "#ECFDF5" : "#FFF8EC",
+          color: Math.abs(diff) < 10 ? "#0F6E56" : "#854F0B" }}>
+          {Math.abs(diff) < 10
+            ? `Il tuo portafoglio è già molto vicino al ${model.name}. Mantieni l'allocazione attuale.`
+            : diff > 0
+              ? `Hai il ${diff}% in più di azionario rispetto al ${model.name}. Per avvicinarti, considera di aggiungere bond come AGGH o IBTM.`
+              : `Hai il ${Math.abs(diff)}% in meno di azionario rispetto al ${model.name}. Per avvicinarti, considera di aumentare l'esposizione azionaria con VWCE.`
+          }
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function PortafogliModelli({ stocks = [] }) {
   const [activeCategory, setActiveCategory] = useState("tutti");
   const [selected, setSelected] = useState(null);
 
@@ -322,6 +462,8 @@ export function PortafogliModelli() {
       {selected && (
         <PortfolioDetail p={selected} onClose={() => setSelected(null)} />
       )}
+
+      <GapAnalysis stocks={stocks} />
     </div>
   );
 }

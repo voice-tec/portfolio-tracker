@@ -4153,7 +4153,7 @@ export default function App() {
               {/* ALERT */}
               {activeTab === "modelli" && (
                 <ProGate feat="screener" h={400}>
-                  <PortafogliModelli />
+                  <PortafogliModelli stocks={stocks} eurRate={eurRate} />
                 </ProGate>
               )}
               {activeTab === "alert" && (
