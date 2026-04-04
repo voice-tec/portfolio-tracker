@@ -27,8 +27,8 @@ const SECTOR_COLORS = ["#F4C542","#E87040","#5B8DEF","#5EC98A","#BF6EEA","#F0629
 const SECTORS = ["Tech","Finanza","Salute","Energia","Consumer","Industriali","Real Estate","Utility","Materiali","Telecom","Crypto","ETF","Altro"];
 const CURRENCIES = { USD: { symbol: "$", rate: 1 }, EUR: { symbol: "€", rate: 0.92 }, GBP: { symbol: "£", rate: 0.79 } };
 const PLANS = {
-  free:  { name: "Free",  maxStocks: 5,        features: { realPrices: false, history: false, comparison: false, ai: false, alerts: false, export: false, benchmark: false } },
-  pro:   { name: "Pro",   maxStocks: Infinity,  features: { realPrices: true,  history: true,  comparison: true,  ai: true,  alerts: true,  export: true,  benchmark: true  } },
+  free:  { name: "Free",  maxStocks: 5,        features: { realPrices: false, history: false, comparison: false, ai: false, alerts: false, export: false, benchmark: false, screener: false, simulazioni: false, previsioni: false } },
+  pro:   { name: "Pro",   maxStocks: Infinity,  features: { realPrices: true,  history: true,  comparison: true,  ai: true,  alerts: true,  export: true,  benchmark: true,  screener: true,  simulazioni: true,  previsioni: true  } },
 };
 
 // ─── CONTEXTS ─────────────────────────────────────────────────────────────────
@@ -535,8 +535,25 @@ function ProGate({ feat, children, h = 180 }) {
 }
 
 // ─── UPGRADE MODAL ────────────────────────────────────────────────────────────
-function UpgradeModal({ onClose }) {
+function UpgradeModal({ onClose, user }) {
   const { setPlan } = usePlan();
+
+  async function handleCheckout(plan) {
+    try {
+      const priceId = plan === "yearly"
+        ? import.meta.env.VITE_STRIPE_PRICE_YEARLY
+        : import.meta.env.VITE_STRIPE_PRICE_MONTHLY;
+      const res = await fetch("/api/create-checkout-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ priceId, userId: user?.id, userEmail: user?.email, plan }),
+      });
+      const data = await res.json();
+      if (data.url) window.location.href = data.url;
+    } catch (err) {
+      console.error("Checkout error:", err);
+    }
+  }
   const perks = [["📈","Prezzi live reali"],["🤖","Analisi AI per titolo"],["📊","Storico grafici"],["🔔","Alert target prezzo"],["⚖️","Confronto titoli"],["📥","Export CSV"],["📐","Benchmark vs S&P500"],["♾️","Titoli illimitati"],["☁️","Sync cloud (presto)"],["💱","Multi-valuta"]];
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
@@ -551,13 +568,14 @@ function UpgradeModal({ onClose }) {
             </div>
           ))}
         </div>
-        <div style={{ textAlign: "center", marginBottom: 20 }}>
-          <div style={{ fontFamily: "'Geist', sans-serif", fontSize: 38, color: "#F4C542" }}>€12<span style={{ fontSize: 14, color: "#666" }}>/mese</span></div>
-          <div style={{ fontSize: 11, color: "#444", marginTop: 3 }}>oppure <strong style={{ color: "#444" }}>€99/anno</strong> · Cancella quando vuoi</div>
+        <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
+          <button onClick={() => handleCheckout("monthly")} style={{ flex: 1, background: "#F4C542", border: "none", color: "#fff", fontFamily: "inherit", fontSize: 13, fontWeight: 700, padding: "14px", borderRadius: 8, cursor: "pointer" }}>
+            €4,99/mese
+          </button>
+          <button onClick={() => handleCheckout("yearly")} style={{ flex: 1, background: "#0A1628", border: "none", color: "#F4C542", fontFamily: "inherit", fontSize: 13, fontWeight: 700, padding: "14px", borderRadius: 8, cursor: "pointer" }}>
+            €39,99/anno <span style={{ fontSize: 10, fontWeight: 400 }}>(-33%)</span>
+          </button>
         </div>
-        <button onClick={() => { setPlan("pro"); onClose(); }} style={{ width: "100%", background: "#F4C542", border: "none", color: "#F8F9FC", fontFamily: "inherit", fontSize: 13, fontWeight: 700, padding: "14px", borderRadius: 8, cursor: "pointer" }}>
-          Attiva Pro — Demo gratuita
-        </button>
         <div style={{ fontSize: 10, color: "#D8DCE8", textAlign: "center", marginTop: 10 }}>Demo: in produzione aprirà Stripe Checkout</div>
       </div>
     </div>
@@ -4133,15 +4151,17 @@ export default function App() {
 
               {/* ALERT */}
               {activeTab === "screener" && (
-                <ScreenerTabNew
-                  fmt={fmt}
-                  onAddTicker={ticker => {
-                    setShowWizard(false);
-                    setForm(prev => ({ ...prev, ticker }));
-                    setShowForm(true);
-                  }}
-                  portfolioTickers={stocks.map(s => s.ticker)}
-                />
+                <ProGate feat="screener" h={400}>
+                  <ScreenerTabNew
+                    fmt={fmt}
+                    onAddTicker={ticker => {
+                      setShowWizard(false);
+                      setForm(prev => ({ ...prev, ticker }));
+                      setShowForm(true);
+                    }}
+                    portfolioTickers={stocks.map(s => s.ticker)}
+                  />
+                </ProGate>
               )}
               {activeTab === "alert" && (
                 <div className="fade-up">
@@ -4191,13 +4211,15 @@ export default function App() {
 
               {/* SIMULAZIONI */}
               {activeTab === "simulazioni" && (
-                <SimulazioniTabNew
-                  stocks={stocks}
-                  sym={sym}
-                  rate={rate}
-                  fmt={fmt}
-                  eurRate={eurRate}
-                />
+                <ProGate feat="simulazioni" h={400}>
+                  <SimulazioniTabNew
+                    stocks={stocks}
+                    sym={sym}
+                    rate={rate}
+                    fmt={fmt}
+                    eurRate={eurRate}
+                  />
+                </ProGate>
               )}
 
               {activeTab === "whatif" && (
@@ -4207,7 +4229,9 @@ export default function App() {
                 <DividendiTab stocks={stocks} fmt={fmt} fmtPct={fmtPct} sym={sym} rate={rate} />
               )}
               {activeTab === "previsioni" && (
-                <ForecastTabNew stocks={stocks} fmt={fmt} sym={sym} rate={rate} eurRate={eurRate} />
+                <ProGate feat="previsioni" h={400}>
+                  <ForecastTabNew stocks={stocks} fmt={fmt} sym={sym} rate={rate} eurRate={eurRate} />
+                </ProGate>
               )}
 
             </div>
