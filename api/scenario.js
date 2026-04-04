@@ -24,20 +24,20 @@ export default async function handler(req, res) {
       headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json" }
     });
 
-    if (!response.ok) return res.status(200).json({ candles: [], spy: [], error: "No data available" });
+    if (!response.ok) return res.status(response.status).json({ error: "Yahoo Finance error" });
 
     const data = await response.json();
     const result = data?.chart?.result?.[0];
 
     if (!result || !result.timestamp || result.timestamp.length === 0) {
-      return res.status(200).json({ candles: [], spy: [], error: `No data for ${symbol} in this period` });
+      return res.status(404).json({ error: `No data for ${symbol} in this period` });
     }
 
     const timestamps = result.timestamp;
     const closes = result.indicators?.quote?.[0]?.close;
 
     if (!closes || closes.length === 0) {
-      return res.status(200).json({ candles: [], spy: [] });
+      return res.status(404).json({ error: "No price data available" });
     }
 
     // Build candles, skip null values
@@ -45,21 +45,15 @@ export default async function handler(req, res) {
       .map((ts, i) => ({ ts, price: closes[i] }))
       .filter(c => c.price != null)
       .map(c => ({
-        date: new Date(c.ts * 1000).toISOString().slice(0, 10),
+        date: new Date(c.ts * 1000).toLocaleDateString("it-IT", { day: "2-digit", month: "short", year: "2-digit" }),
         price: parseFloat(c.price.toFixed(2)),
       }));
 
-    if (candles.length === 0) return res.status(200).json({ candles: [], spy: [] });
-
-    // Rimuovi ultima settimana parziale — Yahoo include spesso una settimana incompleta alla fine
-    const toDate = new Date(req.query.to);
-    const lastCandle = new Date(candles[candles.length - 1].date);
-    const daysDiff = Math.abs((toDate - lastCandle) / (1000 * 60 * 60 * 24));
-    const trimmedCandles = daysDiff < 5 && candles.length > 2 ? candles.slice(0, -1) : candles;
+    if (candles.length === 0) return res.status(404).json({ error: "No valid candles" });
 
     // Normalize to % change from first candle
-    const base = trimmedCandles[0].price;
-    const normalized = trimmedCandles.map(c => ({
+    const base = candles[0].price;
+    const normalized = candles.map(c => ({
       ...c,
       pct: parseFloat(((c.price - base) / base * 100).toFixed(2)),
     }));
@@ -80,7 +74,7 @@ export default async function handler(req, res) {
               .map((ts, i) => ({ ts, price: spyCloses[i] }))
               .filter(c => c.price != null)
               .map(c => ({
-                date: new Date(c.ts * 1000).toISOString().slice(0, 10),
+                date: new Date(c.ts * 1000).toLocaleDateString("it-IT", { day: "2-digit", month: "short", year: "2-digit" }),
                 pct: parseFloat(((c.price - spyBase) / spyBase * 100).toFixed(2)),
               }));
           }

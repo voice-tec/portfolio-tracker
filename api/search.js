@@ -40,10 +40,17 @@ async function fetchSectorYahoo(ticker) {
   } catch { return null; }
 }
 
-export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", process.env.ALLOWED_ORIGIN || "*");
+// ── CORS helper ──────────────────────────────────────────────────────────────
+function setCors(req, res) {
+  const origin = req.headers.origin || "";
+  const allowed = ["https://www.trackfolio.eu", "https://trackfolio.eu"];
+  const allowedOrigin = allowed.includes(origin) ? origin : "*";
+  res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+}
+export default async function handler(req, res) {
+  setCors(req, res);
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 

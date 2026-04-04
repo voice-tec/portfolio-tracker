@@ -1,94 +1,96 @@
+// api/history.js — Vercel Serverless Function
+// GET /api/history?symbol=AAPL&days=30
+// GET /api/history?symbol=AAPL&from=2019-01-01  (data specifica)
+// Usa Yahoo Finance per date > 365 giorni fa, Finnhub per dati recenti
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", process.env.ALLOWED_ORIGIN || "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
   const { symbol, days, from } = req.query;
-  if (!symbol) return res.status(400).json({ error: "Missing symbol" });
-  const s = symbol.toUpperCase();
+  if (!symbol) return res.status(400).json({ error: "Missing symbol parameter" });
 
   const toTs = Math.floor(Date.now() / 1000);
   let fromTs;
+  let useYahoo = false;
+
   if (from) {
     fromTs = Math.floor(new Date(from).getTime() / 1000);
-    if (isNaN(fromTs) || fromTs >= toTs) return res.status(400).json({ error: "Data non valida" });
+    const daysBack = (toTs - fromTs) / 86400;
+    useYahoo = daysBack > 365; // Yahoo per date lontane
   } else {
-    // default: 1000 giorni se non specificato
-    fromTs = toTs - parseInt(days || "1000") * 86400;
-  }
-
-  // ── Yahoo Finance v8 con adjclose ─────────────────────────────────────────
-  async function tryYahooHistory(sym) {
-    try {
-      // includeAdjustedClose=true e events=split,div → Yahoo restituisce adjclose
-      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}` +
-        `?interval=1d&period1=${fromTs}&period2=${toTs}` +
-        `&includeAdjustedClose=true&events=div%2Csplit`;
-
-      const r = await fetch(url, {
-        headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json" },
-      });
-      if (!r.ok) return null;
-      const data = await r.json();
-      const result = data?.chart?.result?.[0];
-      if (!result?.timestamp) return null;
-
-      const closes    = result.indicators?.quote?.[0]?.close || [];
-      const adjCloses = result.indicators?.adjclose?.[0]?.adjclose || [];
-
-      const candles = result.timestamp
-        .map((ts, i) => ({
-          ts,
-          // Usa adjclose se disponibile, altrimenti close
-          price: adjCloses[i] ?? closes[i],
-        }))
-        .filter(c => c.price != null && c.price > 0)
-        .map(c => ({
-          date:  new Date(c.ts * 1000).toISOString().slice(0, 10),
-          price: parseFloat(c.price.toFixed(4)),
-        }));
-
-      return candles.length ? candles : null;
-    } catch { return null; }
-  }
-
-  // ── Twelve Data — fallback per titoli europei ─────────────────────────────
-  async function tryTwelveHistory(sym) {
-    try {
-      const tdKey = process.env.TWELVE_DATA_API_KEY;
-      if (!tdKey) return null;
-      const startDate = new Date(fromTs * 1000).toISOString().slice(0, 10);
-      const endDate   = new Date(toTs   * 1000).toISOString().slice(0, 10);
-      const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(sym)}` +
-        `&interval=1day&start_date=${startDate}&end_date=${endDate}&outputsize=5000&apikey=${tdKey}`;
-      const r = await fetch(url);
-      if (!r.ok) return null;
-      const d = await r.json();
-      if (d.code || !d.values?.length) return null;
-      const candles = d.values
-        .reverse()
-        .map(v => ({
-          date:  v.datetime.slice(0, 10),
-          price: parseFloat(parseFloat(v.close).toFixed(4)),
-        }))
-        .filter(c => c.price > 0);
-      return candles.length ? candles : null;
-    } catch { return null; }
+    const d = parseInt(days || "30");
+    fromTs = toTs - d * 86400;
+    useYahoo = d > 365;
   }
 
   try {
-    let candles = await tryYahooHistory(s);
-    if (!candles) candles = await tryTwelveHistory(s);
+    let candles = [];
 
-    if (!candles || candles.length === 0) {
-      return res.status(404).json({ error: `Nessun dato storico per "${s}"` });
+    if (useYahoo) {
+      // Yahoo Finance — dati storici illimitati
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol.toUpperCase())}?interval=1d&period1=${fromTs}&period2=${toTs}`;
+      const response = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+      if (!response.ok) return res.status(404).json({ error: "No data available" });
+
+      const data = await response.json();
+      const result = data?.chart?.result?.[0];
+      if (!result?.timestamp) return res.status(404).json({ error: "No historical data" });
+
+      const closes = result.indicators?.quote?.[0]?.close;
+      candles = result.timestamp
+        .map((ts, i) => ({ ts, price: closes?.[i] }))
+        .filter(c => c.price != null)
+        .map(c => ({
+          date: new Date(c.ts * 1000).toLocaleDateString("it-IT", { day: "2-digit", month: "short", year: "2-digit" }),
+          price: parseFloat(c.price.toFixed(2)),
+        }));
+    } else {
+      // Finnhub — dati recenti (< 1 anno)
+      const apiKey = process.env.FINNHUB_API_KEY;
+      if (!apiKey) return res.status(500).json({ error: "FINNHUB_API_KEY not configured" });
+
+      const url = `https://finnhub.io/api/v1/stock/candle?symbol=${encodeURIComponent(symbol.toUpperCase())}&resolution=D&from=${fromTs}&to=${toTs}&token=${apiKey}`;
+      const response = await fetch(url);
+      if (!response.ok) return res.status(response.status).json({ error: "Finnhub error" });
+
+      const data = await response.json();
+      if (data.s === "no_data" || !data.t) {
+        // Fallback a Yahoo anche per dati recenti
+        const yhUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol.toUpperCase())}?interval=1d&period1=${fromTs}&period2=${toTs}`;
+        const yhRes = await fetch(yhUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
+        if (yhRes.ok) {
+          const yh = await yhRes.json();
+          const r = yh?.chart?.result?.[0];
+          const closes = r?.indicators?.quote?.[0]?.close;
+          if (r?.timestamp) {
+            candles = r.timestamp
+              .map((ts, i) => ({ ts, price: closes?.[i] }))
+              .filter(c => c.price != null)
+              .map(c => ({
+                date: new Date(c.ts * 1000).toLocaleDateString("it-IT", { day: "2-digit", month: "short", year: "2-digit" }),
+                price: parseFloat(c.price.toFixed(2)),
+              }));
+          }
+        }
+      } else {
+        candles = data.t.map((ts, i) => ({
+          date: new Date(ts * 1000).toLocaleDateString("it-IT", { day: "2-digit", month: "short", year: "2-digit" }),
+          price: parseFloat(data.c[i].toFixed(2)),
+        }));
+      }
     }
 
-    return res.status(200).json({ symbol: s, candles, count: candles.length });
+    if (!candles.length) return res.status(404).json({ error: "No historical data found" });
+
+    return res.status(200).json({ symbol: symbol.toUpperCase(), candles, count: candles.length });
+
   } catch (err) {
-    console.error("History error:", err);
-    return res.status(500).json({ error: "Errore nel recupero dati storici" });
+    console.error("History fetch error:", err);
+    return res.status(500).json({ error: "Failed to fetch historical data" });
   }
 }

@@ -1,158 +1,119 @@
-// api/screener.js — Legge da Supabase cache (aggiornata da screener-update.js)
-// Velocissimo — nessuna chiamata a API esterne, solo query Supabase
-
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY;
-
-// Fallback Finnhub se Supabase è vuota
-const FINNHUB_KEY = process.env.FINNHUB_API_KEY;
-const FH = "https://finnhub.io/api/v1";
-
-const FALLBACK_UNIVERSE = [
-  "JPM","BAC","C","WFC","USB","XOM","CVX","COP","AAPL","MSFT",
-  "NVDA","GOOGL","META","AMZN","TSLA","JNJ","ABBV","LLY","UNH","PFE",
-  "GE","HON","CAT","DE","EMR","KO","PEP","PG","MO","PM",
-];
+// api/screener.js — Fama-French factor screener via Financial Modeling Prep
+const FMP_KEY = process.env.FMP_API_KEY;
+const FMP_BASE = "https://financialmodelingprep.com/api/v3";
+const enc = encodeURIComponent;
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Cache-Control", "public, max-age=300"); // cache 5 min
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  const { limit = 50, sector, minScore, sortBy = "score_composite" } = req.query;
-  const maxResults = Math.min(parseInt(limit) || 50, 100);
+  const { exchange = "NASDAQ", limit = 50 } = req.query;
 
-  // ── Prova a leggere da Supabase ───────────────────────────────────────────
-  if (SUPABASE_URL && SUPABASE_KEY) {
-    try {
-      let url = `${SUPABASE_URL}/rest/v1/screener_cache?select=symbol,name,sector,price,mkt_cap_m,pe,pb,roe,roa,score_value,score_size,score_profitability,score_momentum,score_composite,score_composite_prev,score_updated_week,change_1d,updated_at&order=${sortBy}.desc&limit=${maxResults}`;
-      if (sector && sector !== "Tutti") url += `&sector=eq.${encodeURIComponent(sector)}`;
-      if (minScore) url += `&score_composite=gte.${minScore}`;
-
-      const sbRes = await fetch(url, {
-        headers: {
-          "apikey":        SUPABASE_KEY,
-          "Authorization": `Bearer ${SUPABASE_KEY}`,
-          "Accept":        "application/json",
-        }
-      });
-
-      if (sbRes.ok) {
-        const rows = await sbRes.json();
-        if (Array.isArray(rows) && rows.length > 0) {
-          // Converti formato Supabase → formato frontend
-          const results = rows.map(r => ({
-            symbol:   r.symbol,
-            name:     r.name,
-            sector:   r.sector,
-            price:    r.price,
-            mktCapM:  r.mkt_cap_m,
-            pe:       r.pe,
-            pb:       r.pb,
-            roe:      r.roe,
-            roa:      r.roa,
-            change1d: r.change_1d?.toString() || "0",
-            updatedAt: r.updated_at,
-            scorePrev:  r.score_composite_prev ?? null,
-            scoreWeek:  r.score_updated_week ?? null,
-            scores: {
-              value:         r.score_value,
-              size:          r.score_size,
-              profitability: r.score_profitability,
-              momentum:      r.score_momentum,
-              composite:     r.score_composite,
-            },
-          }));
-
-          // Ottieni data ultimo aggiornamento
-          const lastUpdate = rows[0]?.updated_at
-            ? new Date(rows[0].updated_at).toLocaleDateString("it-IT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
-            : null;
-
-          return res.status(200).json({
-            results,
-            count:      results.length,
-            source:     "cache",
-            lastUpdate,
-          });
-        }
-      }
-    } catch (e) {
-      console.error("[screener] Supabase error:", e.message);
-    }
-  }
-
-  // ── Fallback: Finnhub live se cache vuota ─────────────────────────────────
-  if (!FINNHUB_KEY) {
-    return res.status(200).json({ results: [], count: 0, error: "Cache vuota e nessuna API key disponibile" });
-  }
+  if (!FMP_KEY) return res.status(500).json({ error: "FMP_API_KEY non configurata su Vercel", results: [] });
 
   try {
-    const tickers = FALLBACK_UNIVERSE;
-    const results = [];
-    const BATCH   = 5;
+    // 1. Stock screener — filtri base Fama-French
+    // FMP vuole un solo exchange per chiamata
+    const exc = exchange.split(",")[0].trim(); // prendi il primo se multipli
+    const url = `${FMP_BASE}/stock-screener?marketCapMoreThan=100000000&marketCapLowerThan=10000000000&betaLowerThan=2&volumeMoreThan=100000&exchange=${enc(exc)}&limit=${Math.min(limit, 100)}&apikey=${FMP_KEY}`;
+    const screenRes = await fetch(url);
+    const screenText = await screenRes.text();
+    let candidates;
+    try { candidates = JSON.parse(screenText); } catch(e) { throw new Error(`FMP parse error: ${screenText.slice(0,200)}`); }
+    if (!screenRes.ok) throw new Error(`FMP screener ${screenRes.status}: ${screenText.slice(0,200)}`);
+    if (!Array.isArray(candidates)) throw new Error(`Risposta inattesa FMP: ${screenText.slice(0,200)}`);
 
-    for (let i = 0; i < tickers.length; i += BATCH) {
-      const batch = tickers.slice(i, i + BATCH);
-      const fetches = batch.flatMap(sym => [
-        fetch(`${FH}/quote?symbol=${sym}&token=${FINNHUB_KEY}`).then(r => r.ok ? r.json() : null).catch(() => null),
-        fetch(`${FH}/stock/metric?symbol=${sym}&metric=all&token=${FINNHUB_KEY}`).then(r => r.ok ? r.json() : null).catch(() => null),
-        fetch(`${FH}/stock/profile2?symbol=${sym}&token=${FINNHUB_KEY}`).then(r => r.ok ? r.json() : null).catch(() => null),
-      ]);
-      const data = await Promise.all(fetches);
+    if (candidates.length === 0) return res.status(200).json({ results: [], error: "Nessun risultato per questo mercato" });
 
-      for (let j = 0; j < batch.length; j++) {
-        const sym     = batch[j];
-        const quote   = data[j * 3];
-        const fund    = data[j * 3 + 1];
-        const profile = data[j * 3 + 2];
+    // 2. Per ogni candidato, fetch key metrics (P/B, P/E, ROE, ROA)
+    const tickers = candidates.slice(0, 30).map(c => c.symbol).join(",");
+    const [metricsRes, pricesRes] = await Promise.all([
+      fetch(`${FMP_BASE}/key-metrics/${tickers}?period=annual&limit=1&apikey=${FMP_KEY}`),
+      fetch(`${FMP_BASE}/quote/${tickers}?apikey=${FMP_KEY}`),
+    ]);
 
-        if (!quote?.c || quote.c === 0) continue;
+    const metricsRaw = metricsRes.ok ? await metricsRes.json() : [];
+    const quotesRaw  = pricesRes.ok  ? await pricesRes.json() : [];
 
-        const price  = quote.c;
-        const m      = fund?.metric || {};
-        const high52 = m["52WeekHigh"] || 0;
-        const low52  = m["52WeekLow"]  || 0;
-        const pe     = parseFloat(m.peNormalizedAnnual || m.peTTM || 0);
-        const pb     = parseFloat(m.pbAnnual || m.pbQuarterly || 0);
-        const roe    = parseFloat(m.roeTTM || m.roeAnnual || 0);
-        const roa    = parseFloat(m.roaTTM || m.roaAnnual || 0);
-        const mktCap = parseFloat(m.marketCapitalization || 0) * 1e6;
+    // Index per ticker
+    const metricsMap = {};
+    (Array.isArray(metricsRaw) ? metricsRaw : []).forEach(m => {
+      if (!metricsMap[m.symbol]) metricsMap[m.symbol] = m;
+    });
+    const quotesMap = {};
+    (Array.isArray(quotesRaw) ? quotesRaw : []).forEach(q => {
+      quotesMap[q.symbol] = q;
+    });
 
-        const peScore = pe > 0 && pe < 80 ? Math.max(0, Math.min(100, Math.round(((40-pe)/40)*100))) : null;
-        const pbScore = pb > 0 ? Math.max(0, Math.min(100, Math.round(((3-pb)/3)*100))) : null;
-        const valueScore = peScore != null && pbScore != null ? Math.round((peScore+pbScore)/2) : (peScore ?? pbScore ?? null);
-        const sizeScore = mktCap > 0 ? Math.round(Math.max(0, Math.min(100, ((100e9-mktCap)/100e9)*100))) : null;
-        const roeScore = roe !== 0 ? Math.max(0, Math.min(100, Math.round((roe/25)*100))) : null;
-        const roaScore = roa !== 0 ? Math.max(0, Math.min(100, Math.round((roa/10)*100))) : null;
-        const profScore = roeScore != null || roaScore != null
-          ? Math.round(((roeScore??0)+(roaScore??0))/((roeScore!=null?1:0)+(roaScore!=null?1:0))) : null;
-        const momentumScore = high52 > low52 && price > 0 ? Math.round(((price-low52)/(high52-low52))*100) : null;
+    // 3. Calcola score Fama-French per ogni titolo
+    const results = candidates.slice(0, 30).map(c => {
+      const m = metricsMap[c.symbol] || {};
+      const q = quotesMap[c.symbol]  || {};
 
-        const scores = [valueScore, sizeScore, profScore, momentumScore].filter(s => s != null);
-        if (scores.length < 2) continue;
+      // ── VALUE score (basso P/E e P/B = meglio) ─────────────────────────
+      const pe  = parseFloat(m.peRatioTTM || q.pe || 0);
+      const pb  = parseFloat(m.pbRatioTTM || 0);
+      // Score 0-100: P/E < 15 = ottimo, > 30 = scarso
+      const peScore = pe > 0 ? Math.max(0, Math.min(100, ((30 - pe) / 30) * 100)) : null;
+      const pbScore = pb > 0 ? Math.max(0, Math.min(100, ((3  - pb) / 3)  * 100)) : null;
+      const valueScore = (peScore != null && pbScore != null)
+        ? Math.round((peScore + pbScore) / 2)
+        : (peScore ?? pbScore ?? null);
 
-        const composite = Math.round(scores.reduce((a,b) => a+b, 0) / scores.length);
+      // ── SIZE score (small cap < 2B = meglio) ───────────────────────────
+      const mktCap = parseFloat(c.marketCap || 0);
+      const sizeScore = mktCap > 0
+        ? Math.round(Math.max(0, Math.min(100, ((10e9 - mktCap) / 10e9) * 100)))
+        : null;
 
-        results.push({
-          symbol: sym, name: profile?.name || sym, sector: profile?.finnhubIndustry || "—",
-          price, mktCapM: Math.round(mktCap / 1e6),
-          pe: pe > 0 ? parseFloat(pe.toFixed(1)) : null,
-          pb: pb > 0 ? parseFloat(pb.toFixed(2)) : null,
-          roe: roe !== 0 ? parseFloat(roe.toFixed(1)) : null,
-          roa: roa !== 0 ? parseFloat(roa.toFixed(1)) : null,
-          change1d: (((quote.c - quote.pc) / quote.pc) * 100).toFixed(2),
-          scores: { value: valueScore, size: sizeScore, profitability: profScore, momentum: momentumScore, composite },
-        });
-      }
+      // ── PROFITABILITY score (ROE + ROA) ────────────────────────────────
+      const roe = parseFloat(m.roeTTM || 0) * 100; // converti in %
+      const roa = parseFloat(m.roaTTM || 0) * 100;
+      const roeScore = Math.max(0, Math.min(100, (roe / 25) * 100));
+      const roaScore = Math.max(0, Math.min(100, (roa / 10) * 100));
+      const profScore = roe !== 0 || roa !== 0
+        ? Math.round((roeScore + roaScore) / 2)
+        : null;
 
-      if (i + BATCH < tickers.length) await new Promise(r => setTimeout(r, 300));
-    }
+      // ── MOMENTUM score (price vs 52w range) ────────────────────────────
+      const price  = parseFloat(q.price || 0);
+      const low52  = parseFloat(q.yearLow  || 0);
+      const high52 = parseFloat(q.yearHigh || 0);
+      const momentumScore = (high52 > low52 && price > 0)
+        ? Math.round(((price - low52) / (high52 - low52)) * 100)
+        : null;
 
-    results.sort((a, b) => b.scores.composite - a.scores.composite);
-    return res.status(200).json({ results: results.slice(0, maxResults), count: results.length, source: "live" });
+      // ── Score composito ────────────────────────────────────────────────
+      const scores = [valueScore, sizeScore, profScore, momentumScore].filter(s => s != null);
+      const composite = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+
+      return {
+        symbol:    c.symbol,
+        name:      c.companyName || c.name || c.symbol,
+        sector:    c.sector || "—",
+        price:     price || parseFloat(c.price || 0),
+        mktCapM:   Math.round(mktCap / 1e6),   // in milioni
+        pe:        pe  > 0 ? parseFloat(pe.toFixed(1))  : null,
+        pb:        pb  > 0 ? parseFloat(pb.toFixed(2))  : null,
+        roe:       roe !== 0 ? parseFloat(roe.toFixed(1)) : null,
+        roa:       roa !== 0 ? parseFloat(roa.toFixed(1)) : null,
+        change1d:  parseFloat(q.changesPercentage || 0).toFixed(2),
+        scores: {
+          value:       valueScore,
+          size:        sizeScore,
+          profitability: profScore,
+          momentum:    momentumScore,
+          composite,
+        },
+      };
+    })
+    .filter(r => r.scores.composite > 20)           // filtra titoli senza dati sufficienti
+    .sort((a, b) => b.scores.composite - a.scores.composite);
+
+    return res.status(200).json({ results, count: results.length });
 
   } catch (err) {
+    console.error("Screener error:", err);
     return res.status(500).json({ error: err.message, results: [] });
   }
 }

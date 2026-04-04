@@ -94,8 +94,17 @@ async function supabaseUpsert(rows) {
   return res.ok;
 }
 
+// ── CORS helper ──────────────────────────────────────────────────────────────
+function setCors(req, res) {
+  const origin = req.headers.origin || "";
+  const allowed = ["https://www.trackfolio.eu", "https://trackfolio.eu"];
+  const allowedOrigin = allowed.includes(origin) ? origin : "*";
+  res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+}
 export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  setCors(req, res);
   if (req.method === "OPTIONS") return res.status(200).end();
 
   if (!FINNHUB_KEY)  return res.status(500).json({ error: "Missing FINNHUB_API_KEY" });

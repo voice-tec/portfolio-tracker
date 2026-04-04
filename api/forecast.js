@@ -17,7 +17,7 @@ export default async function handler(req, res) {
     const s = symbol.toUpperCase();
     const currentPrice = parseFloat(price);
     const now = Math.floor(Date.now() / 1000);
-    const from5y = now - 10 * 365 * 86400;
+    const from5y = now - 5 * 365 * 86400;
     const from3y = now - 3 * 365 * 86400;
 
     // Fetch 5 anni dati settimanali da Yahoo Finance
@@ -37,7 +37,7 @@ export default async function handler(req, res) {
       .map((ts, i) => ({ ts, price: closes[i] }))
       .filter(p => p.price != null && p.price > 0);
 
-    if (prices.length < 104) return res.status(400).json({ error: "Not enough historical data" });
+    if (prices.length < 52) return res.status(400).json({ error: "Not enough historical data" });
 
     // ── 1. ANALISI STORICA A QUESTO PREZZO ──────────────────────────────────
     const band = 0.07; // ±7% del prezzo attuale
@@ -105,38 +105,18 @@ export default async function handler(req, res) {
     }));
 
     // ── 5. PROIEZIONE 12 MESI ────────────────────────────────────────────────
-    // Percentili reali su rendimenti annuali rolling (10 anni)
-    // Più conservativi di base±1.5σ che gonfiava i numeri
-    const annualReturns = [];
-    for (let i = 0; i + 52 < prices.length; i++) {
-      annualReturns.push(((prices[i + 52].price - prices[i].price) / prices[i].price) * 100);
-    }
-    annualReturns.sort((a, b) => a - b);
-
-    const percentile = (arr, p) => {
-      if (!arr.length) return 0;
-      const idx = Math.max(0, Math.min(arr.length - 1, Math.floor((p / 100) * arr.length)));
-      return arr[idx];
-    };
-
-    // Trend aggiustato /1.5 per non proiettare bull market infinito
-    const rawTrend = annualizedReturn !== null ? annualizedReturn : (percentile(annualReturns, 50) || 0);
-    const rawBase  = rawTrend / 1.5;
-    const rawPess  = annualReturns.length >= 20 ? percentile(annualReturns, 20) : rawBase - annualVol * 0.6;
-    const rawOpt   = annualReturns.length >= 20 ? percentile(annualReturns, 80) : rawBase + annualVol * 0.6;
-
-    const cap = (v, min, max) => Math.max(min, Math.min(max, v));
-    const base = parseFloat(cap(rawBase, -25, 25).toFixed(2));
-    const pess = parseFloat(cap(rawPess, -30, 15).toFixed(2));
-    const opt  = parseFloat(cap(rawOpt,   -5, 30).toFixed(2));
-
+    // Base: trend storico annualizzato
+    // Pessimistico: base - 1.5σ
+    // Ottimistico:  base + 1.5σ
+    const base = annualizedReturn !== null ? annualizedReturn : (avgOutcome || 0);
+    const sigma = annualVol;
     const projection = {
-      base,
-      pessimistic: pess,
-      optimistic:  opt,
-      basePriceTarget:        parseFloat((currentPrice * (1 + base / 100)).toFixed(2)),
-      pessimisticPriceTarget: parseFloat((currentPrice * (1 + pess / 100)).toFixed(2)),
-      optimisticPriceTarget:  parseFloat((currentPrice * (1 + opt  / 100)).toFixed(2)),
+      base: parseFloat(base.toFixed(2)),
+      pessimistic: parseFloat((base - 1.5 * sigma).toFixed(2)),
+      optimistic: parseFloat((base + 1.5 * sigma).toFixed(2)),
+      basePriceTarget: parseFloat((currentPrice * (1 + base / 100)).toFixed(2)),
+      pessimisticPriceTarget: parseFloat((currentPrice * (1 + (base - 1.5 * sigma) / 100)).toFixed(2)),
+      optimisticPriceTarget: parseFloat((currentPrice * (1 + (base + 1.5 * sigma) / 100)).toFixed(2)),
     };
 
     // ── 6. GRAFICO PROIEZIONE MESE PER MESE ─────────────────────────────────
@@ -150,8 +130,8 @@ export default async function handler(req, res) {
       projectionChart.push({
         month: d.toLocaleDateString("it-IT", { month: "short", year: "2-digit" }),
         base: parseFloat((currentPrice * (1 + (base * factor) / 100)).toFixed(2)),
-        pessimistic: parseFloat((currentPrice * (1 + (pess * factor) / 100)).toFixed(2)),
-        optimistic:  parseFloat((currentPrice * (1 + (opt  * factor) / 100)).toFixed(2)),
+        pessimistic: parseFloat((currentPrice * (1 + ((base - 1.5 * sigma) * factor) / 100)).toFixed(2)),
+        optimistic: parseFloat((currentPrice * (1 + ((base + 1.5 * sigma) * factor) / 100)).toFixed(2)),
         seasonBoost: parseFloat(seasonBoost.toFixed(2)),
       });
     }
