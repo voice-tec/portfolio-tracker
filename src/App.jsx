@@ -20,6 +20,7 @@ import { OverviewDashboard } from "./components/OverviewDashboard";
 import { SimulazioniTabNew } from "./components/SimulazioniTabNew";
 import { ForecastTabNew } from "./components/ForecastTabNew";
 import { ScreenerTabNew } from "./components/ScreenerTabNew";
+import { PortafogliModelli } from "./components/PortafogliModelli";
 import { MarketBadge } from "./components/MarketBadge";
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
@@ -3795,9 +3796,9 @@ export default function App() {
             </div>
             {/* Desktop tabs */}
             <div style={{ display: "flex", alignItems: "center", gap: 0, overflowX: "auto", flex: 1, justifyContent: "center" }} className="desktop-tabs">
-              {["overview","confronto","screener","simulazioni","whatif","dividendi","previsioni"].map(t => (
+              {["overview","confronto","modelli","simulazioni","whatif","dividendi","previsioni"].map(t => (
                 <button key={t} className={`tab-btn ${activeTab === t ? "active" : ""}`} onClick={() => setActiveTab(t)}>
-                  {t === "whatif" ? "e se?" : t === "dividendi" ? "💰 dividendi" : t === "previsioni" ? "🔮 previsioni" : t === "screener" ? "📊 screener" : t}
+                  {t === "whatif" ? "e se?" : t === "dividendi" ? "💰 dividendi" : t === "previsioni" ? "🔮 previsioni" : t === "modelli" ? "📐 modelli" : t}
                 </button>
               ))}
             </div>
@@ -4150,17 +4151,9 @@ export default function App() {
               )}
 
               {/* ALERT */}
-              {activeTab === "screener" && (
+              {activeTab === "modelli" && (
                 <ProGate feat="screener" h={400}>
-                  <ScreenerTabNew
-                    fmt={fmt}
-                    onAddTicker={ticker => {
-                      setShowWizard(false);
-                      setForm(prev => ({ ...prev, ticker }));
-                      setShowForm(true);
-                    }}
-                    portfolioTickers={stocks.map(s => s.ticker)}
-                  />
+                  <PortafogliModelli />
                 </ProGate>
               )}
               {activeTab === "alert" && (
@@ -4271,7 +4264,7 @@ export default function App() {
               { id: "whatif",      label: "E se?",    svg: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> },
               { id: "dividendi",   label: "Divid.",   svg: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> },
               { id: "previsioni",  label: "Prev.",    svg: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> },
-              { id: "screener",    label: "Screener", svg: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> },
+              { id: "modelli",     label: "Modelli",  svg: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg> },
             ].map(t => (
               <button key={t.id} onClick={() => setActiveTab(t.id)}
                 style={{ background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "6px 10px", color: activeTab === t.id ? "#1E4FD8" : "#94A3B8", fontFamily: "inherit", transition: "color 0.15s", flex: 1 }}>
