@@ -5,7 +5,6 @@ import {
 } from "recharts";
 import { toUSD } from "../utils/currency";
 import { API_BASE } from "../utils/api";
-import { EarningsImpact, RiskConcentration } from "./AnalysisWidgets";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const col  = v => v == null ? "#8A9AB0" : v > 0 ? "#16A34A" : v < 0 ? "#DC2626" : "#8A9AB0";
@@ -225,7 +224,7 @@ function TechnicalsWidget({ technicals, currentPrice, fmt }) {
 }
 
 // ── Analisi storica migliorata ────────────────────────────────────────────────
-function HistoricalAnalysis({ d, ticker, band, setBand, macroCtx }) {
+function HistoricalAnalysis({ d, ticker }) {
   if (!d || d.occurrences === 0) return (
     <div className="card" style={{ padding: "16px 18px" }}>
       <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>
@@ -252,27 +251,9 @@ function HistoricalAnalysis({ d, ticker, band, setBand, macroCtx }) {
 
   return (
     <div className="card" style={{ padding: "16px 18px" }}>
-      {/* Header con slider */}
       <div style={{ fontSize: 9, color: "#8A9AB0", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 14 }}>
         🔍 Analisi Storica — {ticker} a questo prezzo (±7%)
       </div>
-
-      {/* Contesto macro — evidenzia periodi simili */}
-      {macroCtx && (() => {
-        const vix = macroCtx.vix;
-        const t10y = macroCtx.treasury10y;
-        const spread = macroCtx.yieldSpread;
-        let label = null, color = "#8A9AB0";
-        if (vix > 25)       { label = "⚠️ Alta volatilità (VIX " + vix + ") — i casi storici in periodi simili tendono ad essere più variabili"; color = "#DC2626"; }
-        else if (t10y > 4.5) { label = "🏦 Tassi elevati (10Y " + t10y + "%) — contesto simile a 2022-2023"; color = "#7C3AED"; }
-        else if (spread < 0) { label = "📉 Curva invertita — storicamente precede rallentamento"; color = "#F97316"; }
-        else                  { label = "✅ Contesto macro stabile — dati storici ben rappresentativi"; color = "#16A34A"; }
-        return label ? (
-          <div style={{ padding: "8px 12px", borderRadius: 8, background: color + "10", border: `1px solid ${color}25`, marginBottom: 14, fontSize: 10, color, lineHeight: 1.5 }}>
-            {label}
-          </div>
-        ) : null;
-      })()}
 
       {/* KPI */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8, marginBottom: 16 }}>
@@ -346,17 +327,7 @@ export function ForecastTabNew({ stocks, fmt, sym, rate, eurRate }) {
   const [analystData, setAnalystData]   = useState({});
   const [historyData, setHistoryData]   = useState({});
   const [loading, setLoading]     = useState(false);
-  const [band, setBand]           = useState(7);   // ±7% default
-  const [macroCtx, setMacroCtx]   = useState(null); // contesto macro live
   const allLoadedRef = useRef(false);
-
-  // Fetch contesto macro per evidenziare periodi simili
-  useEffect(() => {
-    fetch(`${API_BASE}/api/price?symbol=__MACRO__`)
-      .then(r => r.json())
-      .then(d => setMacroCtx(d))
-      .catch(() => {});
-  }, []);
 
   // Carica forecast per tutti i titoli in background
   useEffect(() => {
@@ -394,23 +365,12 @@ export function ForecastTabNew({ stocks, fmt, sym, rate, eurRate }) {
     // Forecast se non caricato
     if (!forecastData[t]) {
       setLoading(true);
-      fetch(`${API_BASE}/api/forecast?symbol=${encodeURIComponent(t)}&price=${selected.currentPrice}&band=${band/100}`)
+      fetch(`${API_BASE}/api/forecast?symbol=${encodeURIComponent(t)}&price=${selected.currentPrice}`)
         .then(r => r.json())
         .then(d => { if (!d.error) setForecastData(p => ({ ...p, [t]: d })); setLoading(false); })
         .catch(() => setLoading(false));
     }
-  }, [selected?.ticker, band]);
-
-  // Refetch analisi storica quando cambia banda
-  useEffect(() => {
-    if (!selected) return;
-    const t = selected.ticker;
-    setLoading(true);
-    fetch(`${API_BASE}/api/forecast?symbol=${encodeURIComponent(t)}&price=${selected.currentPrice}&band=${band/100}`)
-      .then(r => r.json())
-      .then(d => { if (!d.error) setForecastData(p => ({ ...p, [t]: d })); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, [band]);
+  }, [selected?.ticker]);
 
   // Portfolio forecast aggregato
   const portfolioForecast = useMemo(() => {
@@ -575,16 +535,6 @@ export function ForecastTabNew({ stocks, fmt, sym, rate, eurRate }) {
               </AreaChart>
             </ResponsiveContainer>
 
-            {/* Nota metodologia */}
-            {d.methodology && (
-              <div style={{ marginTop: 12, padding: "8px 12px", background: "#F8FAFF", borderRadius: 8, fontSize: 9, color: "#8A9AB0", lineHeight: 1.6 }}>
-                📊 <strong style={{ color: "#0A1628" }}>Metodologia:</strong> {d.methodology.note}
-                {d.methodology.analystWeight > 0 && (
-                  <span style={{ marginLeft: 6, color: "#4361ee" }}>· Target analisti: ${d.methodology.analystTarget?.toFixed(2)}</span>
-                )}
-              </div>
-            )}
-
             {/* Legenda + scenari */}
             <div style={{ display: "flex", gap: 12, marginTop: 12, flexWrap: "wrap", alignItems: "center" }}>
               {[
@@ -610,7 +560,7 @@ export function ForecastTabNew({ stocks, fmt, sym, rate, eurRate }) {
           </div>
 
           {/* Analisi storica */}
-          <HistoricalAnalysis d={d} ticker={selected.ticker} band={band} setBand={setBand} macroCtx={macroCtx} />
+          <HistoricalAnalysis d={d} ticker={selected.ticker} />
 
           {/* Stagionalità */}
           {d.seasonality?.length > 0 && (
@@ -625,18 +575,15 @@ export function ForecastTabNew({ stocks, fmt, sym, rate, eurRate }) {
                   <Tooltip contentStyle={{ background: "#fff", border: "1px solid #E8EBF4", borderRadius: 8, fontSize: 10, padding: "4px 8px" }}
                     formatter={v => [`${v}%`, "Media storica"]} />
                   <ReferenceLine y={0} stroke="#E0E4EF" />
-                  <Bar dataKey="avgReturn" radius={[3, 3, 0, 0]}>
+                  <Bar dataKey="avg" radius={[3, 3, 0, 0]}>
                     {d.seasonality.map((s, i) => (
-                      <Cell key={i} fill={s.avgReturn >= 0 ? "#16A34A" : "#DC2626"} fillOpacity={0.7} />
+                      <Cell key={i} fill={s.avg >= 0 ? "#16A34A" : "#DC2626"} fillOpacity={0.7} />
                     ))}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>
           )}
-
-          {/* Earnings Impact */}
-          <EarningsImpact ticker={selected.ticker} />
 
           <div style={{ fontSize: 9, color: "#C0C8D8", textAlign: "center" }}>
             ⚠️ Stime statistiche basate su dati storici. Non costituisce consulenza finanziaria ai sensi MiFID II.
