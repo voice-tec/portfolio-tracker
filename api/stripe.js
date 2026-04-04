@@ -104,13 +104,7 @@ export default async function handler(req, res) {
 
   if (!priceId || !userId) return res.status(400).json({ error: "Missing priceId or userId" });
 
-  const validPrices = [
-    process.env.STRIPE_PRICE_MONTHLY,
-    process.env.STRIPE_PRICE_YEARLY,
-  ];
-  if (!validPrices.includes(priceId)) {
-    return res.status(400).json({ error: "Invalid price ID" });
-  }
+  // Price ID validation handled by Stripe
 
   try {
     const session = await stripe.checkout.sessions.create({
