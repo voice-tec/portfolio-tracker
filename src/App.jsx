@@ -541,8 +541,8 @@ function UpgradeModal({ onClose, user }) {
   async function handleCheckout(plan) {
     try {
       const priceId = plan === "yearly"
-        ? import.meta.env.VITE_STRIPE_PRICE_YEARLY
-        : import.meta.env.VITE_STRIPE_PRICE_MONTHLY;
+        ? 'price_1TIVd0HH7etjc7R4p63kqJaf'
+        : 'price_1TIVa3HH7etjc7R4igfCdQQD';
       const res = await fetch("/api/stripe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
