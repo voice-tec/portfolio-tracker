@@ -3769,7 +3769,7 @@ export default function App() {
             </div>
           )}
 
-          {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} />}
+          {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} user={user} />}
           {showOnboarding && <OnboardingModal onClose={closeOnboarding} />}
 
           {/* Add Stock Wizard */}
