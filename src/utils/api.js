@@ -1,7 +1,7 @@
 // ─── API CLIENT ───────────────────────────────────────────────────────────────
 
-const IS_VERCEL = typeof window !== "undefined" && window.location.hostname.includes("vercel.app");
-export const API_BASE = IS_VERCEL ? "" : "https://portfolio-tracker-i97337xz6-voice-tecs-projects.vercel.app";
+// API_BASE: percorso relativo — funziona sia su trackfolio.eu che su vercel.app
+export const API_BASE = "";
 
 // Cache prezzi in memoria (TTL 60s)
 const priceCache = {};
