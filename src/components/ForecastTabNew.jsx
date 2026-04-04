@@ -248,7 +248,7 @@ function HistoricalAnalysis({ d, ticker }) {
       </div>
       <div style={{ background: "#F8FAFF", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 12, color: "#4A5568", lineHeight: 1.6 }}>
         In passato, ogni volta che <strong style={{ color: "#0A1628" }}>{ticker}</strong> era intorno a{" "}
-        <strong style={{ color: "#0A1628" }}>{price}</strong> (±{band}%),
+        <strong style={{ color: "#0A1628" }}>{price}</strong> (±7%),
         nei <strong style={{ color: "#0A1628" }}>12 mesi successivi</strong> è andata così:
       </div>
 
