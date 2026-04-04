@@ -93,6 +93,7 @@ export default async function handler(req, res) {
   }
 
   // ── CHECKOUT SESSION ───────────────────────────────────────────────────────
+  console.log("[stripe] rawBody length:", rawBody.length, "content:", rawBody.toString().slice(0,200));
   let body = {};
   try {
     body = JSON.parse(rawBody.toString());
