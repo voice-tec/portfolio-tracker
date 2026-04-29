@@ -3920,6 +3920,7 @@ export default function App() {
                   portfolioHistory={portfolioHistory} alerts={alerts}
                   setSelectedId={setSelectedId} setEditId={setEditId} handleRemove={handleRemove}
                   setShowForm={setShowForm} marketOpen={marketOpen}
+                  setShowWizard={setShowWizard}
                 />
               )}
 
