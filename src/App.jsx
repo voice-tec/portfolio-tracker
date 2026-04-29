@@ -521,18 +521,7 @@ function OnboardingModal({ onClose }) {
 
 // ─── PRO GATE ─────────────────────────────────────────────────────────────────
 function ProGate({ feat, children, h = 180 }) {
-  const { plan, setShowUpgrade } = usePlan();
-  if (PLANS[plan]?.features[feat]) return children;
-  return (
-    <div style={{ position: "relative" }}>
-      <div style={{ filter: "blur(5px)", pointerEvents: "none", opacity: 0.25, minHeight: h }}>{children}</div>
-      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10 }}>
-        <span style={{ fontSize: 24 }}>🔒</span>
-        <span style={{ fontSize: 12, color: "#666" }}>Disponibile con Piano Pro</span>
-        <button onClick={() => setShowUpgrade(true)} style={{ background: "#F4C542", border: "none", color: "#F8F9FC", fontFamily: "inherit", fontSize: 11, fontWeight: 600, padding: "8px 20px", borderRadius: 4, cursor: "pointer" }}>Sblocca Pro</button>
-      </div>
-    </div>
-  );
+  return children;
 }
 
 // ─── UPGRADE MODAL ────────────────────────────────────────────────────────────
