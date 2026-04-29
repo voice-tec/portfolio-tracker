@@ -188,7 +188,7 @@ function MarketPulse() {
       {loading ? (
         <div style={{ fontSize: 11, color: "#8A9AB0" }}>Caricamento…</div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 }}>
           {indicators.map(ind => (
             <div key={ind.label} style={{
               background: "#F8FAFF", borderRadius: 10, padding: "12px 14px",
@@ -347,7 +347,7 @@ function ScenarioCompact({ stocks, totalValue, fmt, sym, onNavigate }) {
           </button>
         )}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8 }}>
         {SCENARIOS_COMPACT.map(sc => {
           const imp = calcImpact(sc);
           const c = imp != null ? col(imp) : col(sc.spx);
@@ -448,7 +448,7 @@ function ScreenerWidget({ fmt, onAddTicker }) {
 // ── EXPORT PRINCIPALE ────────────────────────────────────────────────────────
 export function OverviewDashboard({ stocks, eurRate, totalValue, fmt, sym, onNavigateSimulazioni, onAddTicker }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 10 }}>
 
       {/* Colonna sinistra */}
       <div>
