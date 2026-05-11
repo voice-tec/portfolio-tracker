@@ -27,15 +27,10 @@ import { MarketBadge } from "./components/MarketBadge";
 const SECTOR_COLORS = ["#F4C542","#E87040","#5B8DEF","#5EC98A","#BF6EEA","#F06292","#26C6DA","#FF7043"];
 const SECTORS = ["Tech","Finanza","Salute","Energia","Consumer","Industriali","Real Estate","Utility","Materiali","Telecom","Crypto","ETF","Altro"];
 const CURRENCIES = { USD: { symbol: "$", rate: 1 }, EUR: { symbol: "€", rate: 0.92 }, GBP: { symbol: "£", rate: 0.79 } };
-const PLANS = {
-  free:  { name: "Free",  maxStocks: 5,        features: { realPrices: false, history: false, comparison: false, ai: false, alerts: false, export: false, benchmark: false, screener: false, simulazioni: false, previsioni: false } },
-  pro:   { name: "Pro",   maxStocks: Infinity,  features: { realPrices: true,  history: true,  comparison: true,  ai: true,  alerts: true,  export: true,  benchmark: true,  screener: true,  simulazioni: true,  previsioni: true  } },
-};
+// PLANS rimosso — tutto accessibile
 
 // ─── CONTEXTS ─────────────────────────────────────────────────────────────────
-const PlanCtx = createContext(null);
 const CurrencyCtx = createContext(null);
-function usePlan() { return useContext(PlanCtx); }
 function useCurrency() { return useContext(CurrencyCtx); }
 
 // ─── UTILS ────────────────────────────────────────────────────────────────────
@@ -519,58 +514,10 @@ function OnboardingModal({ onClose }) {
   );
 }
 
-// ─── PRO GATE ─────────────────────────────────────────────────────────────────
-function ProGate({ feat, children, h = 180 }) {
-  return children;
-}
+// ProGate rimosso — usa direttamente i children
+const ProGate = ({ children }) => children;
+// ─── UPGRADE MODAL rimossa ────────────────────────────────────
 
-// ─── UPGRADE MODAL ────────────────────────────────────────────────────────────
-function UpgradeModal({ onClose, user }) {
-  const { setPlan } = usePlan();
-
-  async function handleCheckout(plan) {
-    try {
-      const priceId = plan === "yearly"
-        ? 'price_1TIVd0HH7etjc7R4p63kqJaf'
-        : 'price_1TIVa3HH7etjc7R4igfCdQQD';
-      const res = await fetch("/api/stripe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ priceId, userId: user?.id, userEmail: user?.email, plan }),
-      });
-      const data = await res.json();
-      if (data.url) window.location.href = data.url;
-    } catch (err) {
-      console.error("Checkout error:", err);
-    }
-  }
-  const perks = [["📈","Prezzi live reali"],["🤖","Analisi AI per titolo"],["📊","Storico grafici"],["🔔","Alert target prezzo"],["⚖️","Confronto titoli"],["📥","Export CSV"],["📐","Benchmark vs S&P500"],["♾️","Titoli illimitati"],["☁️","Sync cloud (presto)"],["💱","Multi-valuta"]];
-  return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{ background: "#FFFFFF", border: "1px solid #2a2d35", borderRadius: 14, padding: "36px 38px", maxWidth: 480, width: "100%", position: "relative" }}>
-        <button onClick={onClose} style={{ position: "absolute", top: 14, right: 18, background: "none", border: "none", color: "#444", cursor: "pointer", fontSize: 18 }}>✕</button>
-        <div style={{ fontFamily: "'Geist', sans-serif", fontSize: 30, fontWeight: 300, marginBottom: 4 }}>Trackfolio <span style={{ color: "#F4C542" }}>Pro</span></div>
-        <div style={{ fontSize: 12, color: "#666", marginBottom: 24 }}>Tutto quello che serve per investire con più consapevolezza.</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7, marginBottom: 26 }}>
-          {perks.map(([icon, label]) => (
-            <div key={label} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", background: "#F0F2F7", borderRadius: 6, fontSize: 12, color: "#666" }}>
-              {icon} {label}
-            </div>
-          ))}
-        </div>
-        <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
-          <button onClick={() => handleCheckout("monthly")} style={{ flex: 1, background: "#F4C542", border: "none", color: "#fff", fontFamily: "inherit", fontSize: 13, fontWeight: 700, padding: "14px", borderRadius: 8, cursor: "pointer" }}>
-            €4,99/mese
-          </button>
-          <button onClick={() => handleCheckout("yearly")} style={{ flex: 1, background: "#0A1628", border: "none", color: "#F4C542", fontFamily: "inherit", fontSize: 13, fontWeight: 700, padding: "14px", borderRadius: 8, cursor: "pointer" }}>
-            €39,99/anno <span style={{ fontSize: 10, fontWeight: 400 }}>(-33%)</span>
-          </button>
-        </div>
-        <div style={{ fontSize: 10, color: "#D8DCE8", textAlign: "center", marginTop: 10 }}>Demo: in produzione aprirà Stripe Checkout</div>
-      </div>
-    </div>
-  );
-}
 
 // ─── AUTH SCREEN ──────────────────────────────────────────────────────────────
 // AuthScreen moved to src/components/AuthScreen.jsx
@@ -917,7 +864,7 @@ function TradingViewWidget({ ticker }) {
   );
 }
 
-function StockModal({ stock, onClose, notes, setNotes, alerts, setAlerts, handleRemove, sym, rate, fmt, fmtPct, handleAI, aiLoading, aiText, plan, onSaveTargets }) {
+function StockModal({ stock, onClose, notes, setNotes, alerts, setAlerts, handleRemove, sym, rate, fmt, fmtPct, handleAI, aiLoading, aiText, onSaveTargets }) {
   const [chartPeriod, setChartPeriod] = useState(30);
   const [history, setHistory] = useState(stock.history || []);
   const [histLoading, setHistLoading] = useState(false);
@@ -3042,8 +2989,7 @@ export default function App() {
     });
     return () => listener.subscription.unsubscribe();
   }, []);
-  const [plan, setPlanRaw] = useState(() => ls("pt_plan", "free"));
-  const [showUpgrade, setShowUpgrade] = useState(false);
+
   const currency = "USD";
   const sym = "$";
   const rate = 1;
@@ -3074,7 +3020,7 @@ export default function App() {
 
   // eurRate gestito da useEurRate hook
 
-  const setPlan = (p) => { setPlanRaw(p); lsSet("pt_plan", p); };
+
 
   const [stocks, setStocksRaw] = useState([]);
   const [notes, setNotesRaw] = useState({});
@@ -3299,7 +3245,7 @@ export default function App() {
     if (!t) return setFormErr("Inserisci un ticker.");
     if (!q || q <= 0) return setFormErr("Quantità non valida.");
     if (!p || p <= 0) return setFormErr("Prezzo non valido.");
-    if (plan === "free" && stocks.length >= PLANS.free.maxStocks) { setShowUpgrade(true); return; }
+
     setFormErr(""); setAdding(true);
     // Valida sempre il ticker — se non esiste blocca l'aggiunta
     const realPrice = await fetchPrice(t);
@@ -3511,9 +3457,7 @@ export default function App() {
   }
 
   async function confirmImport() {
-    if (plan === "free" && stocks.length + importPreview.length > PLANS.free.maxStocks) {
-      setShowUpgrade(true); return;
-    }
+
     const KNOWN_ETFS_IMPORT = ["QQQ","SPY","IVV","VOO","VTI","VEA","VWO","XLE","XLF","XLK","XLV","XLI","XLP","XLY","XLB","XLU","XLRE","XLC","GLD","SLV","TLT","IEF","HYG","LQD","ARKK","ARKG","IWM","EEM","SWDA","VWCE","IWDA","CSPX","EUNL","IUSQ","XDWD","VUSA","MEUD","IEMA","AGGH","IBCI","SGLD","IBTM","VGOV","VMID","CQQQ","TIPS","BIL","SHY","VWRL","SXR8","VUAA"];
     const imported = await Promise.all(importPreview.map(async (r) => {
       const result = await fetchPrice(r.ticker, true);
@@ -3626,7 +3570,7 @@ export default function App() {
     setAiLoading(l => ({ ...l, [stock.id]: false }));
   }
 
-  const planCtx = { plan, setPlan, setShowUpgrade };
+
   const currCtx = { currency, sym, rate, eurRate };
 
   if (userLoading) return (
@@ -3642,7 +3586,6 @@ export default function App() {
   if (!user) return <AuthScreen onAuth={u => setUser(u)} />;
 
   return (
-    <PlanCtx.Provider value={planCtx}>
       <CurrencyCtx.Provider value={currCtx}>
         <div style={{ minHeight: "100vh", background: "#F8F9FC", color: "#0A0E1A", fontFamily: "'Geist', sans-serif" }}>
           <style>{`
@@ -3706,21 +3649,9 @@ export default function App() {
           {showSettings && (
           <SettingsModal
             user={user}
-            plan={plan}
             stocks={stocks}
             onClose={() => setShowSettings(false)}
             onSignOut={() => { setUser(null); setShowSettings(false); }}
-            onPlanChange={p => { setPlanRaw(p); setShowSettings(false); }}
-          />
-        )}
-        {showSettings && (
-          <SettingsModal
-            user={user}
-            plan={plan}
-            stocks={stocks}
-            onClose={() => setShowSettings(false)}
-            onSignOut={() => { setUser(null); setShowSettings(false); }}
-            onPlanChange={p => { setPlanRaw(p); setShowSettings(false); }}
           />
         )}
         {cookieBanner && (
@@ -3759,7 +3690,6 @@ export default function App() {
             </div>
           )}
 
-          {showUpgrade && <UpgradeModal onClose={() => setShowUpgrade(false)} user={user} />}
           {showOnboarding && <OnboardingModal onClose={closeOnboarding} />}
 
           {/* Add Stock Wizard */}
@@ -3781,7 +3711,6 @@ export default function App() {
             {/* Logo */}
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
               <TrackfolioLogo size={22} showText={true} textColor="#FFFFFF" />
-              {plan === "pro" && <span style={{ fontSize: 8, background: "#F4C542", color: "#0A1628", padding: "2px 6px", borderRadius: 2, fontWeight: 700, letterSpacing: "0.1em" }}>PRO</span>}
             </div>
             {/* Desktop tabs */}
             <div style={{ display: "flex", alignItems: "center", gap: 0, overflowX: "auto", flex: 1, justifyContent: "center" }} className="desktop-tabs">
@@ -3793,9 +3722,8 @@ export default function App() {
             </div>
             {/* Actions */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-              {plan === "free" && <button className="action-btn" onClick={() => setShowUpgrade(true)} style={{ color: "#F4C542", borderColor: "#F4C542", fontSize: 10, padding: "4px 8px" }}>✦ Pro</button>}
               <button className="action-btn hide-mobile" onClick={() => setShowImport(v => !v)}>↑ CSV</button>
-              {plan === "pro" && <>
+              <>
                 <button onClick={exportCSV} className="action-btn hide-mobile" style={{ fontSize: 9, padding: "4px 10px" }}>↓ CSV</button>
                 <button onClick={exportPDF} className="action-btn hide-mobile" style={{ fontSize: 9, padding: "4px 10px" }}>↓ PDF</button>
               </>}
@@ -3871,7 +3799,6 @@ export default function App() {
                   {adding ? "Recupero prezzo…" : "Aggiungi titolo"}
                 </button>
               </div>
-              {plan === "free" && stocks.length >= PLANS.free.maxStocks && <div style={{ fontSize: 11, color: "#E87040", marginTop: 8 }}>Limite Free: max {PLANS.free.maxStocks} titoli</div>}
               {formErr && <div style={{ fontSize: 11, color: "#E87040", marginTop: 8 }}>{formErr}</div>}
             </div>
           )}
@@ -4239,7 +4166,7 @@ export default function App() {
               handleRemove={handleRemove}
               sym={sym} rate={rate} fmt={fmt} fmtPct={fmtPct}
               handleAI={handleAI} aiLoading={aiLoading} aiText={aiText}
-              plan={plan} eurRate={eurRate}
+              eurRate={eurRate}
               onSaveTargets={handleSaveTargets}
             />
           ) : null}
@@ -4266,6 +4193,5 @@ export default function App() {
 
         </div>
       </CurrencyCtx.Provider>
-    </PlanCtx.Provider>
   );
 }

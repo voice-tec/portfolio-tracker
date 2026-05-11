@@ -5,9 +5,9 @@ function Spinner({ size = 14, color = "#4361ee" }) {
   return <span style={{ display: "inline-block", width: size, height: size, borderRadius: "50%", border: `1.5px solid ${color}`, borderTopColor: "transparent", animation: "spin 0.7s linear infinite" }} />;
 }
 
-const SECTIONS = ["Profilo", "Sicurezza", "Piano", "Dati & Privacy"];
+const SECTIONS = ["Profilo", "Sicurezza", "Dati & Privacy"];
 
-export function SettingsModal({ user, plan, stocks, onClose, onSignOut, onPlanChange }) {
+export function SettingsModal({ user, stocks, onClose, onSignOut }) {
   const [section, setSection] = useState("Profilo");
   const [name, setName] = useState(user?.name || "");
   const [pw, setPw] = useState("");
@@ -82,9 +82,7 @@ export function SettingsModal({ user, plan, stocks, onClose, onSignOut, onPlanCh
             </div>
             <div style={{ fontSize: 13, fontWeight: 700, color: "#0A1628", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user?.name}</div>
             <div style={{ fontSize: 10, color: "#8A9AB0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user?.email}</div>
-            <div style={{ marginTop: 6, display: "inline-flex", alignItems: "center", gap: 4, background: plan === "pro" ? "#EEF4FF" : "#F8FAFF", border: `1px solid ${plan === "pro" ? "#4361ee" : "#E0E8F4"}`, borderRadius: 20, padding: "2px 8px" }}>
-              <span style={{ fontSize: 9, fontWeight: 700, color: plan === "pro" ? "#4361ee" : "#8A9AB0", textTransform: "uppercase" }}>{plan === "pro" ? "✦ Pro" : "Free"}</span>
-            </div>
+
           </div>
           {SECTIONS.map(s => (
             <button key={s} onClick={() => { setSection(s); setMsg(""); setErr(""); }} style={{
@@ -138,7 +136,6 @@ export function SettingsModal({ user, plan, stocks, onClose, onSignOut, onPlanCh
                   {[
                     { l: "Titoli", v: stocks.length },
                     { l: "Portafoglio", v: `$${stocks.reduce((s, x) => s + (x.qty || 0) * (x.currentPrice || 0), 0).toFixed(0)}` },
-                    { l: "Piano", v: plan === "pro" ? "Pro ✦" : "Free" },
                   ].map(({ l, v }) => (
                     <div key={l} style={{ background: "#F8FAFF", borderRadius: 10, padding: "12px 14px", border: "1px solid #E8EBF4" }}>
                       <div style={{ fontSize: 18, fontWeight: 800, color: "#0A1628" }}>{v}</div>
@@ -182,56 +179,6 @@ export function SettingsModal({ user, plan, stocks, onClose, onSignOut, onPlanCh
               }}>
                 {loading ? <Spinner color="#fff" /> : null} Aggiorna password
               </button>
-            </div>
-          )}
-
-          {/* ── PIANO ── */}
-          {section === "Piano" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                {[
-                  {
-                    name: "Free", price: "€0", period: "per sempre",
-                    features: ["Fino a 10 titoli", "Prezzi live", "Overview base", "CSV import"],
-                    current: plan === "free",
-                  },
-                  {
-                    name: "Pro", price: "€9", period: "al mese",
-                    features: ["Titoli illimitati", "Simulazioni avanzate", "Screener completo", "Previsioni AI", "Export PDF/CSV", "Analisi storica"],
-                    current: plan === "pro",
-                    highlight: true,
-                  }
-                ].map(p => (
-                  <div key={p.name} style={{
-                    borderRadius: 12, padding: "20px 18px",
-                    border: p.highlight ? "2px solid #4361ee" : "1.5px solid #E8EBF4",
-                    background: p.highlight ? "#F4F7FF" : "#fff",
-                    position: "relative",
-                  }}>
-                    {p.highlight && <div style={{ position: "absolute", top: -10, left: "50%", transform: "translateX(-50%)", background: "#4361ee", color: "#fff", fontSize: 9, fontWeight: 700, padding: "3px 10px", borderRadius: 20, whiteSpace: "nowrap" }}>CONSIGLIATO</div>}
-                    <div style={{ fontSize: 14, fontWeight: 800, color: "#0A1628", marginBottom: 4 }}>{p.name}</div>
-                    <div style={{ fontSize: 24, fontWeight: 800, color: p.highlight ? "#4361ee" : "#0A1628" }}>{p.price}<span style={{ fontSize: 12, fontWeight: 400, color: "#8A9AB0" }}> {p.period}</span></div>
-                    <div style={{ height: 1, background: "#E8EBF4", margin: "14px 0" }} />
-                    {p.features.map(f => (
-                      <div key={f} style={{ fontSize: 12, color: "#5A6A7E", display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-                        <span style={{ color: "#4ADE80", fontSize: 12 }}>✓</span> {f}
-                      </div>
-                    ))}
-                    {p.current ? (
-                      <div style={{ marginTop: 14, textAlign: "center", fontSize: 11, color: "#8A9AB0", fontWeight: 600 }}>Piano attuale</div>
-                    ) : (
-                      <button onClick={() => onPlanChange && onPlanChange(p.name.toLowerCase())} style={{
-                        marginTop: 14, width: "100%", background: p.highlight ? "#4361ee" : "#F0F2F7",
-                        border: "none", color: p.highlight ? "#fff" : "#0A1628",
-                        fontFamily: "inherit", fontSize: 12, fontWeight: 700, padding: "10px",
-                        borderRadius: 8, cursor: "pointer",
-                      }}>
-                        {p.highlight ? "Passa a Pro →" : "Torna a Free"}
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
             </div>
           )}
 
